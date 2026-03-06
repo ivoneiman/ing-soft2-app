@@ -1,4 +1,3 @@
-```markdown
 # Demo IS2 — Flask + Vue.js + PostgreSQL
 
 Proyecto demo con autenticación de usuarios y CRUD básico de notas.
@@ -59,6 +58,7 @@ CREATE DATABASE demo_db;
 ```bash
 python app.py
 ```
+
 ✅ El backend crea las tablas automáticamente al arrancar.  
 ✅ Disponible en http://localhost:5000
 
@@ -82,13 +82,13 @@ npm install
 ```bash
 npm run dev
 ```
+
 ✅ Disponible en http://localhost:5173  
 ✅ Las llamadas a `/api` se redirigen automáticamente al backend (configurado en `vite.config.js`)
 
 ---
 
 ## 📁 Estructura del proyecto
-
 ```
 proyecto-demo/
 ├── backend/
@@ -131,7 +131,6 @@ proyecto-demo/
 ---
 
 ## 🧪 Probar la API con curl
-
 ```bash
 # Registrar usuario
 curl -X POST http://localhost:5000/api/register \
