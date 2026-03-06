@@ -1,3 +1,6 @@
+Acá está el README actualizado con los dos cambios necesarios (el `psycopg[binary]` y la URL de conexión con `postgresql+psycopg://`):
+
+```markdown
 # Demo IS2 — Flask + Vue.js + PostgreSQL
 
 Proyecto demo con autenticación de usuarios y CRUD básico de notas.
@@ -28,11 +31,20 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
+> ⚠️ Si usás Python 3.14+, `psycopg2-binary` no es compatible. El `requirements.txt` ya usa `psycopg[binary]` que sí funciona.
+
 ### 3. Configurar variables de entorno
 ```bash
 cp .env.example .env
 # Editá .env con tu contraseña de PostgreSQL
 ```
+
+El archivo `.env` tiene que quedar así:
+```
+DATABASE_URL=postgresql+psycopg://postgres:TU_PASSWORD@localhost:5432/demo_db
+```
+
+> ⚠️ Usá `postgresql+psycopg://` (no `postgresql://`). Si usás la URL vieja el backend no va a conectar.
 
 ### 4. Crear la base de datos en PostgreSQL
 ```bash
@@ -42,6 +54,8 @@ psql -U postgres
 CREATE DATABASE demo_db;
 \q
 ```
+
+> 💡 En Windows, si `psql` no se reconoce, agregá `C:\Program Files\PostgreSQL\<version>\bin` al PATH del sistema y reiniciá la terminal.
 
 ### 5. Levantar el servidor
 ```bash
