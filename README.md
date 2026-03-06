@@ -1,6 +1,7 @@
 # Demo IS2 — Flask + Vue.js + PostgreSQL
 
 Proyecto demo con autenticación de usuarios y CRUD básico de notas.
+Guía instalación: https://docs.google.com/document/d/1gyVWPFO2TZeU4UhWOwTB-A5zzbg9iM2y/edit?pli=1
 
 ## Stack
 - **Backend:** Python + Flask + Flask-Login + SQLAlchemy
