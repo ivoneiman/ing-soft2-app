@@ -1,5 +1,3 @@
-Acá está el README actualizado con los dos cambios necesarios (el `psycopg[binary]` y la URL de conexión con `postgresql+psycopg://`):
-
 ```markdown
 # Demo IS2 — Flask + Vue.js + PostgreSQL
 
