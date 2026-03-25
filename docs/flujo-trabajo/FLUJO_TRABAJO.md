@@ -3,10 +3,10 @@
 ---
 ### Resumen rápido
 ```bash
-# 1. actualizar develop
+# 1. Siempre partir desde develop actualizado
 git checkout develop && git pull origin develop
 
-# 2. crear rama
+# 2. crear la rama para lo que vas a trabajar
 git checkout -b <prefijo>/<nombre> develop
 
 # 3. trabajar + commits
@@ -14,11 +14,11 @@ git add .
 git commit -m "feat: …"
 # (repetir según sea necesario)
 
-# 4. merge a develop
+# 4. Cuando terminas,merge a develop
 git checkout develop
 git merge <prefijo>/<nombre>
 
-# 5. borrar rama
+# 5. borrar rama si ya no se necesita
 git branch -d <prefijo>/<nombre>
 git push origin --delete <prefijo>/<nombre>
 ```
@@ -96,4 +96,3 @@ git push origin --delete feature/modelo-inscripcion   # elimina en remoto
 3. **Commits descriptivos** con el prefijo `feat:`, `fix:`, `test:`, etc.
 4. **Revisión vía Pull‑Request** antes del merge a `develop`.
 5. **Limpiar ramas** una vez integradas.
-
