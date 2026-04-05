@@ -10,6 +10,12 @@ Guía instalación: https://docs.google.com/document/d/1gyVWPFO2TZeU4UhWOwTB-A5z
 
 ---
 
+### Cómo levantar la app en localhost
+- **Posicionarte en la raíz**: y ejecutar en la terminal: cd backend -> Luego: python app.py
+- **Abrir otra terminal**: cd frontend -> npm run dev
+
+---
+
 ## ⚙️ Setup del backend
 
 ### 1. Crear y activar entorno virtual
