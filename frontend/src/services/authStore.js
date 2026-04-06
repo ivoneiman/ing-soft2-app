@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { authService } from './api'
+import { login, register, logout, getCurrentUser } from './api'
 
 // Estado global de autenticación (composable simple sin Pinia)
 // Si el proyecto crece, conviene usar Pinia como store
@@ -7,13 +7,16 @@ export const authStore = reactive({
   user: null,
   loading: false,
   error: null,
+  isLoggedIn: false,
 
   async fetchCurrentUser() {
     try {
-      const res = await authService.me()
+      const res = await getCurrentUser()
       this.user = res.data.user
+      this.isLoggedIn = true
     } catch {
       this.user = null
+      this.isLoggedIn = false
     }
   },
 
@@ -21,8 +24,9 @@ export const authStore = reactive({
     this.loading = true
     this.error = null
     try {
-      const res = await authService.login(email, password)
+      const res = await login({ email, password })
       this.user = res.data.user
+      this.isLoggedIn = true
       return true
     } catch (err) {
       this.error = err.response?.data?.error || 'Error al iniciar sesión'
@@ -36,8 +40,9 @@ export const authStore = reactive({
     this.loading = true
     this.error = null
     try {
-      const res = await authService.register(username, email, password)
+      const res = await register({ username, email, password })
       this.user = res.data.user
+      this.isLoggedIn = true
       return true
     } catch (err) {
       this.error = err.response?.data?.error || 'Error al registrarse'
@@ -48,11 +53,13 @@ export const authStore = reactive({
   },
 
   async logout() {
-    await authService.logout()
-    this.user = null
-  },
-
-  get isLoggedIn() {
-    return !!this.user
+    try {
+      await logout()
+    } catch (err) {
+      console.error('Error al cerrar sesión:', err)
+    } finally {
+      this.user = null
+      this.isLoggedIn = false
+    }
   }
 })
