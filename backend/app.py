@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from flask_cors import CORS
 from dotenv import load_dotenv
-from models import db, User, Note
+from models import db, User
 import os
 
 load_dotenv()
@@ -88,41 +88,6 @@ def logout():
 def me():
     return jsonify({"user": current_user.to_dict()})
 
-
-# ─── Rutas de Notas (CRUD ejemplo) ────────────────────────────────────────────
-
-@app.route("/api/notes", methods=["GET"])
-@login_required
-def get_notes():
-    notes = Note.query.filter_by(user_id=current_user.id).order_by(Note.created_at.desc()).all()
-    return jsonify({"notes": [n.to_dict() for n in notes]})
-
-
-@app.route("/api/notes", methods=["POST"])
-@login_required
-def create_note():
-    data = request.get_json()
-
-    if not data or "title" not in data:
-        return jsonify({"error": "El título es requerido"}), 400
-
-    note = Note(
-        title=data["title"],
-        content=data.get("content", ""),
-        user_id=current_user.id,
-    )
-    db.session.add(note)
-    db.session.commit()
-    return jsonify({"note": note.to_dict()}), 201
-
-
-@app.route("/api/notes/<int:note_id>", methods=["DELETE"])
-@login_required
-def delete_note(note_id):
-    note = Note.query.filter_by(id=note_id, user_id=current_user.id).first_or_404()
-    db.session.delete(note)
-    db.session.commit()
-    return jsonify({"message": "Nota eliminada"})
 
 
 # ─── Inicialización ───────────────────────────────────────────────────────────

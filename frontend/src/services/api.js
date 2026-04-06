@@ -1,43 +1,19 @@
-import axios from 'axios'
+import axios from "axios";
 
-// Con el proxy de Vite, no hace falta poner la URL completa
-// Las llamadas a /api se redirigen automáticamente a http://localhost:5000
-const api = axios.create({
-  baseURL: '/api',
-  withCredentials: true, // Necesario para que las cookies de sesión viajen
-  headers: { 'Content-Type': 'application/json' }
-})
+const API_URL = "http://localhost:5000/api";
 
-// Interceptor para manejar errores globalmente
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Si el backend devuelve 401, redirigir al login
-      window.location.href = '/login'
-    }
-    return Promise.reject(error)
-  }
-)
-
-export const authService = {
-  register: (username, email, password) =>
-    api.post('/register', { username, email, password }),
-
-  login: (email, password) =>
-    api.post('/login', { email, password }),
-
-  logout: () =>
-    api.post('/logout'),
-
-  me: () =>
-    api.get('/me'),
+export function register({ username, email, password }) {
+  return axios.post(`${API_URL}/register`, { username, email, password }, { withCredentials: true });
 }
 
-export const notesService = {
-  getAll: () => api.get('/notes'),
-  create: (title, content) => api.post('/notes', { title, content }),
-  delete: (id) => api.delete(`/notes/${id}`),
+export function login({ email, password, remember }) {
+  return axios.post(`${API_URL}/login`, { email, password, remember }, { withCredentials: true });
 }
 
-export default api
+export function logout() {
+  return axios.post(`${API_URL}/logout`, {}, { withCredentials: true });
+}
+
+export function getCurrentUser() {
+  return axios.get(`${API_URL}/me`, { withCredentials: true });
+}
