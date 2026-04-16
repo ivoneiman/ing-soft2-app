@@ -1,6 +1,13 @@
+<!--
+  Vista de registro de usuarios.
+  Contiene un formulario que captura nombre de usuario, email y contraseña,
+  y envía esos datos a la API backend mediante la función `register`.
+  El componente muestra mensajes de error o éxito y permite navegar a la vista de login.
+-->
 <template>
   <div class="register-container">
     <h2>Crear cuenta</h2>
+    <!-- El modificador .prevent evita que el formulario recargue la página al enviarse -->
     <form @submit.prevent="onSubmit">
       <div>
         <label for="username">Usuario:</label>
@@ -27,37 +34,41 @@
 </template>
 
 <script setup>
-// Importamos ref para variables reactivas y la función de registro de la API
+// Importamos `ref` para crear variables reactivas (similares a state en React)
 import { ref } from 'vue'
+// `register` es una función que envía una petición POST a la API backend
 import { register } from '../services/api'
-// Importamos RouterLink para usar enlaces internos de Vue Router
+// `RouterLink` permite crear enlaces internos sin recargar la página (SPA navigation)
 import { RouterLink } from 'vue-router'
 
-const username = ref('')
-const email = ref('')
-const password = ref('')
-const error = ref('')
-const success = ref('')
-const loading = ref(false)
+// Variables reactivas que almacenan los valores del formulario y el estado UI
+const username = ref('')   // nombre de usuario ingresado
+const email = ref('')       // email ingresado
+const password = ref('')    // contraseña ingresada
+const error = ref('')       // mensaje de error a mostrar
+const success = ref('')     // mensaje de éxito a mostrar
+const loading = ref(false)  // indica si la petición está en curso
 
 // Función que se ejecuta al enviar el formulario
+// Maneja el envío del formulario
 async function onSubmit() {
-  error.value = '' // Limpiamos errores anteriores
-  success.value = '' // Limpiamos mensajes de éxito anteriores
-  loading.value = true // Mostramos estado de carga
+  // Reiniciamos mensajes de estado
+  error.value = ''
+  success.value = ''
+  loading.value = true // muestra spinner / deshabilita botón
   try {
     // Llamamos a la API de registro con los datos del formulario
     await register({ username: username.value, email: email.value, password: password.value })
-    // Si el registro es exitoso, mostramos mensaje y limpiamos campos
+    // Si la petición es exitosa, informamos al usuario y limpiamos los campos
     success.value = 'Usuario creado correctamente. Ya puedes iniciar sesión.'
     username.value = ''
     email.value = ''
     password.value = ''
   } catch (err) {
-    // Si hay error, mostramos el mensaje recibido del backend o uno genérico
+    // En caso de error, mostramos el mensaje del backend o un fallback genérico
     error.value = err.response?.data?.error || 'Error al registrar usuario'
   } finally {
-    loading.value = false // Ocultamos el estado de carga
+    loading.value = false // vuelve a habilitar el botón
   }
 }
 </script>

@@ -1,6 +1,13 @@
+<!--
+  Vista de inicio de sesión.
+  Presenta un formulario que solicita email y contraseña, llama a la API de login
+  y, si la autenticación es exitosa, redirige al usuario a la página principal.
+  También muestra un enlace a la vista de registro.
+-->
 <template>
   <div class="login-container">
     <h2>Iniciar sesión</h2>
+    <!-- El modificador .prevent evita que el formulario recargue la página al enviarse -->
     <form @submit.prevent="onSubmit">
       <div>
         <label for="email">Email:</label>
@@ -22,31 +29,35 @@
 </template>
 
 <script setup>
-// Importamos ref para variables reactivas y la función de login de la API
+// Importamos `ref` para crear variables reactivas (similar a state en React)
 import { ref } from 'vue'
+// `login` envía una petición POST a la API backend con email y contraseña
 import { login } from '../services/api'
-// Importamos RouterLink para usar enlaces internos de Vue Router
+// `RouterLink` permite crear enlaces internos sin recargar la página (SPA navigation)
 import { RouterLink } from 'vue-router'
 
-const email = ref('')
-const password = ref('')
-const error = ref('')
-const loading = ref(false)
+// Variables reactivas que almacenan los valores del formulario y el estado UI
+const email = ref('')      // email ingresado por el usuario
+const password = ref('')   // contraseña ingresada
+const error = ref('')      // mensaje de error a mostrar
+const loading = ref(false) // indica si la petición está en curso
 
 // Función que se ejecuta al enviar el formulario
+// Maneja el envío del formulario de login
 async function onSubmit() {
-  error.value = '' // Limpiamos errores anteriores
-  loading.value = true // Mostramos estado de carga
+  // Reiniciamos el mensaje de error y marcamos carga
+  error.value = ''
+  loading.value = true
   try {
     // Llamamos a la API de login con los datos del formulario
     await login({ email: email.value, password: password.value })
-    // Si el login es exitoso, redirigimos al home (puedes cambiar esto luego)
+    // Si la autenticación es exitosa, redirigimos al home (puedes cambiar la ruta)
     window.location.href = '/' // O usa router.push si tienes rutas protegidas
   } catch (err) {
-    // Si hay error, mostramos el mensaje recibido del backend o uno genérico
+    // En caso de error, mostramos el mensaje del backend o un fallback genérico
     error.value = err.response?.data?.error || 'Error al iniciar sesión'
   } finally {
-    loading.value = false // Ocultamos el estado de carga
+    loading.value = false // vuelve a habilitar el botón
   }
 }
 </script>
