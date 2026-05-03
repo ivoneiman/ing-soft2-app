@@ -6,7 +6,8 @@
 -->
 <template>
   <div class="home-container">
-    <h2>Bienvenido</h2>
+    <img src="/logo-con-aura.png">
+    <h1>SiempreGYM</h1>
     <!-- Indicador de carga mientras esperamos la respuesta del backend -->
     <div v-if="loading">Cargando usuario...</div>
     <!-- Si la petición tuvo éxito y hay un usuario autenticado -->
@@ -60,7 +61,15 @@ async function onLogout() {
   max-width: 400px;
   margin: 2rem auto;
   padding: 2rem;
-  border: 1px solid #eee;
   border-radius: 8px;
+
+  display: flex;
+  flex-direction: column; /* importante para que sea vertical */
+  align-items: center;   /* centra horizontalmente */
+}
+
+img{
+  height: 300px;
+  width: 300px;
 }
 </style>

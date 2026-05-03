@@ -10,4 +10,4 @@
 // Este componente ya no gestiona notas. Mantener solo la lógica que se necesite para el dashboard.
 // Por ahora, no hay estado reactivo ni llamadas a la API.
 </script>
-</script>
+

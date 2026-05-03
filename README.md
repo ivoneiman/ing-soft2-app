@@ -10,7 +10,7 @@ Proyecto demo con autenticación de usuarios.
 ---
 
 ### Cómo levantar la app en localhost
-- **Posicionarte en la raíz**: y ejecutar en la terminal: cd backend -> Luego: python app.py
+- **Posicionarte en la raíz**: y ejecutar en la terminal: cd backend -> Luego: `venv\Scripts\activate` y `python app.py`
 - **Abrir otra terminal**: cd frontend -> npm run dev
 
 ---
