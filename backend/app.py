@@ -15,22 +15,34 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# ─── Configuración ────────────────────────────────────────────────────────────
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key") #firma cookies y protege contra ataques CSRF, en producción debería ser un valor seguro y no hardcodeado
-app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
-    "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/demo_db" #URL  de conexión a la base de datos PostgreSQL, se usa demo_db por defecto para desarrollo local, pero en producción debería configurarse con credenciales seguras y posiblemente usar variables de entorno para no exponerlas en el código
-)
+import os
+from flask import Flask
+from flask_cors import CORS
+
+app = Flask(__name__)
+
+# ─── Configuración básica ─────────────────────────────────────────────
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
+
+# ─── Configuración DB (Render) ────────────────────────────────────────
+uri = os.getenv("DATABASE_URL")
+
+if uri and uri.startswith("postgres://"):
+    uri = uri.replace("postgres://", "postgresql://", 1)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = uri
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# ─── Cookies (necesario para Vercel + login) ─────────────────────────
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 app.config["SESSION_COOKIE_SECURE"] = True
-app.config["SESSION_COOKIE_HTTPONLY"] = True
 
-# CORS: permite que Vue (puerto 5173) le hable al backend (puerto 5000)
+# ─── CORS (permitir frontend en Vercel) ──────────────────────────────
 CORS(
     app,
     supports_credentials=True,
     origins=[
-        "https://ing-soft2-9kwyllyjd-ivoneimans-projects.vercel.app"
+        "https://ing-soft2-app.vercel.app"
     ]
 )
 
