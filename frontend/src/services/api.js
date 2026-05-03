@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = "https://ing-soft2-backend.onrender.com";
+const API_URL = "https://ing-soft2-backend.onrender.com/";
 
 export function register({ username, email, password }) {
   return axios.post(`${API_URL}/register`, { username, email, password }, { withCredentials: true });
