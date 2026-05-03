@@ -1,6 +1,5 @@
 <template>
-  <nav class="default-navbar">
-    <!-- Logo -->
+  <nav :class="['default-navbar', { 'navbar-home': route.path === '/' }]">    <!-- Logo -->
     <router-link to="/" class="logo-link">
       <img src="/logo-con-aura.png" alt="Logo" class="logo" />
     </router-link>
@@ -56,9 +55,9 @@
 <script setup>
 import { ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
-import { authStore } from '../services/authStore'
-import { useRouter } from 'vue-router'
-
+import { authStore } from '../../services/authStore'
+import { useRouter, useRoute } from 'vue-router'
+const route = useRoute()
 const router = useRouter()
 
 const isDropdownOpen = ref(false)
@@ -83,25 +82,27 @@ function handleLogout() {
 </script>
 
 <style scoped>
-/* NAVBAR */
+/* NAVBAR BASE (todas las páginas) */
 .default-navbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  width: 100%;
-  
-
+  position: relative;
   display: flex;
   align-items: center;
   padding: 16px 40px;
-
-  border-bottom:none;
-  background: rgba(87, 44, 87, 0.1);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(6px); /* Safari */
-
+  background: #572c57;
   z-index: 1000;
+  transition: all 0.3s ease;
+}
+
+/* NAVBAR SOLO HOME */
+.navbar-home {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+
+  background: rgba(87, 44, 87, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 /* LOGO */

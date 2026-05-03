@@ -14,9 +14,9 @@
 // Importamos `ref` para crear variables reactivas y `onMounted` para ejecutar código
 // cuando el componente se inserta en el DOM (similar a componentDidMount en React)
 import { ref, onMounted } from 'vue'
-import Hero from '../components/Hero.vue'
+import Hero from '../../components/hero/Hero.vue'
 // `getCurrentUser` obtiene los datos del usuario autenticado; `logout` cierra la sesión
-import { getCurrentUser } from '../services/api'
+import { getCurrentUser } from '../../services/api'
 // `useRouter` permite navegar programáticamente entre rutas
 import { useRouter } from 'vue-router'
 

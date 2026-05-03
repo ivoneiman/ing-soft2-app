@@ -6,7 +6,7 @@
 
 <script setup>
 import { onMounted } from 'vue'
-import { logout } from '../services/api'
+import { logout } from '../../services/api'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()

@@ -1,14 +1,11 @@
 <template>
-  <div id="app">
-    <DefaultNavbar />
-    <router-view />
-  </div>
+  <router-view />
 </template>
 
 <script setup>
 import { onMounted } from 'vue'
 import { authStore } from './services/authStore'
-import DefaultNavbar from './components/DefaultNavbar.vue'
+import DefaultNavbar from './components/navigation/DefaultNavbar.vue'
 
 onMounted(async () => {
   await authStore.fetchCurrentUser()
