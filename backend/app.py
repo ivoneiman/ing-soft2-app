@@ -21,9 +21,18 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
     "DATABASE_URL", "postgresql+psycopg://postgres:postgres@localhost:5432/demo_db" #URL  de conexión a la base de datos PostgreSQL, se usa demo_db por defecto para desarrollo local, pero en producción debería configurarse con credenciales seguras y posiblemente usar variables de entorno para no exponerlas en el código
 )
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
 
 # CORS: permite que Vue (puerto 5173) le hable al backend (puerto 5000)
-CORS(app, supports_credentials=True)
+CORS(
+    app,
+    supports_credentials=True,
+    origins=[
+        "https://ing-soft2-9kwyllyjd-ivoneimans-projects.vercel.app"
+    ]
+)
 
 # ─── Extensiones ──────────────────────────────────────────────────────────────
 db.init_app(app)
