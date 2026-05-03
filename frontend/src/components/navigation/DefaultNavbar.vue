@@ -57,6 +57,11 @@ import { ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { authStore } from '../../services/authStore'
 import { useRouter, useRoute } from 'vue-router'
+
+// `useRoute` permite acceder a la información de la ruta actual (por ejemplo: path, name, params).
+// Se usa para saber en qué página estamos y así adaptar el comportamiento o estilos del componente.
+// En este caso, lo usamos para aplicar una clase distinta al navbar cuando estamos en la Home.
+
 const route = useRoute()
 const router = useRouter()
 

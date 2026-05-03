@@ -23,7 +23,7 @@ app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv(
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # CORS: permite que Vue (puerto 5173) le hable al backend (puerto 5000)
-CORS(app, supports_credentials=True, origins=["http://localhost:5173"])
+CORS(app, supports_credentials=True)
 
 # ─── Extensiones ──────────────────────────────────────────────────────────────
 db.init_app(app)
