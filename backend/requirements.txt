@@ -6,3 +6,4 @@ psycopg[binary]
 python-dotenv==1.0.1
 werkzeug==3.0.3
 gunicorn==25.3.0
+setuptools==82.0.1
