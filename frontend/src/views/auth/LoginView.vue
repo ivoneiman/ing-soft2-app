@@ -32,7 +32,7 @@
 // Importamos `ref` para crear variables reactivas (similar a state en React)
 import { ref } from 'vue'
 // `login` envía una petición POST a la API backend con email y contraseña
-import { login } from '../services/api'
+import { login } from '../../services/api'
 // `RouterLink` permite crear enlaces internos sin recargar la página (SPA navigation)
 import { RouterLink } from 'vue-router'
 

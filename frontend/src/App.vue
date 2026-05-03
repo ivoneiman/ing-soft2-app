@@ -1,14 +1,11 @@
 <template>
-  <div id="app">
-    <DefaultNavbar />
-    <router-view />
-  </div>
+  <router-view />
 </template>
 
 <script setup>
 import { onMounted } from 'vue'
 import { authStore } from './services/authStore'
-import DefaultNavbar from './components/DefaultNavbar.vue'
+import DefaultNavbar from './components/navigation/DefaultNavbar.vue'
 
 onMounted(async () => {
   await authStore.fetchCurrentUser()
@@ -63,7 +60,12 @@ h4{
   font-family: "Anton";  font-size: 20px;
 }
 p,a,button{
-    font-family: Poppins, sans-serif; font-size: 20px; line-height: 12px; letter-spacing: 1.5px; font-weight: regular; color: #fff
+  font-family: Poppins, sans-serif;
+  font-size: 20px; 
+  line-height: 18px; 
+  letter-spacing: 1.5px; 
+  font-weight: 300; 
+  color: #9ca3af;
 }
 
 

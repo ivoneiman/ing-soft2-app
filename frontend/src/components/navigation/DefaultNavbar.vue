@@ -1,6 +1,5 @@
 <template>
-  <nav class="default-navbar">
-    <!-- Logo -->
+  <nav :class="['default-navbar', { 'navbar-home': route.path === '/' }]">    <!-- Logo -->
     <router-link to="/" class="logo-link">
       <img src="/logo-con-aura.png" alt="Logo" class="logo" />
     </router-link>
@@ -56,9 +55,9 @@
 <script setup>
 import { ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
-import { authStore } from '../services/authStore'
-import { useRouter } from 'vue-router'
-
+import { authStore } from '../../services/authStore'
+import { useRouter, useRoute } from 'vue-router'
+const route = useRoute()
 const router = useRouter()
 
 const isDropdownOpen = ref(false)
@@ -76,26 +75,39 @@ onClickOutside(dropdownRef, () => {
   closeDropdown()
 })
 
-async function handleLogout() {
-  closeDropdown()
-  await authStore.logout()
-  router.push('/login')
+function handleLogout() {
+  // Navigate to dedicated logout view which will perform the logout operation
+  router.push('/logout')
 }
 </script>
 
 <style scoped>
-/* NAVBAR */
+/* NAVBAR BASE (todas las páginas) */
 .default-navbar {
+  position: relative;
   display: flex;
   align-items: center;
-  padding: 12px 24px;
-  border-bottom: 1px solid #ddd;
-  background: transparent;
+  padding: 16px 40px;
+  background: #572c57;
+  z-index: 1000;
+  transition: all 0.3s ease;
+}
+
+/* NAVBAR SOLO HOME */
+.navbar-home {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+
+  background: rgba(87, 44, 87, 0.35);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 /* LOGO */
 .logo {
-  height: 120px;
+  height: 130px;
   flex-shrink: 0;
 }
 
@@ -106,12 +118,14 @@ async function handleLogout() {
   gap: 16px;
   flex: 1;
   justify-content: center;
+  background: transparent !important;
+
 }
 
 /* LINKS */
 .nav-item {
   text-decoration: none;
-  color: #ffffff;
+  color: rgba(255, 255, 255, 0.9);
   font-weight: 500;
 }
 
@@ -122,11 +136,13 @@ async function handleLogout() {
 /* DROPDOWN */
 .dropdown {
   position: relative;
+  background: transparent !important;
+
 }
 
 /* BOTÓN PERFIL */
 .dropdown-header {
-  background: none;
+  background: transparent !important;
   border: none;
   font-weight: 600;
   color: #e26972;
@@ -175,6 +191,8 @@ async function handleLogout() {
   align-items: center;
   gap: 10px;
   margin-left: auto;
+  background: transparent !important;
+
 }
 
 .present-text {

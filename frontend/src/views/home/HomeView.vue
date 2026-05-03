@@ -5,20 +5,8 @@
   en curso muestra "Cargando usuario..."; si no hay sesión redirige al login.
 -->
 <template>
-  <div class="home-container">
-    <img src="/logo-con-aura.png">
-    <h1>SiempreGYM</h1>
-    <!-- Indicador de carga mientras esperamos la respuesta del backend -->
-    <div v-if="loading">Cargando usuario...</div>
-    <!-- Si la petición tuvo éxito y hay un usuario autenticado -->
-    <div v-else-if="user">
-      <p>Hola, {{ user.username }} ({{ user.email }})</p>
-      <button @click="onLogout">Cerrar sesión</button>
-    </div>
-    <!-- Caso en que no haya usuario logueado (p.ej. sesión expirada) -->
-    <div v-else>
-      <p>No hay usuario logueado.</p>
-    </div>
+  <div>
+    <Hero />
   </div>
 </template>
 
@@ -26,15 +14,16 @@
 // Importamos `ref` para crear variables reactivas y `onMounted` para ejecutar código
 // cuando el componente se inserta en el DOM (similar a componentDidMount en React)
 import { ref, onMounted } from 'vue'
+import Hero from '../../components/hero/Hero.vue'
 // `getCurrentUser` obtiene los datos del usuario autenticado; `logout` cierra la sesión
-import { getCurrentUser, logout } from '../services/api'
+import { getCurrentUser } from '../../services/api'
 // `useRouter` permite navegar programáticamente entre rutas
 import { useRouter } from 'vue-router'
 
 // Estado reactivo del componente
 const user = ref(null)      // contendrá el objeto usuario cuando se cargue
 const loading = ref(true)   // indica si la petición al backend está en curso
-const router = useRouter()  // instancia del router para redirecciones
+const router = useRouter()  // router for navigation
 
 // Cuando el componente se monta, solicitamos al backend los datos del usuario actual
 onMounted(async () => {
@@ -50,23 +39,10 @@ onMounted(async () => {
 })
 
 // Cierra la sesión del usuario y lo redirige al login
-async function onLogout() {
-  await logout()
-  router.push('/login')
-}
+// Logout functionality moved to a dedicated view (LogoutView.vue)
 </script>
 
 <style scoped>
-.home-container {
-  max-width: 400px;
-  margin: 2rem auto;
-  padding: 2rem;
-  border-radius: 8px;
-
-  display: flex;
-  flex-direction: column; /* importante para que sea vertical */
-  align-items: center;   /* centra horizontalmente */
-}
 
 img{
   height: 300px;
