@@ -63,7 +63,12 @@ h4{
   font-family: "Anton";  font-size: 20px;
 }
 p,a,button{
-    font-family: Poppins, sans-serif; font-size: 20px; line-height: 12px; letter-spacing: 1.5px; font-weight: regular; color: #fff
+  font-family: Poppins, sans-serif;
+  font-size: 20px; 
+  line-height: 18px; 
+  letter-spacing: 1.5px; 
+  font-weight: 300; 
+  color: #9ca3af;
 }
 
 

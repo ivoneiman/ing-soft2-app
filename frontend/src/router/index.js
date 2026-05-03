@@ -8,6 +8,7 @@ import SobreNosotrosView from "../views/SobreNosotrosView.vue";
 import ConfiguracionView from "../views/ConfiguracionView.vue";
 import PagosView from "../views/PagosView.vue";
 import ReportesView from "../views/ReportesView.vue";
+import LogoutView from "../views/LogoutView.vue";
 
 const routes = [
   { path: "/login", name: "Login", component: LoginView },
@@ -18,6 +19,7 @@ const routes = [
   { path: "/configuracion", name: "Configuracion", component: ConfiguracionView },
   { path: "/pagos", name: "Pagos", component: PagosView },
   { path: "/reportes", name: "Reportes", component: ReportesView },
+  { path: "/logout", name: "Logout", component: LogoutView },
 ];
 
 const router = createRouter({
