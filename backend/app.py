@@ -1,131 +1,135 @@
-# Este módulo define la aplicación Flask que sirve como API REST para la autenticación de usuarios.
-# Configura la conexión a PostgreSQL mediante SQLAlchemy, gestiona sesiones con Flask‑Login y permite
-# el registro, inicio de sesión, cierre de sesión y consulta del usuario actual. Además habilita CORS
-# para que el frontend Vue (puerto 5173) pueda comunicarse con el backend (puerto 5000). Al ejecutarse
-# directamente, crea las tablas en la base de datos y arranca el servidor en modo debug.
+import os
+from dotenv import load_dotenv
 
-from flask import Flask, request, jsonify #Flask crea la aplicación web, request maneja las solicitudes entrantes y jsonify convierte respuestas a JSON
-from flask_login import LoginManager, login_user, login_required, logout_user, current_user #simplifica la gestión de sesiones y autenticación de usuarios
-from flask_cors import CORS #Permite que el frontend (en otro dominio/puerto) acceda a la API del backend sin problemas de CORS
-from dotenv import load_dotenv #Carga variables de entorno desde un archivo .env, útil para configurar cosas como la conexión a la base de datos sin hardcodear credenciales
-from models import db, User #Importa la instancia de SQLAlchemy (db) y el modelo de usuario (User) definidos en models.py
-import os #Permite acceder a variables de entorno y otras funcionalidades del sistema operativo
+from flask import Flask, request, jsonify, session
+from flask_cors import CORS
+from werkzeug.security import generate_password_hash, check_password_hash
 
+from models import db, User
+
+# Carga variables de entorno desde .env
 load_dotenv()
 
 app = Flask(__name__)
 
-import os
-from flask import Flask
-from flask_cors import CORS
+# ─── Configuración ────────────────────────────────────────────────────────────
 
-app = Flask(__name__)
-
-# ─── Configuración básica ─────────────────────────────────────────────
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 
-# ─── Configuración DB (Render) ────────────────────────────────────────
-uri = os.getenv("DATABASE_URL")
-
-if uri and uri.startswith("postgres://"):
-    uri = uri.replace("postgres://", "postgresql://", 1)
-
-app.config["SQLALCHEMY_DATABASE_URI"] = uri
+# Base de datos LOCAL SQLite
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-# ─── Cookies (necesario para Vercel + login) ─────────────────────────
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
-app.config["SESSION_COOKIE_SECURE"] = True
+# Inicializa extensiones
+db.init_app(app)
 
-# ─── CORS (permitir frontend en Vercel) ──────────────────────────────
+# CORS para frontend local Vue/Vite
 CORS(
     app,
     supports_credentials=True,
     origins=[
-        "https://ing-soft2-app.vercel.app"
+        "http://localhost:5173"
     ]
 )
 
-# ─── Extensiones ──────────────────────────────────────────────────────────────
-db.init_app(app)
+# ─── Crear tablas automáticamente ─────────────────────────────────────────────
 
-login_manager = LoginManager(app) # crea una instancia de LoginManager y la asocia con la aplicación Flask, lo que permite gestionar la autenticación de usuarios y las sesiones de manera sencilla
+with app.app_context():
+    db.create_all()
 
-@login_manager.user_loader # decorador que indica a Flask-Login cómo cargar un usuario a partir de su ID almacenado en la sesión, en este caso se consulta la base de datos usando SQLAlchemy para obtener el usuario correspondiente
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-# Flask-Login por defecto redirige a /login si no autenticado,
-# pero como usamos una API JSON, devolvemos 401
-@login_manager.unauthorized_handler
-def unauthorized():
-    return jsonify({"error": "No autenticado"}), 401
-
-
-# ─── Rutas de Auth ────────────────────────────────────────────────────────────
+# ─── Rutas API ────────────────────────────────────────────────────────────────
 
 @app.route("/api/register", methods=["POST"])
 def register():
-    data = request.get_json() # obtiene los datos enviados en el cuerpo de la solicitud POST como JSON, que deberían incluir username, email y password para registrar un nuevo usuario
-    # Validación básica: verifica que se hayan proporcionado los campos requeridos y que el email y username no estén ya registrados en la base de datos. 
-    if not data or not all(k in data for k in ("username", "email", "password")):
-        return jsonify({"error": "Faltan campos requeridos"}), 400
+    data = request.get_json()
 
-    if User.query.filter_by(email=data["email"]).first():
-        return jsonify({"error": "El email ya está registrado"}), 409
+    username = data.get("username")
+    email = data.get("email")
+    password = data.get("password")
 
-    if User.query.filter_by(username=data["username"]).first():
-        return jsonify({"error": "El username ya está en uso"}), 409
+    # Validaciones básicas
+    if not username or not email or not password:
+        return jsonify({"error": "Todos los campos son obligatorios"}), 400
 
-    #Si todo es correcto, crea un nuevo usuario, guarda su contraseña de forma segura (hashing) y lo agrega a la base de datos.
-    user = User(username=data["username"], email=data["email"])
-    user.set_password(data["password"])
+    # Verificar si ya existe el email
+    existing_user = User.query.filter_by(email=email).first()
 
-    db.session.add(user)
+    if existing_user:
+        return jsonify({"error": "El email ya está registrado"}), 400
+
+    # Crear usuario
+    hashed_password = generate_password_hash(password)
+
+    new_user = User(
+        username=username,
+        email=email
+    )
+
+    new_user.set_password(password)
+
+    db.session.add(new_user)
     db.session.commit()
 
-    #Luego inicia sesión automáticamente al nuevo usuario y devuelve una respuesta JSON con un mensaje de éxito y los datos del usuario registrado.
-    login_user(user)
-    return jsonify({"message": "Usuario creado", "user": user.to_dict()}), 201
+    return jsonify({"message": "Usuario registrado correctamente"}), 201
 
 
-# Igual que el registro, pero en este caso se valida que el email exista y que la contraseña coincida con la almacenada (usando hashing).
-# Si es correcto, inicia sesión al usuario y devuelve un mensaje de éxito junto con los datos del usuario.
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json()
 
-    if not data or not all(k in data for k in ("email", "password")):
-        return jsonify({"error": "Faltan campos requeridos"}), 400
+    email = data.get("email")
+    password = data.get("password")
 
-    user = User.query.filter_by(email=data["email"]).first()
+    user = User.query.filter_by(email=email).first()
 
-    if not user or not user.check_password(data["password"]):
-        return jsonify({"error": "Email o contraseña incorrectos"}), 401
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 401
 
-    login_user(user, remember=data.get("remember", False))
-    return jsonify({"message": "Login exitoso", "user": user.to_dict()})
+    if not user.check_password(password):
+        return jsonify({"error": "Contraseña incorrecta"}), 401
 
-# Cierre de sesión, que requiere que el usuario esté autenticado (gracias a @login_required). Al cerrar sesión, se devuelve un mensaje de éxito.
+    # Guardar sesión
+    session["user_id"] = user.id
+
+    return jsonify({
+        "message": "Login exitoso",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email
+        }
+    }), 200
+
+
 @app.route("/api/logout", methods=["POST"])
-@login_required
 def logout():
-    logout_user()
-    return jsonify({"message": "Logout exitoso"})
+    session.clear()
+
+    return jsonify({"message": "Sesión cerrada"}), 200
 
 
 @app.route("/api/me", methods=["GET"])
-@login_required
 def me():
-    return jsonify({"user": current_user.to_dict()})
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify({"error": "No autenticado"}), 401
+
+    user = User.query.get(user_id)
+
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    return jsonify({
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email
+        }
+    }), 200
 
 
+# ─── Run ──────────────────────────────────────────────────────────────────────
 
-# ─── Inicialización ───────────────────────────────────────────────────────────
-# Esto es lo que se ejecuta si corremos este archivo directamente (python app.py).
-# Crea las tablas en la base de datos (si no existen) y arranca el servidor Flask en modo debug en el puerto 5000.
 if __name__ == "__main__":
-    with app.app_context():
-        db.create_all()
-        print("✅ Tablas creadas / verificadas")
-    app.run(debug=True, port=5000)
+    app.run(debug=True)

@@ -18,12 +18,10 @@ import Hero from '../../components/hero/Hero.vue'
 // `getCurrentUser` obtiene los datos del usuario autenticado; `logout` cierra la sesión
 import { getCurrentUser } from '../../services/api'
 // `useRouter` permite navegar programáticamente entre rutas
-import { useRouter } from 'vue-router'
 
 // Estado reactivo del componente
 const user = ref(null)      // contendrá el objeto usuario cuando se cargue
 const loading = ref(true)   // indica si la petición al backend está en curso
-const router = useRouter()  // router for navigation
 
 // Cuando el componente se monta, solicitamos al backend los datos del usuario actual
 onMounted(async () => {
@@ -31,8 +29,9 @@ onMounted(async () => {
     const response = await getCurrentUser()
     user.value = response.data.user
   } catch (err) {
-    // Si la petición falla (p.ej. sesión inexistente), redirigimos al login
-    router.push('/login')
+    // Si la petición falla (p.ej. sesión inexistente), simplemente no hacemos nada.
+    // Se podría mostrar un mensaje o manejar el error de otra forma.
+    user.value = null
   } finally {
     loading.value = false // finalizamos el indicador de carga
   }
