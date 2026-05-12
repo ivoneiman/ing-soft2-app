@@ -33,6 +33,12 @@ if uri and uri.startswith("postgres://"):
 app.config["SQLALCHEMY_DATABASE_URI"] = uri
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "connect_args": {
+        "sslmode": "require"
+    }
+}
+
 # ─── Cookies (necesario para Vercel + login) ─────────────────────────
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 app.config["SESSION_COOKIE_SECURE"] = True
@@ -42,10 +48,12 @@ CORS(
     app,
     supports_credentials=True,
     origins=[
+        "http://localhost:5173",
         "https://ing-soft2-app.vercel.app"
     ]
 )
 
+print(os.getenv("DATABASE_URL"))
 # ─── Extensiones ──────────────────────────────────────────────────────────────
 db.init_app(app)
 
