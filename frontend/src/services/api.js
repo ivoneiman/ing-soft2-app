@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = "https://ing-soft2-backend.onrender.com/api";
+const API_URL = "http://localhost:5000/api";
 console.log("API_URL EN PRODUCCION:", API_URL);
 
 export function register({ username, email, password }) {
