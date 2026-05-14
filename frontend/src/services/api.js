@@ -18,3 +18,12 @@ export function logout() {
 export function getCurrentUser() {
   return axios.get(`${API_URL}/me`, { withCredentials: true });
 }
+
+// Registro de asistencia (user_id y class_id)
+export function registerAttendance({ user_id, class_id }) {
+  return axios.post(
+    `${API_URL}/attendance/register`,
+    { user_id, class_id },
+    { withCredentials: true }
+  );
+}

@@ -69,13 +69,53 @@ async function onSubmit() {
   padding: 2rem;
   border: 1px solid #eee;
   border-radius: 8px;
+  background: white;
 }
+
 .error {
   color: red;
   margin-top: 1rem;
 }
+
 .link-text {
   margin-top: 1rem;
   text-align: center;
+}
+
+/* ==========================================
+   MEDIA QUERIES - TABLET (1024px)
+   ========================================== */
+
+@media (max-width: 1024px) {
+  .login-container {
+    max-width: 350px;
+    margin: 1.5rem auto;
+    padding: 1.5rem;
+  }
+}
+
+/* ==========================================
+   MEDIA QUERIES - MOBILE (768px)
+   ========================================== */
+
+@media (max-width: 768px) {
+  .login-container {
+    max-width: 100%;
+    margin: 1rem;
+    padding: 1.5rem;
+    border: none;
+    border-radius: 12px;
+  }
+}
+
+/* ==========================================
+   MEDIA QUERIES - PEQUEÑOS MÓVILES (480px)
+   ========================================== */
+
+@media (max-width: 480px) {
+  .login-container {
+    margin: 0.5rem;
+    padding: 1rem;
+  }
 }
 </style>

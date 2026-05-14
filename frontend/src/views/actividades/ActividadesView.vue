@@ -11,4 +11,6 @@
 
 <style scoped>
 .view { padding: 24px; }
+
+
 </style>

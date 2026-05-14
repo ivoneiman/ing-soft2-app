@@ -6,6 +6,8 @@ from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from models import db, User
+# Importar nuevos modelos
+from models import Class, Enrollment, Attendance
 
 # Carga variables de entorno desde .env
 load_dotenv()
@@ -96,7 +98,8 @@ def login():
         "user": {
             "id": user.id,
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "role": user.role
         }
     }), 200
 
@@ -124,7 +127,8 @@ def me():
         "user": {
             "id": user.id,
             "username": user.username,
-            "email": user.email
+            "email": user.email,
+            "role": user.role
         }
     }), 200
 
@@ -133,3 +137,56 @@ def me():
 
 if __name__ == "__main__":
     app.run(debug=True)
+
+# ---------------------------------------------------------------------------
+# Endpoint para registrar asistencia mediante QR
+# ---------------------------------------------------------------------------
+
+@app.route("/api/attendance/register", methods=["POST"])
+def register_attendance():
+    """Registra la asistencia de un usuario a una clase.
+    Se espera un JSON con ``user_id`` y ``class_id``.
+    Validaciones:
+    * El usuario debe existir.
+    * La clase debe existir.
+    * El usuario debe estar inscrito a la clase (Enrollment).
+    * No debe existir una asistencia previa para esa combinación.
+    """
+    data = request.get_json() or {}
+    user_id = data.get("user_id")
+    class_id = data.get("class_id")
+
+    # Validación básica de presencia
+    if not user_id or not class_id:
+        return jsonify({"error": "user_id y class_id son requeridos"}), 400
+
+    # Verificar existencia de usuario y clase
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Usuario inexistente"}), 404
+
+    class_obj = Class.query.get(class_id)
+    if not class_obj:
+        return jsonify({"error": "Clase inexistente"}), 404
+
+    # Verificar inscripción
+    enrollment = Enrollment.query.filter_by(user_id=user_id, class_id=class_id).first()
+    if not enrollment:
+        return jsonify({"error": "Usuario no está inscrito a la clase"}), 403
+
+    # Evitar duplicados de asistencia
+    existing = Attendance.query.filter_by(user_id=user_id, class_id=class_id).first()
+    if existing:
+        return jsonify({"error": "Asistencia ya registrada"}), 409
+
+    # Registrar asistencia
+    new_attendance = Attendance(user_id=user_id, class_id=class_id)
+    db.session.add(new_attendance)
+    db.session.commit()
+
+    return jsonify({"message": "Asistencia registrada correctamente", "attendance": {
+        "id": new_attendance.id,
+        "user_id": new_attendance.user_id,
+        "class_id": new_attendance.class_id,
+        "created_at": new_attendance.created_at.isoformat()
+    }}), 201

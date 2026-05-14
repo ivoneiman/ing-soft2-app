@@ -32,16 +32,14 @@
   position: relative;
   height: 100vh;
   width: 100%;
-
   display: flex;
   align-items: center;
-
   padding-left: 80px;
-  padding-top: 100px; /* 🔥 para que no quede debajo del navbar */
-
-  background-image: url('/hero-background.jpg'); 
+  padding-top: 100px;
+  background-image: url('/hero-background.jpg');
   background-size: cover;
   background-position: center;
+  overflow: hidden;
 }
 
 /* Overlay violeta */
@@ -59,6 +57,7 @@
   max-width: 600px;
   color: white;
   background-color: transparent;
+  padding-right: 20px;
 }
 
 /* Título */
@@ -74,6 +73,7 @@
   font-size: 16px;
   color: rgba(255, 255, 255, 0.7);
   margin-bottom: 30px;
+  max-width: 90%;
 }
 
 /* Botones */
@@ -81,6 +81,7 @@
   display: flex;
   gap: 16px;
   background-color: transparent;
+  flex-wrap: wrap;
 }
 
 .btn-primary {
@@ -91,7 +92,7 @@
   color: white;
   font-weight: 600;
   cursor: pointer;
-  font-weight: 600;
+  transition: background 0.3s ease;
 }
 
 .btn-primary:hover {
@@ -99,17 +100,129 @@
 }
 
 .btn-secondary {
-  padding: 24px 28px;
+  padding: 14px 28px;
   background: rgba(255, 255, 255, 0.301);
   border: 1px solid transparent;
   border-radius: 8px;
   color: white;
   font-weight: 600;
   cursor: pointer;
-  font-weight: 600;
+  transition: background 0.3s ease;
 }
 
 .btn-secondary:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* ==========================================
+   MEDIA QUERIES - TABLET (1024px)
+   ========================================== */
+
+@media (max-width: 1024px) {
+  .hero {
+    padding-left: 40px;
+    padding-top: 80px;
+  }
+
+  .hero-title {
+    font-size: 60px;
+  }
+
+  .hero-subtitle {
+    font-size: 14px;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+}
+
+/* ==========================================
+   MEDIA QUERIES - MOBILE (768px)
+   ========================================== */
+
+@media (max-width: 768px) {
+  .hero {
+    height: 100vh;
+    min-height: 500px;
+    padding-left: 20px;
+    padding-top: 80px;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hero-content {
+    max-width: 100%;
+    text-align: center;
+    padding-right: 20px;
+    padding-left: 0;
+  }
+
+  .hero-title {
+    font-size: 40px;
+    line-height: 1.2;
+    margin-bottom: 16px;
+  }
+
+  .hero-subtitle {
+    font-size: 13px;
+    margin-bottom: 24px;
+    max-width: 100%;
+  }
+
+  .hero-buttons {
+    justify-content: center;
+    gap: 12px;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    padding: 10px 16px;
+    font-size: 12px;
+    flex: 1;
+    max-width: 150px;
+  }
+}
+
+/* ==========================================
+   MEDIA QUERIES - PEQUEÑOS MÓVILES (480px)
+   ========================================== */
+
+@media (max-width: 480px) {
+  .hero {
+    padding-left: 0;
+    padding-top: 70px;
+    min-height: 400px;
+  }
+
+  .hero-content {
+    padding: 16px;
+    max-width: 100%;
+  }
+
+  .hero-title {
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+
+  .hero-subtitle {
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+
+  .hero-buttons {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .btn-primary,
+  .btn-secondary {
+    width: 100%;
+    max-width: none;
+    padding: 12px 16px;
+    font-size: 12px;
+  }
 }
 </style>
