@@ -42,9 +42,40 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+img {
+  max-width: 300px;
+  height: auto;
+  width: 100%;
+  object-fit: cover;
+}
 
-img{
-  height: 300px;
-  width: 300px;
+/* ==========================================
+   MEDIA QUERIES - TABLET (1024px)
+   ========================================== */
+
+@media (max-width: 1024px) {
+  img {
+    max-width: 250px;
+  }
+}
+
+/* ==========================================
+   MEDIA QUERIES - MOBILE (768px)
+   ========================================== */
+
+@media (max-width: 768px) {
+  img {
+    max-width: 200px;
+  }
+}
+
+/* ==========================================
+   MEDIA QUERIES - PEQUEÑOS MÓVILES (480px)
+   ========================================== */
+
+@media (max-width: 480px) {
+  img {
+    max-width: 150px;
+  }
 }
 </style>

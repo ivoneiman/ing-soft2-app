@@ -40,10 +40,9 @@ export const authStore = reactive({
     this.loading = true
     this.error = null
     try {
-      const res = await register({ username, email, password })
-      this.user = res.data.user
-      this.isLoggedIn = true
-      return true
+      await register({ username, email, password })
+      // Después de registrar, hacer login automático
+      return await this.login(email, password)
     } catch (err) {
       this.error = err.response?.data?.error || 'Error al registrarse'
       return false

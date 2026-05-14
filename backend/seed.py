@@ -12,11 +12,22 @@ with app.app_context():
     User.query.delete()
     db.session.commit()
 
-    # Crear usuario de prueba
-    user = User(username="testuser", email="test@example.com")
-    user.set_password("password123")
-    db.session.add(user)
-    db.session.flush()  # Para obtener el ID antes del commit
-
+    # Crear usuarios de prueba con diferentes roles
+    admin = User(username="admin", email="admin@test.com", role="admin")
+    admin.set_password("admin123")
+    db.session.add(admin)
     
-    print(f"   Usuario: test@example.com / password123")
+    employee = User(username="employee", email="employee@test.com", role="employee")
+    employee.set_password("employee123")
+    db.session.add(employee)
+    
+    client = User(username="client", email="client@test.com", role="client")
+    client.set_password("client123")
+    db.session.add(client)
+    
+    db.session.commit()
+
+    print("✓ Usuarios de prueba creados:")
+    print("   ADMIN: admin@test.com / admin123")
+    print("   EMPLOYEE: employee@test.com / employee123")
+    print("   CLIENT: client@test.com / client123")

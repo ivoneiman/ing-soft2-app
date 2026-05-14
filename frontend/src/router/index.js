@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from "vue-router";
+import { authStore } from "../services/authStore";
+import { roleHelpers } from "../utils/roleHelpers";
 
 // layouts
 import MainLayout from "../layouts/MainLayout.vue";
@@ -16,6 +18,8 @@ const SobreNosotrosView = () => import("../views/sobre-nosotros/SobreNosotrosVie
 const ConfiguracionView = () => import("../views/configuracion/ConfiguracionView.vue");
 const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
+const MyQrView = () => import("../views/actividades/MyQrView.vue");
+const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
 
 const routes = [
   // 🔵 Layout principal (con navbar)
@@ -42,17 +46,32 @@ const routes = [
         path: "configuracion",
         name: "Configuracion",
         component: ConfiguracionView,
+        meta: { requiresAuth: true, requiresAdmin: true }
       },
       {
         path: "pagos",
         name: "Pagos",
         component: PagosView,
+        meta: { requiresAuth: true, requiresAdmin: true }
       },
       {
         path: "reportes",
         name: "Reportes",
         component: ReportesView,
+        meta: { requiresAuth: true, requiresAdmin: true }
       },
+      {
+        path: "mi-qr",
+        name: "MiQr",
+        component: MyQrView,
+        meta: { requiresAuth: true, requiresClient: true }
+      },
+      {
+        path: "pasar-asistencia",
+        name: "PasarAsistencia",
+        component: ScanQrView,
+        meta: { requiresAuth: true, requiresEmployee: true }
+      }
     ],
   },
 
@@ -83,6 +102,43 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+});
+
+/**
+ * Guard de navegación global
+ * Valida:
+ * - requiresAuth: usuario debe estar autenticado
+ * - requiresAdmin: usuario debe ser admin
+ * - requiresEmployee: usuario debe ser employee
+ * - requiresClient: usuario debe ser client
+ */
+router.beforeEach(async (to, from, next) => {
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin);
+  const requiresEmployee = to.matched.some(record => record.meta.requiresEmployee);
+  const requiresClient = to.matched.some(record => record.meta.requiresClient);
+
+  // Si no está autenticado y la ruta lo requiere, redirigir a login
+  if (requiresAuth && !roleHelpers.isAuthenticated()) {
+    return next('/login');
+  }
+
+  // Validar rol admin
+  if (requiresAdmin && !roleHelpers.isAdmin()) {
+    return next('/');
+  }
+
+  // Validar rol employee
+  if (requiresEmployee && !roleHelpers.isEmployee()) {
+    return next('/');
+  }
+
+  // Validar rol client
+  if (requiresClient && !roleHelpers.isClient()) {
+    return next('/');
+  }
+
+  next();
 });
 
 export default router;
