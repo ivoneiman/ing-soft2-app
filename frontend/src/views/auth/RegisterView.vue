@@ -34,11 +34,8 @@
 </template>
 
 <script setup>
-// Importamos `ref` para crear variables reactivas (similares a state en React)
 import { ref } from 'vue'
-// `register` es una función que envía una petición POST a la API backend
 import { register } from '../../services/api'
-// `RouterLink` permite crear enlaces internos sin recargar la página (SPA navigation)
 import { RouterLink } from 'vue-router'
 
 // Variables reactivas que almacenan los valores del formulario y el estado UI
@@ -49,26 +46,44 @@ const error = ref('')       // mensaje de error a mostrar
 const success = ref('')     // mensaje de éxito a mostrar
 const loading = ref(false)  // indica si la petición está en curso
 
-// Función que se ejecuta al enviar el formulario
-// Maneja el envío del formulario
+/**
+ * Maneja el envío del formulario de registro.
+ * Se añaden validaciones simples para mejorar la claridad de los mensajes de error.
+ */
 async function onSubmit() {
   // Reiniciamos mensajes de estado
   error.value = ''
   success.value = ''
+
+  // Validaciones básicas de campos obligatorios
+  if (!username.value.trim() || !email.value.trim() || !password.value.trim()) {
+    error.value = 'Debe completar todos los campos'
+    return
+  }
+  // Validación de longitud mínima de contraseña
+  if (password.value.length < 6) {
+    error.value = 'La contraseña debe tener al menos 6 caracteres'
+    return
+  }
+
   loading.value = true // muestra spinner / deshabilita botón
   try {
-    // Llamamos a la API de registro con los datos del formulario
     await register({ username: username.value, email: email.value, password: password.value })
-    // Si la petición es exitosa, informamos al usuario y limpiamos los campos
     success.value = 'Usuario creado correctamente. Ya puedes iniciar sesión.'
     username.value = ''
     email.value = ''
     password.value = ''
   } catch (err) {
-    // En caso de error, mostramos el mensaje del backend o un fallback genérico
-    error.value = err.response?.data?.error || 'Error al registrar usuario'
+    if (err.response?.data?.error) {
+      // Mensaje específico del backend (p.ej., email ya registrado)
+      error.value = err.response.data.error
+    } else if (!err.response) {
+      error.value = 'No se pudo conectar con el servidor'
+    } else {
+      error.value = 'Error al registrar usuario'
+    }
   } finally {
-    loading.value = false // vuelve a habilitar el botón
+    loading.value = false
   }
 }
 </script>

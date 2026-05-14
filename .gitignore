@@ -3,16 +3,34 @@ __pycache__/
 *.py[cod]
 *.pyo
 venv/
+env/
 .env
+*.egg-info/
+
+# Base de datos (siempre generada por seed.py)
+*.db
+*.sqlite
+*.sqlite3
 
 # Node
 node_modules/
 dist/
 .DS_Store
 
-# Editor
+# IDE / Editor
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # Logs
 *.log
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporales
+tmp/
+temp/
