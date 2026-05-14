@@ -1,103 +1,320 @@
-# Demo IS2 — Flask + Vue.js + PostgreSQL
+# INGE2-APP — Flask + Vue.js + SQLite (QR Attendance System)
 
-Proyecto demo con autenticación de usuarios.
+Sistema de gestión de asistencia mediante códigos QR con autenticación de usuarios.
 
 ## Stack
-- **Backend:** Python + Flask + Flask-Login + SQLAlchemy
+- **Backend:** Python + Flask + SQLAlchemy (SQLite)
 - **Frontend:** Vue 3 + Vue Router + Axios
-- **DB:** PostgreSQL
+- **QR:** qrcode.vue + html5-qrcode
+- **Autenticación:** Flask-Login + SessionHTTP
 
 ---
 
-### Cómo levantar la app en localhost
-- **Posicionarte en la raíz**: y ejecutar en la terminal: cd backend -> Luego: `venv\Scripts\activate` y `python app.py`
-- **Abrir otra terminal**: cd frontend -> npm run dev
+## Setup Rápido
 
----
+### Opción 1: Script Automático (Recomendado para Windows)
 
-## ⚙️ Setup del backend
-
-### 1. Crear y activar entorno virtual
 ```bash
-cd backend
-python -m venv venv
-
-# Linux / Mac
-source venv/bin/activate
-
-# Windows
-venv\Scripts\activate
-```
-
-### 2. Instalar dependencias
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configurar variables de entorno
-```bash
-cp .env.example .env
-# Editá .env con tu contraseña de PostgreSQL
-```
-
-El archivo `.env` tiene que quedar así:
-```
-DATABASE_URL=postgresql+psycopg://postgres:TU_PASSWORD@localhost:5432/demo_db
-```
-
-### 4. Crear la base de datos en PostgreSQL
-```bash
-psql -U postgres
-```
-```sql
-CREATE DATABASE demo_db;
-\q
-```
-
-### 5. Levantar el servidor
-```bash
-python app.py
-```
-
-✅ El backend crea las tablas automáticamente al arrancar.  
-✅ Disponible en http://localhost:5000
-
----
-
-## 🖥️ Setup del frontend
-
-### 1. Instalar dependencias
-```bash
-cd frontend
-npm install
-```
-
-### 2. Levantar el servidor de desarrollo
-```bash
+# En la raíz del proyecto
+git clone <repo-url>
+cd ing-soft2-app
+python backend/seed.py
+cd frontend && npm install
 npm run dev
 ```
 
-✅ Disponible en http://localhost:5173  
-✅ Las llamadas a `/api` se redirigen automáticamente al backend (configurado en `vite.config.js`)
+En otra terminal:
+```bash
+cd backend
+pip install -r requirements.txt
+python app.py
+```
+
+### Opción 2: Paso a Paso
+
+#### Backend
+
+```bash
+# 1. Ir al directorio del backend
+cd backend
+
+# 2. Crear entorno virtual (solo la primera vez)
+python -m venv venv
+
+# 3. Activar entorno virtual
+# Windows:
+venv\Scripts\activate
+# Linux/Mac:
+source venv/bin/activate
+
+# 4. Instalar dependencias
+pip install -r requirements.txt
+
+# 5. Crear base de datos y datos de prueba
+python seed.py
+
+# 6. Levantar servidor (debería mostrar "Running on http://localhost:5000")
+python app.py
+```
+
+#### Frontend (en otra terminal)
+
+```bash
+# 1. Ir al directorio del frontend
+cd frontend
+
+# 2. Instalar dependencias
+npm install
+
+# 3. Levantar servidor (debería abrir en http://localhost:5173)
+npm run dev
+```
 
 ---
 
-## 📁 Estructura del proyecto
+## Validar Setup
+
+Si todo funciona correctamente deberías ver:
+
+✅ **Backend**: "Running on http://localhost:5000"
+✅ **Frontend**: "Local: http://localhost:5173"
+✅ **Base de datos**: archivo `backend/app.db` creado
+✅ **Seed**: mensaje "✅ SEED COMPLETADO EXITOSAMENTE"
+
+---
+
+## Credenciales de Prueba (después de ejecutar `seed.py`)
+
+Usa cualquiera de estas cuentas para testear:
+
+| Email | Contraseña | Rol |
+|-------|-----------|-----|
+| admin@test.com | admin123 | admin |
+| employee@test.com | employee123 | employee |
+| client@test.com | client123 | client |
+
+---
+
+## Datos de Prueba Incluidos
+
+Al ejecutar `seed.py` se crean automáticamente:
+
+- ✓ **3 usuarios** con diferentes roles (admin, employee, client)
+- ✓ **3 clases** de ejemplo (Ingeniería de Software 2, Programación Avanzada, Bases de Datos)
+- ✓ **Enrollments** (inscripciones de usuarios a clases)
+- ✓ Sistema de **asistencia mediante QR** listo para usar
+
+---
+
+## Flujo de Funcionalidades
+
+### 1. Autenticación
+- Login/Logout
+- Registro de nuevos usuarios
+- Roles basados en acceso
+
+### 2. Clases
+- Ver clases disponibles
+- Inscribirse a clases
+- Ver mis inscripciones
+
+### 3. Asistencia por QR
+- Generar código QR para clase
+- Escanear código QR para marcar asistencia
+- Ver historial de asistencias
+
+### 4. Dashboard
+- Panel personalizado por rol
+- Estadísticas de asistencia
+- Información del usuario
+
+---
+
+## Estructura del Proyecto
+
 ```
-proyecto-demo/
+ing-soft2-app/
 ├── backend/
-│   ├── app.py          ← Rutas y configuración de Flask
-│   ├── models.py       ← Modelo SQLAlchemy (User)
-│   ├── requirements.txt
-│   └── .env.example
-└── frontend/
-    ├── src/
-    │   ├── App.vue             ← Componente raíz
-    │   ├── main.js             ← Entry point
-    │   ├── router/
-    │   │   └── index.js        ← Rutas de login y registro
-    │   ├── services/
-    │   │   └── api.js          ← Axios + funciones de API
+│   ├── app.py                  ← Servidor Flask + rutas API
+│   ├── models.py               ← Modelos SQLAlchemy (User, Class, Enrollment, Attendance)
+│   ├── seed.py                 ← Datos de prueba (IMPORTANTE)
+│   ├── requirements.txt         ← Dependencias Python
+│   ├── .env.example            ← Variables de entorno de ejemplo
+│   ├── app.db                  ← Base de datos SQLite (generada al ejecutar seed.py)
+│   └── instance/
+│
+├── frontend/
+│   ├── package.json            ← Dependencias Node.js
+│   ├── vite.config.js          ← Configuración Vite
+│   ├── index.html              ← Entry point HTML
+│   ├── src/
+│   │   ├── App.vue             ← Componente raíz
+│   │   ├── main.js             ← Entry point
+│   │   ├── router/
+│   │   │   └── index.js        ← Rutas (login, dashboard, etc)
+│   │   ├── views/
+│   │   │   ├── auth/           ← LoginView, RegisterView
+│   │   │   ├── dashboard/      ← DashboardView
+│   │   │   ├── actividades/    ← QR scanner y generador
+│   │   │   └── ...
+│   │   ├── components/         ← Componentes reutilizables
+│   │   ├── services/
+│   │   │   ├── api.js          ← Cliente HTTP (axios)
+│   │   │   └── authStore.js    ← Autenticación
+│   │   └── utils/
+│   │       └── roleHelpers.js  ← Utilidades de roles
+│   │
+│   └── public/
+│       └── robots.txt
+│
+├── docs/                        ← Documentación del proyecto
+│   ├── epicas-historias-usuario/
+│   ├── flujo-trabajo/
+│   └── uml/
+│
+└── README.md                    ← Este archivo
+```
+
+---
+
+## Troubleshooting (problemas)
+
+### Backend no levanta
+
+**Error: "ModuleNotFoundError: No module named 'flask'"**
+```bash
+# Solución: Asegurar que el venv está activado
+venv\Scripts\activate  # Windows
+source venv/bin/activate  # Linux/Mac
+
+# Reinstalar dependencias
+pip install -r requirements.txt
+```
+
+**Error: "Address already in use :5000"**
+```bash
+# Puerto ya está en uso. Matar el proceso o usar otro puerto:
+python app.py --port 5001
+```
+
+### Frontend no levanta
+
+**Error: "npm: command not found"**
+```bash
+# Solución: Instalar Node.js desde https://nodejs.org/
+# Luego en terminal nueva:
+npm install
+npm run dev
+```
+
+**Error: "Cannot GET /api/..."**
+```bash
+# Solución: Verificar que backend está corriendo en http://localhost:5000
+# El frontend redirige /api a http://localhost:5000/api automáticamente
+```
+
+### Base de datos no se crea
+
+**Error: "No module named 'app'"**
+```bash
+# Solución: Asegurar estar en directorio backend/
+cd backend
+python seed.py
+```
+
+**Error: "UNIQUE constraint failed"**
+```bash
+# Solución: Base de datos existe con datos previos
+# Opción 1: Borrar app.db y ejecutar seed.py nuevamente
+# Opción 2: Ejecutar seed.py nuevamente (es idempotente, no duplica datos)
+```
+
+---
+
+## Variables de Entorno
+
+Crear archivo `.env` en `backend/` basado en `.env.example`:
+
+```bash
+# backend/.env
+SECRET_KEY=dev-secret-key
+CORS_ORIGINS=http://localhost:5173
+ENVIRONMENT=development
+```
+
+En producción, cambiar valores por seguros.
+
+---
+
+## APIs Backend Principales
+
+### Autenticación
+- `POST /api/login` - Login de usuario
+- `POST /api/logout` - Logout
+- `POST /api/register` - Registro de usuario
+- `GET /api/me` - Obtener usuario actual
+
+### Clases y Asistencia
+- `POST /api/attendance/register` - Registrar asistencia (QR)
+- `GET /api/classes` - Listar clases (a implementar)
+- `GET /api/enrollments` - Listar inscripciones (a implementar)
+
+Ver `backend/app.py` para documentación completa de endpoints.
+
+---
+
+## 📝 Comandos Útiles
+
+```bash
+# Limpiar base de datos (ejecutar seed.py nuevamente)
+rm backend/app.db
+python backend/seed.py
+
+# Ver logs del backend en tiempo real
+python backend/app.py  # Ya está en modo debug
+
+# Actualizar dependencias
+pip install -r requirements.txt --upgrade
+npm update
+
+# Verificar versiones instaladas
+python --version
+node --version
+npm --version
+```
+
+---
+
+## Contribuir
+
+Antes de commitear cambios:
+
+1. ✅ Verificar que `seed.py` funciona correctamente
+2. ✅ Verificar que backend y frontend levantan sin errores
+3. ✅ Tester con datos de prueba incluidos
+4. ✅ Actualizar `.env.example` si agregas nuevas variables
+
+---
+
+## 📄 Licencia
+
+Proyecto educativo - INGE2 (Ingeniería de Software 2)
+
+---
+
+## Ayuda
+
+Si encontras problemas:
+
+1. **Revisar este README** - Probablemente la solución está en "Troubleshooting"
+2. **Revisar logs de error** - Terminal muestra información del error
+3. **Ejecutar seed.py nuevamente** - Crea datos faltantes automáticamente
+4. **Borrar app.db y comenzar de nuevo** - Último recurso para limpiar estado
+
+---
+
+**Última actualización:** Mayo 2024
+
     │   └── views/
     │       ├── LoginView.vue
     │       └── RegisterView.vue

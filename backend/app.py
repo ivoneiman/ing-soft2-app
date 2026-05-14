@@ -18,8 +18,12 @@ app = Flask(__name__)
 
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 
-# Base de datos LOCAL SQLite
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///app.db"
+# Base de datos: SQLite por defecto (desarrollo local)
+# Configurable desde variable de entorno SQLALCHEMY_DATABASE_URI
+# Ejemplos:
+#   - SQLite (local):       sqlite:///app.db
+#   - PostgreSQL (remoto):  postgresql://user:pass@host:5432/db
+app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///app.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 # Inicializa extensiones

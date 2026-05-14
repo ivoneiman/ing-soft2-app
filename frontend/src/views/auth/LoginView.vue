@@ -31,9 +31,7 @@
 <script setup>
 // Importamos `ref` para crear variables reactivas (similar a state en React)
 import { ref } from 'vue'
-// `login` envía una petición POST a la API backend con email y contraseña
 import { login } from '../../services/api'
-// `RouterLink` permite crear enlaces internos sin recargar la página (SPA navigation)
 import { RouterLink } from 'vue-router'
 
 // Variables reactivas que almacenan los valores del formulario y el estado UI
@@ -42,20 +40,34 @@ const password = ref('')   // contraseña ingresada
 const error = ref('')      // mensaje de error a mostrar
 const loading = ref(false) // indica si la petición está en curso
 
-// Función que se ejecuta al enviar el formulario
-// Maneja el envío del formulario de login
+/**
+ * Maneja el envío del formulario de login.
+ * Se añaden validaciones simples para mejorar la claridad de los mensajes de error.
+ */
 async function onSubmit() {
   // Reiniciamos el mensaje de error y marcamos carga
   error.value = ''
+  // Validación de campos obligatorios
+  if (!email.value.trim() || !password.value.trim()) {
+    error.value = 'Debe completar todos los campos'
+    return
+  }
   loading.value = true
   try {
-    // Llamamos a la API de login con los datos del formulario
     await login({ email: email.value, password: password.value })
-    // Si la autenticación es exitosa, redirigimos al home (puedes cambiar la ruta)
+    // Redirigir al home después del login exitoso
     window.location.href = '/' // O usa router.push si tienes rutas protegidas
   } catch (err) {
-    // En caso de error, mostramos el mensaje del backend o un fallback genérico
-    error.value = err.response?.data?.error || 'Error al iniciar sesión'
+    // Si el backend devuelve un mensaje específico, lo reutilizamos
+    if (err.response?.data?.error) {
+      error.value = err.response.data.error
+    } else if (!err.response) {
+      // No hay respuesta, probablemente problema de red
+      error.value = 'No se pudo conectar con el servidor'
+    } else {
+      // Mensaje genérico por credenciales incorrectas u otro error
+      error.value = 'Email o contraseña incorrectos'
+    }
   } finally {
     loading.value = false // vuelve a habilitar el botón
   }
@@ -69,7 +81,6 @@ async function onSubmit() {
   padding: 2rem;
   border: 1px solid #eee;
   border-radius: 8px;
-  background: white;
 }
 
 .error {
