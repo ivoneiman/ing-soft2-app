@@ -19,6 +19,18 @@ export function getCurrentUser() {
   return axios.get(`${API_URL}/me`, { withCredentials: true });
 }
 
+export function getActivities() {
+  return axios.get(`${API_URL}/actividades`, { withCredentials: true });
+}
+
+export function createClass({ activity_id, date, time }) {
+  return axios.post(
+    `${API_URL}/classes`,
+    { activity_id, date, time },
+    { withCredentials: true }
+  );
+}
+
 // Registro de asistencia (user_id y class_id)
 export function registerAttendance({ user_id, class_id }) {
   return axios.post(

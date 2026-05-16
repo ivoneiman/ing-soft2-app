@@ -3,8 +3,10 @@ Script para poblar la base de datos con datos de prueba.
 Crea tablas, usuarios, clases y enrollments de forma idempotente.
 Correr con: python seed.py
 """
+from datetime import datetime
+
 from app import app
-from models import db, User, Class, Enrollment, Attendance
+from models import db, User, Class, Enrollment, Attendance, Actividades
 
 
 def user_exists(email):
@@ -12,9 +14,34 @@ def user_exists(email):
     return User.query.filter_by(email=email).first() is not None
 
 
-def class_exists(name):
-    """Verifica si una clase ya existe por nombre."""
-    return Class.query.filter_by(name=name).first() is not None
+def class_exists(name, fecha_hora, actividad_id):
+    """Verifica si una clase ya existe por nombre, fecha y actividad."""
+    return (
+        Class.query.filter_by(
+            name=name,
+            fecha_hora=fecha_hora,
+            id_actividad=actividad_id,
+        ).first()
+        is not None
+    )
+
+
+def actividad_exists(name):
+    """Verifica si una actividad ya existe por nombre."""
+    return Actividades.query.filter_by(name=name).first() is not None
+
+
+def create_test_actividad(name):
+    """Crea una actividad si no existe."""
+    if actividad_exists(name):
+        print(f"   ⊘ Actividad '{name}' ya existe, omitiendo...")
+        return Actividades.query.filter_by(name=name).first()
+
+    actividad = Actividades(name=name)
+    db.session.add(actividad)
+    db.session.flush()
+    print(f"   ✓ Actividad creada: {name}")
+    return actividad
 
 
 def enrollment_exists(user_id, class_id):
@@ -36,13 +63,19 @@ def create_test_user(username, email, password, role="client"):
     return user
 
 
-def create_test_class(name):
+def create_test_class(name, fecha_hora, actividad):
     """Crea una clase si no existe."""
-    if class_exists(name):
+    if class_exists(name, fecha_hora, actividad.id):
         print(f"   ⊘ Clase '{name}' ya existe, omitiendo...")
-        return Class.query.filter_by(name=name).first()
-    
-    class_obj = Class(name=name)
+        return (
+            Class.query.filter_by(
+                name=name,
+                fecha_hora=fecha_hora,
+                id_actividad=actividad.id,
+            ).first()
+        )
+
+    class_obj = Class(name=name, fecha_hora=fecha_hora, id_actividad=actividad.id)
     db.session.add(class_obj)
     db.session.flush()  # Para obtener el ID generado
     print(f"   ✓ Clase creada: {name}")
@@ -96,13 +129,35 @@ def main():
         db.session.commit()
         print()
 
+        # ─── Crear actividades de prueba ───────────────────────────────────
+
+        print("🏋️ Creando actividades de prueba...")
+        actividad1 = create_test_actividad("Yoga")
+        actividad2 = create_test_actividad("Funcional")
+        actividad3 = create_test_actividad("Pilates")
+
+        db.session.commit()
+        print()
+
         # ─── Crear clases de prueba ───────────────────────────────────────
 
         print("📚 Creando clases de prueba...")
         
-        class1 = create_test_class("Ingeniería de Software 2")
-        class2 = create_test_class("Programación Avanzada")
-        class3 = create_test_class("Bases de Datos")
+        class1 = create_test_class(
+            "Yoga Mañana",
+            datetime(2026, 5, 17, 9, 0),
+            actividad1,
+        )
+        class2 = create_test_class(
+            "Funcional Tarde",
+            datetime(2026, 5, 17, 14, 0),
+            actividad2,
+        )
+        class3 = create_test_class(
+            "Pilates Noche",
+            datetime(2026, 5, 18, 16, 0),
+            actividad3,
+        )
 
         db.session.commit()
         print()

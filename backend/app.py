@@ -1,13 +1,16 @@
 import os
 from dotenv import load_dotenv
+from datetime import datetime
 
 from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 
 from models import db, User
 # Importar nuevos modelos
-from models import Class, Enrollment, Attendance
+from models import Class, Enrollment, Attendance, Actividades
 
 # Carga variables de entorno desde .env
 load_dotenv()
@@ -38,10 +41,25 @@ CORS(
     ]
 )
 
-# ─── Crear tablas automáticamente ─────────────────────────────────────────────
+# ─── Migración de esquema mínimo para SQLite antiguo ─────────────────────────────────────────────
+
+def upgrade_database_schema():
+    inspector = inspect(db.engine)
+    if "classes" in inspector.get_table_names():
+        columns = [column["name"] for column in inspector.get_columns("classes")]
+        if "fecha_hora" not in columns:
+            db.session.execute(text("ALTER TABLE classes ADD COLUMN fecha_hora DATETIME"))
+        if "cupoMaximo" not in columns:
+            db.session.execute(text("ALTER TABLE classes ADD COLUMN cupoMaximo INTEGER DEFAULT 20"))
+        if "id_actividad" not in columns:
+            db.session.execute(text("ALTER TABLE classes ADD COLUMN id_actividad INTEGER"))
+        db.session.commit()
+
+# ─── Crear tablas automáticamente ─────────────────────────────────────────────────────────────
 
 with app.app_context():
     db.create_all()
+    upgrade_database_schema()
 
 # ─── Rutas API ────────────────────────────────────────────────────────────────
 
@@ -137,10 +155,68 @@ def me():
     }), 200
 
 
-# ─── Run ──────────────────────────────────────────────────────────────────────
+@app.route("/api/actividades", methods=["GET"])
+def get_actividades():
+    actividades = Actividades.query.all()
+    return jsonify([
+        {"id": actividad.id, "name": actividad.name}
+        for actividad in actividades
+    ]), 200
 
-if __name__ == "__main__":
-    app.run(debug=True)
+
+@app.route("/api/classes", methods=["POST"])
+def create_class():
+    data = request.get_json() or {}
+    activity_id = data.get("activity_id")
+    date = data.get("date")
+    time = data.get("time")
+
+    if not activity_id or not date or not time:
+        return jsonify({"error": "Todos los campos son obligatorios"}), 400
+
+    actividad = Actividades.query.get(activity_id)
+    if not actividad:
+        return jsonify({"error": "Actividad no encontrada"}), 404
+
+    try:
+        fecha_hora = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+    except ValueError:
+        return jsonify({"error": "Fecha u hora inválida"}), 400
+
+    existing_class = Class.query.filter_by(
+        id_actividad=actividad.id,
+        fecha_hora=fecha_hora,
+    ).first()
+
+    if existing_class:
+        return jsonify({"error": "Ya existe una clase para esa actividad en ese horario"}), 400
+
+    new_class = Class(
+        name=actividad.name,
+        fecha_hora=fecha_hora,
+        id_actividad=actividad.id,
+    )
+
+    db.session.add(new_class)
+    try:
+        db.session.commit()
+    except IntegrityError as err:
+        db.session.rollback()
+        error_text = str(err.orig).lower()
+        if "actividad_horario_unico" in error_text or "unique constraint" in error_text:
+            return jsonify({"error": "Ya existe una clase para esa actividad en ese horario"}), 400
+        return jsonify({"error": "Error interno al crear la clase"}), 500
+
+    return jsonify({
+        "message": "Clase creada correctamente",
+        "class": {
+            "id": new_class.id,
+            "name": new_class.name,
+            "fecha_hora": new_class.fecha_hora.isoformat(),
+            "activity_id": new_class.id_actividad,
+        }
+    }), 201
+
 
 # ---------------------------------------------------------------------------
 # Endpoint para registrar asistencia mediante QR
@@ -194,3 +270,7 @@ def register_attendance():
         "class_id": new_attendance.class_id,
         "created_at": new_attendance.created_at.isoformat()
     }}), 201
+
+
+if __name__ == "__main__":
+    app.run(debug=True)

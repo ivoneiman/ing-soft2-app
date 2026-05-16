@@ -48,10 +48,13 @@ class Class(db.Model):
     __tablename__ = "classes"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
-    fecha_hora= db.Column(db.DateTime, nullable=False)
-    cupoMaximo = db.Column(db.Integer, nullable=False)
+    fecha_hora = db.Column(db.DateTime, nullable=False)
+    cupoMaximo = db.Column(db.Integer, nullable=False, default=20)
     id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
-
+    #identificador para que no haya clase de misma actividad el mismo dia y hora
+    __table_args__=(
+    db.UniqueConstraint("id_actividad", "fecha_hora", name="actividad_horario_unico"),
+)
     # Relación con los usuarios inscritos (tabla intermedia Enrollment)
     enrollments = db.relationship("Enrollment", back_populates="class_", cascade="all, delete-orphan")
     # Relación directa a asistencias para consultas rápidas

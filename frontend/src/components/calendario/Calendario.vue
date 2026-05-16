@@ -21,10 +21,11 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed } from "vue";
+import { ref, onMounted, onBeforeUnmount, computed, defineEmits } from "vue";
 import flatpickr from "flatpickr";
 import { Spanish } from "flatpickr/dist/l10n/es.js";
 import "flatpickr/dist/flatpickr.min.css";
+const emit = defineEmits(["class-selected"]);
 const calendarContainer = ref(null);
 const selectedDate = ref(null);
 const selectedSlot = ref(null);
@@ -34,10 +35,10 @@ let fpInstance = null;
 const getAvailableSlots = (date) => {
   if (!date) return [];
   const weekday = date.getDay();
-  if (weekday === 0 || weekday === 6) {
+  if (weekday === 0) {
     return [];
  }
-  return ["09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00"];
+  return ["07:00","08:00","09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00","17:00", "18:00", "19:00", "20:00","21:00"];
 };
 const selectedDateLabel = computed(() => {
   return selectedDate.value
@@ -52,17 +53,26 @@ const selectedDateLabel = computed(() => {
 
 const selectSlot = (slot) => {
   selectedSlot.value = slot;
+  emit("class-selected", {
+    date: selectedDate.value,
+    slot,
+  });
 };
 const onDateChange = (selectedDates) => {
   if (selectedDates.length === 0) {
     selectedDate.value = null;
     availableSlots.value = [];
     selectedSlot.value = null;
+    emit("class-selected", null);
     return;
   }
   selectedDate.value = selectedDates[0];
   selectedSlot.value = null;
   availableSlots.value = getAvailableSlots(selectedDate.value);
+  emit("class-selected", {
+    date: selectedDate.value,
+    slot: null,
+  });
 };
 
 onMounted(() => {
@@ -124,7 +134,7 @@ onBeforeUnmount(() => { "Esto hace que si se cambia de pagina se saca la instanc
 .empty,
 .confirmation {
   margin-top: 1rem;
-  color: #374151;
+  color: #f6ea98;
 }
 </style>
 
