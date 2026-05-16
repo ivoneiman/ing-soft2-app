@@ -42,19 +42,27 @@ class User(UserMixin, db.Model):
 # ---------------------------------------------------------------------------
 
 class Class(db.Model):
-    """Representa una clase o curso al que los usuarios pueden inscribirse.
-    Sólo contiene un identificador y un nombre para simplificar el ejemplo.
+    """Representa una clase a la que los usuarios pueden inscribirse.
     """
 
     __tablename__ = "classes"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
+    fecha_hora= db.Column(db.DateTime, nullable=False)
+    cupoMaximo = db.Column(db.Integer, nullable=False)
+    id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
 
     # Relación con los usuarios inscritos (tabla intermedia Enrollment)
     enrollments = db.relationship("Enrollment", back_populates="class_", cascade="all, delete-orphan")
     # Relación directa a asistencias para consultas rápidas
     attendances = db.relationship("Attendance", back_populates="class_", cascade="all, delete-orphan")
 
+class Actividades(db.Model):
+    "representa las actividades disponibles en el gym"
+    "la hice para poder relacionar la clase con la actividad, para mostrar el nombre en la clase"
+    __tablename__ = "actividades"
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False)
 
 class Enrollment(db.Model):
     """Enlace many‑to‑many entre User y Class.

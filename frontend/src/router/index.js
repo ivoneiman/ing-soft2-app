@@ -20,6 +20,7 @@ const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
+const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
 
 const routes = [
   // 🔵 Layout principal (con navbar)
@@ -71,6 +72,12 @@ const routes = [
         name: "PasarAsistencia",
         component: ScanQrView,
         meta: { requiresAuth: true, requiresEmployee: true }
+      },
+      {
+        path: "crear-clase",
+        name: "CrearClase",
+        component: CrearClaseView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
       }
     ],
   },
@@ -116,11 +123,17 @@ router.beforeEach(async (to, from, next) => {
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
   const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin);
   const requiresEmployee = to.matched.some(record => record.meta.requiresEmployee);
+  const requiresAdminOrEmployee = to.matched.some(record => record.meta.requiresAdminOrEmployee); "agregué eso porque algunas cosas las tienen que poder usar los empleados y los admins"
   const requiresClient = to.matched.some(record => record.meta.requiresClient);
 
   // Si no está autenticado y la ruta lo requiere, redirigir a login
   if (requiresAuth && !roleHelpers.isAuthenticated()) {
     return next('/login');
+  }
+
+  // Validar rol admin o employee
+  if (requiresAdminOrEmployee && !roleHelpers.hasAnyRole(['admin', 'employee'])) {
+    return next('/');
   }
 
   // Validar rol admin
