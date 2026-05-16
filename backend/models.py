@@ -13,8 +13,11 @@ class User(UserMixin, db.Model):
     __tablename__ = "users" #nombre de la tabla en la base de datos, se llama "users" y tendrá las columnas definidas a continuación
 
     id = db.Column(db.Integer, primary_key=True) #columna id que es un entero y es la clave primaria (única para cada usuario)
-    username = db.Column(db.String(80), unique=True, nullable=False) #columna username que es una cadena de texto de hasta 80 caracteres, debe ser única (no puede haber dos usuarios con el mismo username) y no puede ser nula (debe tener un valor)
+    username = db.Column(db.String(80), nullable=False) #columna username que es una cadena de texto de hasta 80 caracteres y no puede ser nula
+    apellido = db.Column(db.String(80), nullable=False) #columna apellido que es una cadena de texto de hasta 80 caracteres y no puede ser nula
     email = db.Column(db.String(120), unique=True, nullable=False)#columna email que es una cadena de texto de hasta 120 caracteres, también debe ser única y no nula
+    dni = db.Column(db.String(20), nullable=False)               # DNI del usuario, es una cadena de texto de hasta 20 caracteres y no puede ser nula
+    telefono = db.Column(db.String(20), nullable=False)          # teléfono del usuario, es una cadena de texto de hasta 20 caracteres y no puede ser nula
     password_hash = db.Column(db.String(256), nullable=False)#columna password_hash que es una cadena de texto de hasta 256 caracteres, no puede ser nula, y se usará para almacenar el hash seguro de la contraseña del usuario en lugar de la contraseña en texto plano
     role = db.Column(db.String(20), default="client") # Rol del usuario: client, employee, admin
 
@@ -34,6 +37,8 @@ class User(UserMixin, db.Model):
             "id": self.id,
             "username": self.username,
             "email": self.email,
+            "dni": self.dni,
+            "telefono": self.telefono,
             "role": self.role,
         }
 

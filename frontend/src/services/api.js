@@ -3,8 +3,12 @@ import axios from "axios";
 const API_URL = "http://localhost:5000/api";
 console.log("API_URL EN PRODUCCION:", API_URL);
 
-export function register({ username, email, password }) {
-  return axios.post(`${API_URL}/register`, { username, email, password }, { withCredentials: true });
+export function register({ username, apellido, email, dni, telefono, password }) {
+  return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, { withCredentials: true });
+}
+
+export function crearUsuario({ username, apellido, email, dni, telefono, password }) {
+  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password }, { withCredentials: true });
 }
 
 export function login({ email, password, remember }) {

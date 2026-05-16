@@ -20,6 +20,7 @@ const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
+const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue");
 const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
 
 const routes = [
@@ -72,6 +73,12 @@ const routes = [
         name: "PasarAsistencia",
         component: ScanQrView,
         meta: { requiresAuth: true, requiresEmployee: true }
+      },
+      {
+        path: "crear-usuario",
+        name: "CrearUsuario",
+        component: CrearUsuarioView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true }
       },
       {
         path: "crear-clase",
