@@ -122,18 +122,40 @@ async function onSubmit() {
 </script>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Anton&family=Anta&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;1,6..96,400&display=swap');
+
 .crear-usuario-container {
-  max-width: 560px;
-  margin: 2rem auto;
+  min-height: 100vh;
+  background-color: #572c57;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 2rem;
-  border: 1px solid #eee;
-  border-radius: 10px;
-  background: #fff;
 }
 
-h2 { margin-bottom: 0.25rem; color: #572c57; }
+h2 {
+  font-family: 'Anton', sans-serif;
+  font-size: 2rem;
+  color: #f6ea98;
+  margin-bottom: 0.25rem;
+  text-transform: uppercase;
+}
 
-.subtitle { color: #666; margin-bottom: 1.5rem; font-size: 0.9rem; }
+.subtitle {
+  color: #e2c4e0;
+  margin-bottom: 1.5rem;
+  font-family: 'Bodoni Moda', serif;
+}
+
+form {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 2rem 2rem 2.5rem 2rem;
+  width: 100%;
+  max-width: 560px;
+}
 
 .row {
   display: grid;
@@ -144,40 +166,62 @@ h2 { margin-bottom: 0.25rem; color: #572c57; }
 .field {
   display: flex;
   flex-direction: column;
-  margin-bottom: 1rem;
+  margin-bottom: 1.25rem;
 }
 
-.field label { font-weight: 600; margin-bottom: 0.25rem; font-size: 0.9rem; }
+.field label {
+  font-family: 'Anta', sans-serif;
+  font-size: 0.85rem;
+  color: #f6ea98;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.25rem;
+}
 
 .field input {
-  padding: 0.5rem 0.75rem;
-  border: 1px solid #ccc;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(255,255,255,0.2);
   border-radius: 6px;
   font-size: 1rem;
+  background: white;
+  color: #333;
+  font-family: 'Bodoni Moda', serif;
 }
 
-.field input:focus { outline: none; border-color: #9f5f91; }
+.field input::placeholder { color: #bbb; }
+.field input:focus {
+  outline: none;
+  border-color: #e26972;
+}
 
-.hint { color: #888; font-size: 0.75rem; margin-top: 0.25rem; }
+.hint { color: rgba(255,255,255,0.5); font-size: 0.72rem; margin-top: 0.25rem; font-family: 'Bodoni Moda', serif; }
 
 .msg { margin-bottom: 1rem; padding: 0.6rem 0.9rem; border-radius: 6px; font-size: 0.9rem; }
-.error   { background: #fee2e2; color: #b91c1c; }
-.success { background: #dcfce7; color: #15803d; }
+.error   { background: rgba(226,105,114,0.25); color: #f6a5aa; border: 1px solid #e26972; }
+.success { background: rgba(74,222,128,0.15); color: #86efac; border: 1px solid #4ade80; }
 
-.actions { display: flex; gap: 0.75rem; }
+.actions { display: flex; gap: 0.75rem; margin-top: 0.5rem; }
 
 button {
   flex: 1;
-  padding: 0.65rem;
+  padding: 0.7rem;
   border: none;
   border-radius: 6px;
   font-size: 1rem;
   cursor: pointer;
+  font-family: 'Anta', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
-button[type="submit"] { background: #572c57; color: white; }
+button[type="submit"] { background: #e26972; color: white; }
+button[type="submit"]:hover { background: #d45560; }
 button[type="submit"]:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.btn-secondary { background: #f3f4f6; color: #374151; }
-.btn-secondary:hover { background: #e5e7eb; }
+.btn-secondary {
+  background: rgba(255,255,255,0.1);
+  color: #f5f5f5;
+  border: 1px solid rgba(255,255,255,0.2);
+}
+.btn-secondary:hover { background: rgba(255,255,255,0.18); }
 </style>
