@@ -1,6 +1,6 @@
 <template>
   <div class="crear-clase-view">
-    <h1>Crear Clase</h1>
+    <h1>Crear Nueva Clase</h1>
 
     <form class="crear-clase-form" @submit.prevent="submitForm">
       <label>
@@ -13,25 +13,22 @@
         </select>
       </label>
 
-      <div class="schedule-section">
-        <p>Seleccione una fecha y horario</p>
-        <Calendario @class-selected="handleClassSelected" />
-
-        <div class="selection-summary" v-if="selectedDate || selectedSlot || selectedActivityName">
-          <p v-if="selectedActivityName">
-            <strong>Actividad seleccionada:</strong> {{ selectedActivityName }}
-          </p>
-          <p>
-            <strong>Fecha seleccionada:</strong>
-            <span>{{ selectedDateLabel || "No seleccionada" }}</span>
-          </p>
-          <p v-if="selectedSlot">
-            <strong>Hora seleccionada:</strong> {{ selectedSlot }}
-          </p>
-        </div>
+      <!-- PASO 2: Aparece solo cuando se ha seleccionado una actividad -->
+      <div class="schedule-section" v-if="form.activity_id">
+        <label>Fecha y Horario</label>
+        <!-- La key fuerza al componente a reiniciarse si cambia la actividad, limpiando su estado interno -->
+        <Calendario @class-selected="handleClassSelected" :occupied-slots="occupiedSlotsForDate" :key="form.activity_id" />
       </div>
 
-      <button class="btn-primary" type="submit">Crear clase</button>
+      <!-- PASO FINAL: Aparece solo cuando se ha seleccionado un horario -->
+      <div class="final-step" v-if="form.time">
+        <div class="selection-summary">
+          <p><strong>Actividad:</strong> {{ selectedActivityName }}</p>
+          <p><strong>Fecha:</strong> <span>{{ selectedDateLabel }}</span></p>
+          <p><strong>Hora:</strong> {{ selectedSlot }}</p>
+        </div>
+        <button class="btn-primary" type="submit">Confirmar y Crear Clase</button>
+      </div>
 
       <p class="message error" v-if="errorMessage">{{ errorMessage }}</p>
       <p class="message success" v-if="successMessage">{{ successMessage }}</p>
@@ -40,21 +37,23 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from "vue";
+import { ref, reactive, computed, onMounted, watch } from "vue";
 import Calendario from "@/components/calendario/calendario.vue";
-import { getActivities, createClass } from "@/services/api.js";
+import { getActivities, createClass, getActivityClasses } from "@/services/api.js";
 
 const actividades = ref([]);
 const form = reactive({
   activity_id: "",
   date: "",
   time: "",
+  cupoMaximo: 20,
 });
 
 const selectedDate = ref(null);
 const selectedSlot = ref("");
 const errorMessage = ref("");
 const successMessage = ref("");
+const occupiedClasses = ref([]);
 
 const selectedDateLabel = computed(() => {
   return selectedDate.value
@@ -70,6 +69,36 @@ const selectedDateLabel = computed(() => {
 const selectedActivityName = computed(() => {
   const actividad = actividades.value.find((item) => item.id === Number(form.activity_id));
   return actividad ? actividad.name : "";
+});
+
+const loadOccupiedClasses = async () => {
+  if (!form.activity_id) {
+    occupiedClasses.value = [];
+    return;
+  }
+  try {
+    const response = await getActivityClasses(form.activity_id);
+    occupiedClasses.value = response.data?.classes || [];
+  } catch (error) {
+    console.error("Error cargando clases ocupadas:", error);
+    occupiedClasses.value = [];
+  }
+};
+
+watch(() => form.activity_id, () => {
+  // Al cambiar de actividad, reseteamos la selección de fecha y hora para evitar inconsistencias
+  loadOccupiedClasses();
+  form.date = "";
+  form.time = "";
+  selectedDate.value = null;
+  selectedSlot.value = "";
+});
+
+const occupiedSlotsForDate = computed(() => {
+  if (!form.date) return [];
+  return occupiedClasses.value
+    .filter(c => c.fecha_hora.startsWith(form.date))
+    .map(c => c.time);
 });
 
 const loadActivities = async () => {
@@ -90,7 +119,17 @@ const handleClassSelected = (selection) => {
   if (!selection) return;
   selectedDate.value = selection.date;
   selectedSlot.value = selection.slot || "";
-  form.date = selection.date ? selection.date.toISOString().split("T")[0] : "";
+  
+  if (selection.date) {
+    const d = selection.date;
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    form.date = `${year}-${month}-${day}`;
+  } else {
+    form.date = "";
+  }
+  
   form.time = selection.slot || "";
   errorMessage.value = "";
 };
@@ -114,14 +153,15 @@ const submitForm = async () => {
       activity_id: Number(form.activity_id),
       date: form.date,
       time: form.time,
+      cupoMaximo: form.cupoMaximo,
     });
 
     successMessage.value = "Clase creada correctamente.";
-    form.activity_id = "";
-    form.date = "";
+    // Limpiamos solo la hora para poder agregar otra clase en el mismo día rápidamente.
+    // La actividad y la fecha se mantienen para que el usuario vea el horario desaparecer de la lista.
     form.time = "";
-    selectedDate.value = null;
     selectedSlot.value = "";
+    loadOccupiedClasses(); // Recargamos los horarios ocupados para la actividad actual
   } catch (error) {
     console.error("Error al crear clase:", error);
     errorMessage.value = error.response?.data?.error || "Error al crear la clase.";
@@ -177,6 +217,25 @@ const submitForm = async () => {
 .selection-summary {
   padding: 1rem;
   border-radius: 0.75rem;
+  color: #f5f5f5;
+}
+
+.selection-summary p {
+  color: #f5f5f5;
+  line-height: 1.5;
+}
+
+.selection-summary strong {
+  color: #f6ea98;
+}
+
+.final-step {
+  margin-top: 1rem;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  background-color: rgba(0, 0, 0, 0.1);
+  display: grid;
+  gap: 1rem;
 }
 
 .btn-primary {

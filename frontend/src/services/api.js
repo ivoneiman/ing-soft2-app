@@ -1,38 +1,123 @@
 import axios from "axios";
 
 const API_URL = "http://localhost:5000/api";
+
 console.log("API_URL EN PRODUCCION:", API_URL);
 
+// =========================
+// AUTH
+// =========================
+
 export function register({ username, email, password }) {
-  return axios.post(`${API_URL}/register`, { username, email, password }, { withCredentials: true });
-}
-
-export function login({ email, password, remember }) {
-  return axios.post(`${API_URL}/login`, { email, password, remember }, { withCredentials: true });
-}
-
-export function logout() {
-  return axios.post(`${API_URL}/logout`, {}, { withCredentials: true });
-}
-
-export function getCurrentUser() {
-  return axios.get(`${API_URL}/me`, { withCredentials: true });
-}
-
-export function getActivities() {
-  return axios.get(`${API_URL}/actividades`, { withCredentials: true });
-}
-
-export function createClass({ activity_id, date, time }) {
   return axios.post(
-    `${API_URL}/classes`,
-    { activity_id, date, time },
+    `${API_URL}/register`,
+    { username, email, password },
     { withCredentials: true }
   );
 }
 
-// Registro de asistencia (user_id y class_id)
-export function registerAttendance({ user_id, class_id }) {
+export function login({ email, password, remember }) {
+  return axios.post(
+    `${API_URL}/login`,
+    { email, password, remember },
+    { withCredentials: true }
+  );
+}
+
+export function logout() {
+  return axios.post(
+    `${API_URL}/logout`,
+    {},
+    { withCredentials: true }
+  );
+}
+
+export function getCurrentUser() {
+  return axios.get(
+    `${API_URL}/me`,
+    { withCredentials: true }
+  );
+}
+
+// =========================
+// ACTIVIDADES
+// =========================
+
+export function getActivities() {
+  return axios.get(
+    `${API_URL}/actividades`,
+    { withCredentials: true }
+  );
+}
+
+export function getActivityClasses(actividad_id) {
+  return axios.get(
+    `${API_URL}/actividades/${actividad_id}/classes`,
+    { withCredentials: true }
+  );
+}
+
+// =========================
+// CATÁLOGO
+// =========================
+
+export function getAvailableClasses() {
+  return axios.get(
+    `${API_URL}/catalog`,
+    { withCredentials: true }
+  );
+}
+
+export function getCatalogAvailability(actividad_id, fecha) {
+  return axios.get(
+    `${API_URL}/catalog/availability`,
+    {
+      params: { actividad_id, fecha },
+      withCredentials: true,
+    }
+  );
+}
+
+export function getCatalogDays(actividad_id, year, month) {
+  return axios.get(
+    `${API_URL}/catalog/days`,
+    {
+      params: { actividad_id, year, month },
+      withCredentials: true,
+    }
+  );
+}
+
+// =========================
+// CLASES
+// =========================
+
+export function createClass({
+  activity_id,
+  date,
+  time,
+  cupoMaximo
+}) {
+  return axios.post(
+    `${API_URL}/classes`,
+    {
+      activity_id,
+      date,
+      time,
+      cupoMaximo
+    },
+    { withCredentials: true }
+  );
+}
+
+// =========================
+// ASISTENCIA
+// =========================
+
+export function registerAttendance({
+  user_id,
+  class_id,
+}) {
   return axios.post(
     `${API_URL}/attendance/register`,
     { user_id, class_id },

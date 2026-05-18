@@ -1,22 +1,21 @@
 <template>
-  <div class="calendar-card">
-    <div ref="calendarContainer" class="calendar-container"></div>
-
-    <div class="schedule-list" v-if="selectedDate">
-      <h3>Horarios disponibles para {{ selectedDateLabel }}</h3>
-      <ul>
-        <li v-for="slot in availableSlots" :key="slot">
-          <button type="button" class="slot-button" @click="selectSlot(slot)">
-            {{ slot }}
-          </button>
-        </li>
-      </ul>
-      <div v-if="availableSlots.length === 0" class="empty">
-        No hay horarios disponibles para esta fecha.
-      </div>
+  <div class="calendar-layout">
+    <div class="calendar-card">
+      <div ref="calendarContainer" class="calendar-container"></div>
     </div>
-    <div v-if="selectedSlot" class="confirmation">
-      <strong>Elegiste:</strong> {{ selectedDateLabel }}, {{ selectedSlot }}
+
+    <div class="time-card" v-if="selectedDate">
+      <h3>Horarios para {{ selectedDateLabel }}</h3>
+      <select v-model="selectedSlot" class="slot-select" @change="onSlotSelected">
+        <option disabled :value="null">Seleccione un horario</option>
+        <option v-for="slot in filteredSlots" :key="slot" :value="slot">
+          {{ slot }}
+        </option>
+      </select>
+      
+      <div v-if="filteredSlots.length === 0" class="empty">
+        No hay horarios disponibles o están todos ocupados.
+      </div>
     </div>
   </div>
 </template>
@@ -25,7 +24,14 @@ import { ref, onMounted, onBeforeUnmount, computed, defineEmits } from "vue";
 import flatpickr from "flatpickr";
 import { Spanish } from "flatpickr/dist/l10n/es.js";
 import "flatpickr/dist/flatpickr.min.css";
+
 const emit = defineEmits(["class-selected"]);
+const props = defineProps({
+  occupiedSlots: {
+    type: Array,
+    default: () => []
+  }
+});
 const calendarContainer = ref(null);
 const selectedDate = ref(null);
 const selectedSlot = ref(null);
@@ -51,11 +57,14 @@ const selectedDateLabel = computed(() => {
     : "";
 });
 
-const selectSlot = (slot) => {
-  selectedSlot.value = slot;
+const filteredSlots = computed(() => {
+  return availableSlots.value.filter(slot => !props.occupiedSlots.includes(slot));
+});
+
+const onSlotSelected = () => {
   emit("class-selected", {
     date: selectedDate.value,
-    slot,
+    slot: selectedSlot.value,
   });
 };
 const onDateChange = (selectedDates) => {
@@ -85,7 +94,8 @@ onMounted(() => {
   });
 });
 
-onBeforeUnmount(() => { "Esto hace que si se cambia de pagina se saca la instancia del calendario"
+onBeforeUnmount(() => {
+  // Esto hace que si se cambia de pagina se saca la instancia del calendario
   if (fpInstance) {
     fpInstance.destroy();
   }
@@ -93,48 +103,54 @@ onBeforeUnmount(() => { "Esto hace que si se cambia de pagina se saca la instanc
 </script>
 
 <style scoped>
+.calendar-layout {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
 .calendar-card {
   max-width: 420px;
   padding: 1.25rem;
   border: 1px solid transparent;
   border-radius: 0.75rem;
   background: transparent;
+  flex: 1;
+  min-width: 300px;
 }
 
 .calendar-container {
   margin-top: 0.75rem;
 }
 
-.schedule-list {
+.time-card {
+  flex: 1;
+  min-width: 250px;
+  padding: 1.5rem;
+  background: transparent;
+  border: none;
+  border-radius: 0.75rem;
   margin-top: 1.25rem;
+  color: #f5f5f5;
 }
 
-.schedule-list ul {
-  list-style: none;
-  padding: 0;
-  margin: 0.75rem 0 0;
-  display: grid;
-  gap: 0.5rem;
-}
-
-.slot-button {
+.slot-select {
   width: 100%;
-  text-align: left;
-  padding: 0.75rem 0.9rem;
   border: 1px solid #cbd5e1;
-  border-radius: 0.5rem;
-  background: #f8fafc;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: #0f172a;
   cursor: pointer;
-}
-
-.slot-button:hover {
-  background: #eef2ff;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  margin-top: 1rem;
 }
 
 .empty,
 .confirmation {
   margin-top: 1rem;
-  color: #f6ea98;
+  color: #f5f5f5;
 }
 </style>
 
