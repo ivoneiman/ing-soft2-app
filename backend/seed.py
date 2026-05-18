@@ -6,7 +6,7 @@ Correr con: python seed.py
 from datetime import datetime, timedelta
 
 from app import app
-from models import db, User, Class, Enrollment, Attendance, Actividades
+from models import db, User, Class, Enrollment, Attendance
 
 
 def user_exists(email):

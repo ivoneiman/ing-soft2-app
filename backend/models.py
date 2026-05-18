@@ -13,11 +13,11 @@ class User(UserMixin, db.Model):
     __tablename__ = "users" #nombre de la tabla en la base de datos, se llama "users" y tendrá las columnas definidas a continuación
 
     id = db.Column(db.Integer, primary_key=True) #columna id que es un entero y es la clave primaria (única para cada usuario)
-    username = db.Column(db.String(80), nullable=False) #columna username que es una cadena de texto de hasta 80 caracteres y no puede ser nula
-    apellido = db.Column(db.String(80), nullable=False) #columna apellido que es una cadena de texto de hasta 80 caracteres y no puede ser nula
+    username = db.Column(db.String(80), nullable=False) #columna username que es una cadena de texto de hasta 80 caracteres, puede haber usuarios con el mismo nombre y no puede ser nula (debe tener un valor)
+    apellido = db.Column(db.String(80), nullable=True) # Apellido del usuario
     email = db.Column(db.String(120), unique=True, nullable=False)#columna email que es una cadena de texto de hasta 120 caracteres, también debe ser única y no nula
-    dni = db.Column(db.String(20), nullable=False)               # DNI del usuario, es una cadena de texto de hasta 20 caracteres y no puede ser nula
-    telefono = db.Column(db.String(20), nullable=False)          # teléfono del usuario, es una cadena de texto de hasta 20 caracteres y no puede ser nula
+    dni = db.Column(db.String(20), nullable=True) # DNI del usuario
+    telefono = db.Column(db.String(20), nullable=True) # Teléfono del usuario
     password_hash = db.Column(db.String(256), nullable=False)#columna password_hash que es una cadena de texto de hasta 256 caracteres, no puede ser nula, y se usará para almacenar el hash seguro de la contraseña del usuario en lugar de la contraseña en texto plano
     role = db.Column(db.String(20), default="client") # Rol del usuario: client, employee, admin
 
@@ -36,6 +36,7 @@ class User(UserMixin, db.Model):
         return {
             "id": self.id,
             "username": self.username,
+            "apellido": self.apellido,
             "email": self.email,
             "dni": self.dni,
             "telefono": self.telefono,
@@ -47,27 +48,19 @@ class User(UserMixin, db.Model):
 # ---------------------------------------------------------------------------
 
 class Class(db.Model):
-    """Representa una clase a la que los usuarios pueden inscribirse.
+    """Representa una clase o curso al que los usuarios pueden inscribirse.
+    Sólo contiene un identificador y un nombre para simplificar el ejemplo.
     """
 
     __tablename__ = "classes"
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
-    fecha_hora= db.Column(db.DateTime, nullable=False)
-    cupoMaximo = db.Column(db.Integer, nullable=False)
-    id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
 
     # Relación con los usuarios inscritos (tabla intermedia Enrollment)
     enrollments = db.relationship("Enrollment", back_populates="class_", cascade="all, delete-orphan")
     # Relación directa a asistencias para consultas rápidas
     attendances = db.relationship("Attendance", back_populates="class_", cascade="all, delete-orphan")
 
-class Actividades(db.Model):
-    "representa las actividades disponibles en el gym"
-    "la hice para poder relacionar la clase con la actividad, para mostrar el nombre en la clase"
-    __tablename__ = "actividades"
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
 
 class Enrollment(db.Model):
     """Enlace many‑to‑many entre User y Class.
