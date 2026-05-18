@@ -1,7 +1,7 @@
 <template>
   <div class="scan-qr-view">
     <h2>Pasar asistencia</h2>
-    <div id="qr-reader" ref="qrReaderElement" style="width: 100%; max-width: 500px;"></div>
+    <div id="qr-reader" ref="qrReaderElement"></div>
     <div v-if="errorMessage" class="error">{{ errorMessage }}</div>
     <div v-if="successMessage" class="success">{{ successMessage }}</div>
   </div>
@@ -106,12 +106,42 @@ onBeforeUnmount(async () => {
   flex-direction: column;
   align-items: center;
   margin-top: 2rem;
+  width: 100%;
 }
 
+/* Contenedor del scanner QR */
 #qr-reader {
+  width: 100%;
+  max-width: 500px;
+  height: 500px;
   border: 2px solid #ccc;
   border-radius: 8px;
   overflow: hidden;
+  background: #000;
+  position: relative;
+  display: block;
+}
+
+/* Video stream dentro del scanner */
+:deep(#qr-reader video) {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center;
+}
+
+/* Canvas para el escaneo */
+:deep(#qr-reader canvas) {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Elementos internos sin estilos globales */
+:deep(#qr-reader *) {
+  background: transparent !important;
+  color: inherit !important;
 }
 
 .error {
@@ -121,6 +151,9 @@ onBeforeUnmount(async () => {
   background-color: #ffebee;
   border-radius: 4px;
   font-weight: 500;
+  width: 100%;
+  max-width: 500px;
+  text-align: center;
 }
 
 .success {
@@ -130,5 +163,8 @@ onBeforeUnmount(async () => {
   background-color: #e8f5e9;
   border-radius: 4px;
   font-weight: 500;
+  width: 100%;
+  max-width: 500px;
+  text-align: center;
 }
 </style>
