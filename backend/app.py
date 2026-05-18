@@ -51,7 +51,10 @@ def register():
     data = request.get_json()
 
     username = data.get("username")
+    apellido = data.get("apellido")
     email = data.get("email")
+    dni = data.get("dni")
+    telefono = data.get("telefono")
     password = data.get("password")
 
     # Validaciones básicas
@@ -65,11 +68,12 @@ def register():
         return jsonify({"error": "El email ya está registrado"}), 400
 
     # Crear usuario
-    hashed_password = generate_password_hash(password)
-
     new_user = User(
         username=username,
-        email=email
+        apellido=apellido,
+        email=email,
+        dni=dni,
+        telefono=telefono
     )
 
     new_user.set_password(password)
