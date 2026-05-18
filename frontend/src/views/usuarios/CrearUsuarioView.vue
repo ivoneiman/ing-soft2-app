@@ -185,7 +185,7 @@ form {
   font-size: 1rem;
   background: white;
   color: #333;
-  font-family: 'Bodoni Moda', serif;
+  font-family: 'Anton', sans-serif;
 }
 
 .field input::placeholder { color: #bbb; }
