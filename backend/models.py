@@ -9,10 +9,13 @@ db = SQLAlchemy()
 class User(UserMixin, db.Model):
     __tablename__ = "users" 
 
-    id = db.Column(db.Integer, primary_key=True) 
-    username = db.Column(db.String(80), unique=True, nullable=False) 
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(256), nullable=False)
+    id = db.Column(db.Integer, primary_key=True) #columna id que es un entero y es la clave primaria (única para cada usuario)
+    username = db.Column(db.String(80), nullable=False) #columna username que es una cadena de texto de hasta 80 caracteres, puede haber usuarios con el mismo nombre y no puede ser nula (debe tener un valor)
+    apellido = db.Column(db.String(80), nullable=True) # Apellido del usuario
+    email = db.Column(db.String(120), unique=True, nullable=False)#columna email que es una cadena de texto de hasta 120 caracteres, también debe ser única y no nula
+    dni = db.Column(db.String(20), nullable=True) # DNI del usuario
+    telefono = db.Column(db.String(20), nullable=True) # Teléfono del usuario
+    password_hash = db.Column(db.String(256), nullable=False)#columna password_hash que es una cadena de texto de hasta 256 caracteres, no puede ser nula, y se usará para almacenar el hash seguro de la contraseña del usuario en lugar de la contraseña en texto plano
     role = db.Column(db.String(20), default="client") # Rol del usuario: client, employee, admin
 
     def set_password(self, password):
@@ -25,7 +28,10 @@ class User(UserMixin, db.Model):
         return {
             "id": self.id,
             "username": self.username,
+            "apellido": self.apellido,
             "email": self.email,
+            "dni": self.dni,
+            "telefono": self.telefono,
             "role": self.role,
         }
 

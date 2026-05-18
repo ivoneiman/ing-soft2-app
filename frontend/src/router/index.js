@@ -20,7 +20,7 @@ const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
-const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
+const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue");
 
 const routes = [
   // 🔵 Layout principal (con navbar)
@@ -74,10 +74,10 @@ const routes = [
         meta: { requiresAuth: true, requiresEmployee: true }
       },
       {
-        path: "crear-clase",
-        name: "CrearClase",
-        component: CrearClaseView,
-        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+        path: "crear-usuario",
+        name: "CrearUsuario",
+        component: CrearUsuarioView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true }
       }
     ],
   },

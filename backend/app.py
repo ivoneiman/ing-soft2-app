@@ -34,7 +34,8 @@ CORS(
     app,
     supports_credentials=True,
     origins=[
-        "http://localhost:5173"
+        "http://localhost:5173",
+        "http://localhost:5174"
     ]
 )
 
@@ -107,7 +108,10 @@ def register():
     data = request.get_json()
 
     username = data.get("username")
+    apellido = data.get("apellido")
     email = data.get("email")
+    dni = data.get("dni")
+    telefono = data.get("telefono")
     password = data.get("password")
 
     if not username or not email or not password:
@@ -117,9 +121,13 @@ def register():
     if existing_user:
         return jsonify({"error": "El email ya está registrado"}), 400
 
+    # Crear usuario
     new_user = User(
         username=username,
-        email=email
+        apellido=apellido,
+        email=email,
+        dni=dni,
+        telefono=telefono
     )
     new_user.set_password(password)
 
@@ -190,6 +198,61 @@ def get_actividades():
         {"id": actividad.id, "name": actividad.name}
         for actividad in actividades
     ]), 200
+
+@app.route("/api/users", methods=["POST"])
+def create_user():
+    """Crea un nuevo usuario (solo para admins y empleados)"""
+    # Verificar autenticación
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "No autenticado"}), 401
+
+    # Verificar que el usuario sea admin o empleado
+    current_user = User.query.get(user_id)
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para crear usuarios"}), 403
+
+    data = request.get_json()
+    
+    # Validaciones básicas
+    username = data.get("username", "").strip()
+    apellido = data.get("apellido", "").strip()
+    email = data.get("email", "").strip()
+    dni = data.get("dni", "").strip()
+    telefono = data.get("telefono", "").strip()
+    password = data.get("password", "").strip()
+
+    if not all([username, apellido, email, dni, telefono, password]):
+        return jsonify({"error": "Todos los campos son obligatorios"}), 400
+
+    if len(password) < 6:
+        return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
+
+    # Verificar si ya existe el email
+    existing_email = User.query.filter_by(email=email).first()
+    if existing_email:
+        return jsonify({"error": "El email ya está registrado"}), 400
+
+    # Crear usuario
+    new_user = User(
+        username=username,
+        apellido=apellido,
+        email=email,
+        dni=dni,
+        telefono=telefono,
+        role="client"  # Por defecto, los nuevos usuarios creados por admin/empleado son clientes
+    )
+    new_user.set_password(password)
+
+    db.session.add(new_user)
+    db.session.commit()
+
+    return jsonify({
+        "message": "Usuario creado exitosamente",
+        "user": new_user.to_dict()
+    }), 201
+
+
 
 @app.route("/api/actividades/<int:actividad_id>/classes", methods=["GET"])
 def get_activity_classes(actividad_id):

@@ -3,14 +3,14 @@ Script para poblar la base de datos con datos de prueba.
 Crea tablas, usuarios, clases y enrollments de forma idempotente.
 Correr con: python seed.py
 """
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app import app
 from models import db, User, Class, Enrollment, Attendance, Actividades
 
 
 def user_exists(email):
-    """Verifica si un usuario ya existe por email."""
+    """Verifica si un usuario ya exista por email."""
     return User.query.filter_by(email=email).first() is not None
 
 
@@ -49,16 +49,15 @@ def enrollment_exists(user_id, class_id):
     return Enrollment.query.filter_by(user_id=user_id, class_id=class_id).first() is not None
 
 
-def create_test_user(username, email, password, role="client"):
-    """Crea un usuario si no existe."""
+def create_test_user(username, apellido, email, password, dni, telefono, role="client"):
     if user_exists(email):
         print(f"   ⊘ Usuario {email} ya existe, omitiendo...")
         return User.query.filter_by(email=email).first()
     
-    user = User(username=username, email=email, role=role)
+    user = User(username=username, apellido=apellido, email=email, dni=dni, telefono=telefono, role=role)
     user.set_password(password)
     db.session.add(user)
-    db.session.flush()  # Para obtener el ID generado
+    db.session.flush()
     print(f"   ✓ Usuario creado: {email} ({role})")
     return user
 
@@ -101,29 +100,23 @@ def main():
         db.create_all()
         print("   ✓ Tablas creadas/verificadas\n")
 
-        # ─── Crear usuarios de prueba ──────────────────────────────────────
+    # ─── Crear usuarios de prueba ──────────────────────────────────────
 
         print("👤 Creando usuarios de prueba...")
         
         admin = create_test_user(
-            username="admin",
-            email="admin@test.com",
-            password="admin123",
-            role="admin"
+            username="Admin", apellido="Test", email="admin@test.com",
+            password="admin123", dni="11111111", telefono="221 1111111", role="admin"
         )
         
         employee = create_test_user(
-            username="employee",
-            email="employee@test.com",
-            password="employee123",
-            role="employee"
+            username="Employee", apellido="Test", email="employee@test.com",
+            password="employee123", dni="22222222", telefono="221 2222222", role="employee"
         )
         
         client = create_test_user(
-            username="client",
-            email="client@test.com",
-            password="client123",
-            role="client"
+            username="Client", apellido="Test", email="client@test.com",
+            password="client123", dni="33333333", telefono="221 3333333", role="client"
         )
 
         db.session.commit()

@@ -8,12 +8,12 @@ console.log("API_URL EN PRODUCCION:", API_URL);
 // AUTH
 // =========================
 
-export function register({ username, email, password }) {
-  return axios.post(
-    `${API_URL}/register`,
-    { username, email, password },
-    { withCredentials: true }
-  );
+export function register({ username, apellido, email, dni, telefono, password }) {
+  return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, { withCredentials: true });
+}
+
+export function crearUsuario({ username, apellido, email, dni, telefono, password }) {
+  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password }, { withCredentials: true });
 }
 
 export function login({ email, password, remember }) {

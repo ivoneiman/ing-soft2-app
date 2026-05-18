@@ -17,6 +17,7 @@
       <router-link to="/" class="nav-item" @click="closeMobileMenu">Home</router-link>
       <router-link to="/actividades" class="nav-item" @click="closeMobileMenu">Actividades</router-link>
       <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/crear-clase" class="nav-item" @click="closeMobileMenu">Crear Clase</router-link>
+      <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/crear-usuario" class="nav-item" @click="closeMobileMenu">Crear Usuario</router-link>
       <router-link to="/sobre-nosotros" class="nav-item" @click="closeMobileMenu">Sobre Nosotros</router-link>
 
       <!-- Si no está autenticado: mostrar Login y Registro -->
