@@ -13,6 +13,13 @@
         </select>
       </label>
 
+      <!-- Aviso visible si el backend está apagado y falla la conexión -->
+      <div v-if="actividades.length === 0 && errorMessage" class="error-connection">
+        <p>⚠️ No se pudieron cargar las actividades.</p>
+        <p class="small-text">Detalle: {{ errorMessage }}</p>
+        <button type="button" @click="loadActivities" class="btn-retry">Reintentar conexión</button>
+      </div>
+
       <!-- PASO 2: Aparece solo cuando se ha seleccionado una actividad -->
       <div class="schedule-section" v-if="form.activity_id">
         <label>Fecha y Horario</label>
@@ -38,7 +45,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from "vue";
-import Calendario from "@/components/calendario/calendario.vue";
+import Calendario from "@/components/calendario/Calendario.vue";
 import { getActivities, createClass, getActivityClasses } from "@/services/api.js";
 
 const actividades = ref([]);
@@ -102,11 +109,13 @@ const occupiedSlotsForDate = computed(() => {
 });
 
 const loadActivities = async () => {
+  errorMessage.value = ""; // Limpiamos errores previos
   try {
     const response = await getActivities();
     actividades.value = response.data || [];
   } catch (error) {
     console.error("Error cargando actividades:", error);
+    errorMessage.value = error.message === "Network Error" ? "Servidor backend desconectado." : "Fallo de red.";
     actividades.value = [];
   }
 };
@@ -184,7 +193,7 @@ const submitForm = async () => {
   display: grid;
   gap: 0.5rem;
   font-weight: 600;
-  color: #1f2937;
+  color: #f5f5f5;
 }
 
 .crear-clase-form input,
@@ -212,6 +221,30 @@ const submitForm = async () => {
 .schedule-section {
   display: grid;
   gap: 1rem;
+}
+
+.error-connection {
+  padding: 1rem;
+  background-color: rgba(185, 28, 28, 0.2);
+  border: 1px solid #b91c1c;
+  border-radius: 0.75rem;
+  color: #fca5a5;
+}
+
+.error-connection .small-text {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin-top: 0.25rem;
+}
+
+.btn-retry {
+  margin-top: 0.75rem;
+  padding: 0.5rem 1rem;
+  background-color: #b91c1c;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
 }
 
 .selection-summary {
