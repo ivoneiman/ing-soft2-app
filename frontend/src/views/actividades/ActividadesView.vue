@@ -28,7 +28,6 @@
         <section class="selection-col">
           <h2 class="step-title"><span class="step-num">2</span> Día</h2>
           <CatalogCalendario
-            v-if="!loadingDays"
             :enabled-date-keys="calendarEnabledKeys"
             @date-selected="onDateSelected"
             @month-change="onMonthChange"

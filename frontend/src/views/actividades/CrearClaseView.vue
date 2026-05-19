@@ -23,8 +23,24 @@
       <!-- PASO 2: Aparece solo cuando se ha seleccionado una actividad -->
       <div class="schedule-section" v-if="form.activity_id">
         <label>Fecha y Horario</label>
-        <!-- La key fuerza al componente a reiniciarse si cambia la actividad, limpiando su estado interno -->
-        <Calendario @class-selected="handleClassSelected" :occupied-slots="occupiedSlotsForDate" :key="form.activity_id" />
+        
+        <div class="calendar-layout">
+          <CatalogCalendario @date-selected="handleDateSelected" :key="form.activity_id" />
+          
+          <div class="time-card" v-if="selectedDate">
+            <h3>Horarios para {{ selectedDateLabel }}</h3>
+            <select v-model="form.time" class="slot-select" @change="onSlotSelected">
+              <option disabled value="">Seleccione un horario</option>
+              <option v-for="slot in availableSlots" :key="slot" :value="slot">
+                {{ slot }}
+              </option>
+            </select>
+            
+            <div v-if="availableSlots.length === 0" class="empty">
+              No hay horarios disponibles o están todos ocupados.
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- PASO FINAL: Aparece solo cuando se ha seleccionado un horario -->
@@ -45,7 +61,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from "vue";
-import Calendario from "@/components/calendario/Calendario.vue";
+import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
 import { getActivities, createClass, getActivityClasses } from "@/services/api.js";
 
 const actividades = ref([]);
@@ -108,6 +124,17 @@ const occupiedSlotsForDate = computed(() => {
     .map(c => c.time);
 });
 
+const availableSlots = computed(() => {
+  if (!selectedDate.value) return [];
+  const weekday = selectedDate.value.getDay();
+  if (weekday === 0) return []; // Domingos sin clase
+  
+  const allSlots = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
+  const occupied = occupiedSlotsForDate.value;
+  
+  return allSlots.filter(slot => !occupied.includes(slot));
+});
+
 const loadActivities = async () => {
   errorMessage.value = ""; // Limpiamos errores previos
   try {
@@ -124,23 +151,23 @@ onMounted(() => {
   loadActivities();
 });
 
-const handleClassSelected = (selection) => {
-  if (!selection) return;
-  selectedDate.value = selection.date;
-  selectedSlot.value = selection.slot || "";
+const handleDateSelected = (date) => {
+  if (!date) return;
+  selectedDate.value = date;
   
-  if (selection.date) {
-    const d = selection.date;
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    form.date = `${year}-${month}-${day}`;
-  } else {
-    form.date = "";
-  }
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  form.date = `${year}-${month}-${day}`;
   
-  form.time = selection.slot || "";
+  // Reseteamos el horario al cambiar de día
+  form.time = "";
+  selectedSlot.value = "";
   errorMessage.value = "";
+};
+
+const onSlotSelected = () => {
+  selectedSlot.value = form.time;
 };
 
 const submitForm = async () => {
@@ -221,6 +248,40 @@ const submitForm = async () => {
 .schedule-section {
   display: grid;
   gap: 1rem;
+}
+
+.calendar-layout {
+  display: flex;
+  gap: 2rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.time-card {
+  flex: 1;
+  min-width: 250px;
+  padding: 1.5rem;
+  background: transparent;
+  border: none;
+  border-radius: 0.75rem;
+  color: #f5f5f5;
+}
+
+.slot-select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+  padding: 0.85rem 1rem;
+  font-size: 1rem;
+  margin-top: 1rem;
+}
+
+.empty {
+  margin-top: 1rem;
+  color: #f5f5f5;
 }
 
 .error-connection {

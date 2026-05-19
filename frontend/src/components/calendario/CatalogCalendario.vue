@@ -15,7 +15,7 @@
 
       <button
         v-for="day in calendarDays"
-        :key="`${day.date}-${day.empty}`"
+        :key="day.id"
         type="button"
         class="calendar-day"
         :class="{
@@ -87,7 +87,7 @@ const calendarDays = computed(() => {
 
   // Días vacíos del mes anterior
   for (let i = 0; i < firstDay.getDay(); i++) {
-    days.push({ empty: true, date: null });
+    days.push({ id: `empty-${i}`, empty: true, date: null });
   }
 
   // Días del mes actual
@@ -99,6 +99,7 @@ const calendarDays = computed(() => {
     const isSelected = selectedDate.value && toDateKey(selectedDate.value) === dateKey;
 
     days.push({
+      id: `day-${dateKey}`,
       date: d,
       empty: false,
       disabled: isPast || !isEnabled,
