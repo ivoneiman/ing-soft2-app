@@ -27,34 +27,38 @@
         <div class="calendar-layout">
           <CatalogCalendario @date-selected="handleDateSelected" :key="form.activity_id" />
           
-          <div class="time-card" v-if="selectedDate">
-            <h3>Horarios para {{ selectedDateLabel }}</h3>
-            <select v-model="form.time" class="slot-select" @change="onSlotSelected">
-              <option disabled value="">Seleccione un horario</option>
-              <option v-for="slot in availableSlots" :key="slot" :value="slot">
-                {{ slot }}
-              </option>
-            </select>
-            
-            <div v-if="availableSlots.length === 0" class="empty">
-              No hay horarios disponibles o están todos ocupados.
+          <!-- Panel derecho: Horarios y botón de confirmación -->
+          <div class="right-panel">
+            <div class="time-card" v-if="selectedDate">
+              <h3>Horarios disponibles para {{ selectedDateLabel }}</h3>
+              <select v-model="form.time" class="slot-select" @change="onSlotSelected">
+                <option disabled value="">Seleccione un horario</option>
+                <option v-for="slot in availableSlots" :key="slot" :value="slot">
+                  {{ slot }}
+                </option>
+              </select>
+              
+              <div v-if="availableSlots.length === 0" class="empty">
+                No hay horarios disponibles para el día de la fecha.
+              </div>
             </div>
+
+            <!-- PASO FINAL: Movido aquí para que quede a la derecha del calendario -->
+            <div class="final-step" v-if="form.time">
+              <div class="selection-summary">
+                <p><strong>Actividad:</strong> {{ selectedActivityName }}</p>
+                <p><strong>Fecha:</strong> <span>{{ selectedDateLabel }}</span></p>
+                <p><strong>Hora:</strong> {{ selectedSlot }}</p>
+              </div>
+              <button class="btn-primary" type="submit">Crear Clase</button>
+            </div>
+
+            <!-- Mensajes movidos al panel derecho para que reemplacen al botón cuando desaparece -->
+            <p class="message error" v-if="errorMessage">{{ errorMessage }}</p>
+            <p class="message success" v-if="successMessage">{{ successMessage }}</p>
           </div>
         </div>
       </div>
-
-      <!-- PASO FINAL: Aparece solo cuando se ha seleccionado un horario -->
-      <div class="final-step" v-if="form.time">
-        <div class="selection-summary">
-          <p><strong>Actividad:</strong> {{ selectedActivityName }}</p>
-          <p><strong>Fecha:</strong> <span>{{ selectedDateLabel }}</span></p>
-          <p><strong>Hora:</strong> {{ selectedSlot }}</p>
-        </div>
-        <button class="btn-primary" type="submit">Confirmar y Crear Clase</button>
-      </div>
-
-      <p class="message error" v-if="errorMessage">{{ errorMessage }}</p>
-      <p class="message success" v-if="successMessage">{{ successMessage }}</p>
     </form>
   </div>
 </template>
@@ -115,6 +119,8 @@ watch(() => form.activity_id, () => {
   form.time = "";
   selectedDate.value = null;
   selectedSlot.value = "";
+  successMessage.value = "";
+  errorMessage.value = "";
 });
 
 const occupiedSlotsForDate = computed(() => {
@@ -153,6 +159,18 @@ onMounted(() => {
 
 const handleDateSelected = (date) => {
   if (!date) return;
+  
+  // Ignorar clicks si el día es domingo (0)
+  if (date.getDay() === 0) {
+    errorMessage.value = "Los domingos el establecimiento se encuentra cerrado.";
+    successMessage.value = "";
+    form.time = "";
+    form.date = "";
+    selectedSlot.value = "";
+    selectedDate.value = null;
+    return;
+  }
+
   selectedDate.value = date;
   
   const year = date.getFullYear();
@@ -164,10 +182,12 @@ const handleDateSelected = (date) => {
   form.time = "";
   selectedSlot.value = "";
   errorMessage.value = "";
+  successMessage.value = "";
 };
 
 const onSlotSelected = () => {
   selectedSlot.value = form.time;
+  successMessage.value = "";
 };
 
 const submitForm = async () => {
@@ -192,7 +212,7 @@ const submitForm = async () => {
       cupoMaximo: form.cupoMaximo,
     });
 
-    successMessage.value = "Clase creada correctamente.";
+    successMessage.value = "Clase creada exitosamente.";
     // Limpiamos solo la hora para poder agregar otra clase en el mismo día rápidamente.
     // La actividad y la fecha se mantienen para que el usuario vea el horario desaparecer de la lista.
     form.time = "";
@@ -207,11 +227,18 @@ const submitForm = async () => {
 
 <style scoped>
 .crear-clase-view {
-  padding: 24px;
+  padding: 8px 24px 24px 24px; /* Reducido el padding superior para subir toda la vista un poco */
+  max-width: 900px;
+  margin: 0 auto; /* Centra todo el bloque en la pantalla equilibrando los márgenes */
+}
+
+.crear-clase-view h1 {
+  text-align: center; /* Centra el título para que acompañe el diseño */
+  margin-bottom: 1.5rem;
 }
 
 .crear-clase-form {
-  max-width: 720px;
+  width: 100%;
   display: grid;
   gap: 1.25rem;
 }
@@ -257,9 +284,15 @@ const submitForm = async () => {
   flex-wrap: wrap;
 }
 
-.time-card {
+.right-panel {
   flex: 1;
-  min-width: 250px;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.time-card {
   padding: 1.5rem;
   background: transparent;
   border: none;
@@ -324,7 +357,6 @@ const submitForm = async () => {
 }
 
 .final-step {
-  margin-top: 1rem;
   padding: 1.5rem;
   border-radius: 0.75rem;
   background-color: rgba(0, 0, 0, 0.1);
@@ -355,9 +387,22 @@ const submitForm = async () => {
 
 .message.error {
   color: #b91c1c;
+  background-color: #ffffff;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  width: fit-content; /* Hace que el fondo blanco abarque solo el texto */
 }
 
 .message.success {
-  color: #cbd5e1;
+  color: #4ade80; /* Un verde más vibrante */
+  font-size: 1.15rem; /* Letra más grande para destacar */
+  font-weight: 600;
+  background-color: rgba(74, 222, 128, 0.1); /* Fondo sutil verde */
+  padding: 1rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(74, 222, 128, 0.3);
+  text-align: center;
 }
 </style>

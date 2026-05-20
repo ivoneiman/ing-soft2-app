@@ -49,6 +49,8 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE classes ADD COLUMN cupoMaximo INTEGER DEFAULT 20"))
         if "id_actividad" not in columns:
             db.session.execute(text("ALTER TABLE classes ADD COLUMN id_actividad INTEGER"))
+        if "descuento" not in columns:
+            db.session.execute(text("ALTER TABLE classes ADD COLUMN descuento INTEGER DEFAULT 0"))
         db.session.commit()
 
 # ─── Crear tablas e insertar actividades base ───────────────────────────────────────────────────
@@ -96,6 +98,7 @@ def _class_slot_payload(class_obj, enrolled_count):
         "available_spots": available,
         "is_full": available <= 0,
         "estado": getattr(class_obj, "estado", "Activa"),
+        "descuento": class_obj.descuento,
     }
 
 # ─── Rutas API: Autenticación ─────────────────────────────────────────────────
@@ -434,6 +437,53 @@ def cancelar_clase_staff(clase_id):
 
 
 # ─── Arranque del Servidor ───────────────────────────────────────────────────
+
+# ─── Rutas API: Descuentos y Promociones ──────────────────────────────────────
+
+@app.route("/api/classes/<int:class_id>/discount", methods=["PUT"])
+def apply_discount(class_id):
+    """Permite al administrador aplicar un descuento a una clase validando el día del mes."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "No autenticado"}), 401
+
+    current_user = User.query.get(user_id)
+    if not current_user or current_user.role != "admin":
+        return jsonify({"error": "No tienes permisos para realizar esta acción"}), 403
+
+    data = request.get_json() or {}
+    descuento = data.get("descuento")
+
+    if descuento is None:
+        return jsonify({"error": "Debe especificar un porcentaje de descuento"}), 400
+
+    try:
+        descuento = int(descuento)
+    except ValueError:
+        return jsonify({"error": "El descuento debe ser un número entero"}), 400
+
+    class_obj = Class.query.get(class_id)
+    if not class_obj:
+        return jsonify({"error": "Clase no encontrada"}), 404
+
+    if descuento not in [40, 70]:
+        return jsonify({"error": "Porcentaje de descuento no válido"}), 400
+
+    # Lógica acumulativa: si tiene ambos, el valor es 110
+    if class_obj.descuento == 110 or class_obj.descuento == descuento:
+        return jsonify({"error": "Este descuento ya está aplicado a la clase"}), 400
+
+    if class_obj.descuento in [40, 70]:
+        class_obj.descuento = 110
+    else:
+        class_obj.descuento = descuento
+
+    db.session.commit()
+
+    return jsonify({
+        "message": "Descuento aplicado con éxito",
+        "class": class_obj.to_dict()
+    }), 200
 
 if __name__ == "__main__":
     app.run(debug=True)

@@ -21,8 +21,13 @@ const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
 const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
+<<<<<<< HEAD
 const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue");
 const DashboardView = () => import("../views/dashboard/DashboardView.vue"); 
+=======
+const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue"); 
+const AdminDiscountsView = () => import("../views/pagos/AdminDiscountsView.vue");
+>>>>>>> develop
 
 
 const routes = [
@@ -89,10 +94,17 @@ const routes = [
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
       },
       {
+<<<<<<< HEAD
         path: "dashboard",
         name: "Dashboard",
         component: DashboardView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+=======
+        path: "admin/descuentos",
+        name: "AdminDiscounts",
+        component: AdminDiscountsView,
+        meta: { requiresAuth: true, requiresAdmin: true },
+>>>>>>> develop
       }
     ],
   },
