@@ -55,6 +55,7 @@ class Class(db.Model):
     duration_minutes = db.Column(db.Integer, nullable=False, default=60)
     cupoMaximo = db.Column(db.Integer, nullable=False, default=20)
     id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
+    descuento = db.Column(db.Integer, nullable=False, default=0) # Porcentaje de descuento (0, 40, 70)
 
     # Relación con la actividad (necesaria para el catálogo y respuestas limpias)
     actividad = db.relationship("Actividades", backref="classes")
@@ -76,6 +77,7 @@ class Class(db.Model):
             "duration_minutes": self.duration_minutes,
             "cupoMaximo": self.cupoMaximo,
             "actividad_name": self.actividad.name if self.actividad else None,
+            "descuento": self.descuento,
         }
 
 
@@ -103,5 +105,3 @@ class Attendance(db.Model):
 
     user = db.relationship("User", backref=db.backref("attendances", cascade="all, delete-orphan"))
     class_ = db.relationship("Class", back_populates="attendances")
-
-    __table_args__ = (db.UniqueConstraint("user_id", "class_id", name="uq_attendance_user_class"),)

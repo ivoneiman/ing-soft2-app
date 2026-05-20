@@ -22,6 +22,7 @@ const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
 const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
 const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue"); 
+const AdminDiscountsView = () => import("../views/pagos/AdminDiscountsView.vue");
 
 
 const routes = [
@@ -86,6 +87,12 @@ const routes = [
         name: "CrearUsuario",
         component: CrearUsuarioView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "admin/descuentos",
+        name: "AdminDiscounts",
+        component: AdminDiscountsView,
+        meta: { requiresAuth: true, requiresAdmin: true },
       }
     ],
   },
