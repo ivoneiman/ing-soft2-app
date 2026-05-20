@@ -32,23 +32,17 @@
 
         <div class="field">
           <label for="payment-type">Tipo de pago</label>
-          <select id="payment-type" v-model="form.payment_type">
+          <select id="payment-type" v-model="form.payment_type" required>
+            <option value="" disabled>Seleccionar tipo de pago</option>
             <option value="monthly_subscription">Suscripción mensual</option>
             <option value="individual_class">Clase individual</option>
           </select>
         </div>
 
         <div class="field">
-          <label for="payment-method">Método de pago</label>
-          <select id="payment-method" v-model="form.payment_method">
-            <option value="mercado_pago">Mercado Pago</option>
-            <option value="card">Tarjeta</option>
-          </select>
-        </div>
-
-        <div class="field">
           <label for="payment-option">Forma</label>
-          <select id="payment-option" v-model="form.payment_option">
+          <select id="payment-option" v-model="form.payment_option" required>
+            <option value="" disabled>Seleccionar forma de pago</option>
             <option value="full">Pago completo</option>
             <option value="deposit">Seña</option>
           </select>
@@ -62,7 +56,7 @@
           </label>
         </fieldset>
 
-        <section v-if="selectedClass" class="payment-summary">
+        <section v-if="isPaymentReady" class="payment-summary">
           <h2>Resumen</h2>
           <dl>
             <div>
@@ -86,7 +80,7 @@
 
         <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
 
-        <button class="pay-button" type="submit" :disabled="isSubmitting || !selectedClass">
+        <button class="pay-button" type="submit" :disabled="isSubmitting || !isPaymentReady">
           {{ isSubmitting ? 'Redirigiendo...' : 'Realizar pago' }}
         </button>
       </form>
@@ -150,9 +144,9 @@ const discountTestOptions = [
 
 const form = reactive({
   class_id: '',
-  payment_type: 'monthly_subscription',
+  payment_type: '',
   payment_method: 'mercado_pago',
-  payment_option: 'full',
+  payment_option: '',
 });
 
 const payableClasses = computed(() => {
@@ -163,8 +157,16 @@ const selectedClass = computed(() => {
   return payableClasses.value.find((classItem) => String(classItem.id) === String(form.class_id));
 });
 
+const isPaymentReady = computed(() => {
+  return Boolean(
+    selectedClass.value &&
+    form.payment_type &&
+    form.payment_option
+  );
+});
+
 const summary = computed(() => {
-  if (!selectedClass.value) {
+  if (!isPaymentReady.value) {
     return {
       amount: 0,
       discountPercentage: 0,
@@ -216,7 +218,7 @@ function formatMoney(value) {
 }
 
 function paymentMethodLabel(paymentMethod) {
-  return paymentMethod === 'mercado_pago' ? 'Mercado Pago' : 'Tarjeta';
+  return paymentMethod === 'mercado_pago' ? 'Mercado Pago' : '-';
 }
 
 function paymentStatusLabel(status) {
@@ -253,8 +255,8 @@ async function loadPaymentHistory() {
 async function handleSubmit() {
   errorMessage.value = '';
 
-  if (!selectedClass.value) {
-    errorMessage.value = 'Debe seleccionar una actividad para pagar';
+  if (!isPaymentReady.value) {
+    errorMessage.value = 'Debe completar todos los campos para realizar el pago';
     return;
   }
 
