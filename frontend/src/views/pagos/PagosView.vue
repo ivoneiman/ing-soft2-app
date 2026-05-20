@@ -21,10 +21,13 @@
           <label for="class-id">Actividad / clase</label>
           <select id="class-id" v-model="form.class_id" required>
             <option value="" disabled>Seleccionar actividad</option>
-            <option v-for="classItem in classes" :key="classItem.id" :value="classItem.id">
+            <option v-for="classItem in payableClasses" :key="classItem.id" :value="classItem.id">
               {{ classItem.actividad }} - {{ formatDate(classItem.fecha_hora) }}
             </option>
           </select>
+          <span v-if="payableClasses.length === 0" class="field-help">
+            No hay clases futuras disponibles para pagar.
+          </span>
         </div>
 
         <div class="field">
@@ -93,6 +96,8 @@
             <th>Fecha</th>
             <th>Actividad</th>
             <th>Método</th>
+            <th>Original</th>
+            <th>Descuento</th>
             <th>Total</th>
             <th>Estado</th>
           </tr>
@@ -102,6 +107,8 @@
             <td>{{ formatDate(payment.created_at) }}</td>
             <td>{{ payment.actividad || payment.class_name || '-' }}</td>
             <td>{{ paymentMethodLabel(payment.payment_method) }}</td>
+            <td>{{ formatMoney(payment.amount) }}</td>
+            <td>{{ Number(payment.discount_percentage || 0) }}%</td>
             <td>{{ formatMoney(payment.final_amount) }}</td>
             <td>{{ paymentStatusLabel(payment.status) }}</td>
           </tr>
@@ -132,8 +139,12 @@ const form = reactive({
   payment_option: 'full',
 });
 
+const payableClasses = computed(() => {
+  return classes.value.filter((classItem) => classItem.is_payable !== false);
+});
+
 const selectedClass = computed(() => {
-  return classes.value.find((classItem) => String(classItem.id) === String(form.class_id));
+  return payableClasses.value.find((classItem) => String(classItem.id) === String(form.class_id));
 });
 
 const summary = computed(() => {
@@ -145,21 +156,12 @@ const summary = computed(() => {
     };
   }
 
-  const baseAmount = form.payment_type === 'monthly_subscription'
-    ? Number(selectedClass.value.monthly_price)
-    : Number(selectedClass.value.price);
-
-  const amount = form.payment_option === 'deposit'
-    ? baseAmount * (Number(selectedClass.value.deposit_percentage || 50) / 100)
-    : baseAmount;
-
-  const discountPercentage = Number(selectedClass.value.discount_percentage || 0);
-  const finalAmount = amount * (1 - discountPercentage / 100);
+  const quote = selectedClass.value.quotes?.[form.payment_type]?.[form.payment_option];
 
   return {
-    amount,
-    discountPercentage,
-    finalAmount,
+    amount: Number(quote?.amount || 0),
+    discountPercentage: Number(quote?.discount_percentage || 0),
+    finalAmount: Number(quote?.final_amount || 0),
   };
 });
 
@@ -349,6 +351,11 @@ onMounted(() => {
   border-radius: 6px;
   min-height: 42px;
   padding: 8px 10px;
+}
+
+.field-help {
+  color: #666;
+  font-size: 14px;
 }
 
 .payment-summary,

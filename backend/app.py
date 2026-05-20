@@ -1,9 +1,11 @@
 import os
 import json
 import traceback
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from calendar import monthrange
 from urllib.parse import quote
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv
 
 from flask import Flask, request, jsonify, session, redirect
@@ -129,9 +131,37 @@ def _configured_amount(name, default):
         return float(default)
 
 
-def _current_discount_period_percentage():
-    today = datetime.now().day
-    last_day = monthrange(datetime.now().year, datetime.now().month)[1]
+def _app_timezone():
+    timezone_name = os.getenv("APP_TIMEZONE", "America/Argentina/Buenos_Aires")
+    try:
+        return ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError:
+        print(f"[Discount] timezone inválida: {timezone_name}. Usando hora local del servidor.", flush=True)
+        return None
+
+
+def _current_discount_datetime():
+    timezone = _app_timezone()
+    return datetime.now(timezone) if timezone else datetime.now()
+
+
+def _datetime_in_app_timezone(value):
+    if not value:
+        return None
+
+    timezone = _app_timezone()
+    if not timezone:
+        return value
+
+    if value.tzinfo:
+        return value.astimezone(timezone)
+    return value.replace(tzinfo=timezone)
+
+
+def _current_discount_period_percentage(current_datetime=None):
+    current_datetime = current_datetime or _current_discount_datetime()
+    today = current_datetime.day
+    last_day = monthrange(current_datetime.year, current_datetime.month)[1]
 
     if 15 <= today <= 20:
         return 40
@@ -140,18 +170,18 @@ def _current_discount_period_percentage():
     return 0
 
 
-def _class_has_discount(class_obj, discount_percentage):
-    if discount_percentage == 0 or not class_obj:
+def _payment_discount_percentage(current_datetime=None):
+    return _current_discount_period_percentage(current_datetime)
+
+
+def _class_has_finished(class_obj, current_datetime=None):
+    class_datetime = _datetime_in_app_timezone(class_obj.fecha_hora if class_obj else None)
+    if not class_datetime:
         return False
-    return class_obj.descuento == discount_percentage or class_obj.descuento == 110
 
-
-def _payment_discount_percentage(class_obj):
-    period_discount = _current_discount_period_percentage()
-    if period_discount == 0:
-        return 0
-
-    return period_discount if _class_has_discount(class_obj, period_discount) else 0
+    current_datetime = current_datetime or _current_discount_datetime()
+    current_datetime = _datetime_in_app_timezone(current_datetime)
+    return class_datetime <= current_datetime
 
 
 def _payment_amount(payment_type, payment_option):
@@ -165,16 +195,46 @@ def _payment_amount(payment_type, payment_option):
     return amount
 
 
-def _payment_quote(class_obj, payment_type, payment_option):
+def _calculate_final_amount(amount, discount_percentage):
+    original_amount = Decimal(str(amount))
+    discount = Decimal(str(discount_percentage))
+    final_amount = original_amount - (original_amount * discount / Decimal("100"))
+    return float(final_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def _payment_quote(payment_type, payment_option, current_datetime=None):
     amount = _payment_amount(payment_type, payment_option)
-    discount_percentage = _payment_discount_percentage(class_obj)
-    final_amount = round(amount * (1 - discount_percentage / 100), 2)
+    discount_percentage = _payment_discount_percentage(current_datetime)
+    final_amount = _calculate_final_amount(amount, discount_percentage)
 
     return {
         "amount": amount,
         "discount_percentage": discount_percentage,
         "final_amount": final_amount,
     }
+
+
+def _payment_quotes(current_datetime=None):
+    return {
+        "monthly_subscription": {
+            "full": _payment_quote("monthly_subscription", "full", current_datetime),
+            "deposit": _payment_quote("monthly_subscription", "deposit", current_datetime),
+        },
+        "individual_class": {
+            "full": _payment_quote("individual_class", "full", current_datetime),
+            "deposit": _payment_quote("individual_class", "deposit", current_datetime),
+        },
+    }
+
+
+def _log_discount_quote(current_datetime, class_obj, discount_percentage, amount, final_amount):
+    class_datetime = _datetime_in_app_timezone(class_obj.fecha_hora if class_obj else None)
+    print("[Discount]", flush=True)
+    print(f"today={current_datetime.date().isoformat()}", flush=True)
+    print(f"class_datetime={class_datetime.isoformat() if class_datetime else None}", flush=True)
+    print(f"discount={discount_percentage}", flush=True)
+    print(f"original_amount={amount}", flush=True)
+    print(f"final_amount={final_amount}", flush=True)
 
 
 def _payment_error_message(status_detail):
@@ -537,6 +597,8 @@ def get_catalog_days():
 @app.route("/api/classes", methods=["GET"])
 def get_classes_for_payments():
     classes = Class.query.order_by(Class.fecha_hora).all()
+    current_datetime = _current_discount_datetime()
+    quotes = _payment_quotes(current_datetime)
 
     return jsonify({
         "classes": [
@@ -545,13 +607,15 @@ def get_classes_for_payments():
                 "name": class_obj.name,
                 "actividad": class_obj.actividad.name if class_obj.actividad else class_obj.name,
                 "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj.fecha_hora else None,
+                "is_payable": not _class_has_finished(class_obj, current_datetime),
                 "price": _payment_amount("individual_class", "full"),
                 "monthly_price": _payment_amount("monthly_subscription", "full"),
                 "deposit_percentage": _configured_amount("PAYMENT_DEPOSIT_PERCENTAGE", 50),
                 "descuento": class_obj.descuento,
-                "discount_percentage": _payment_discount_percentage(class_obj),
-                "final_class_amount": _payment_quote(class_obj, "individual_class", "full")["final_amount"],
-                "final_monthly_amount": _payment_quote(class_obj, "monthly_subscription", "full")["final_amount"],
+                "discount_percentage": _payment_discount_percentage(current_datetime),
+                "quotes": quotes,
+                "final_class_amount": quotes["individual_class"]["full"]["final_amount"],
+                "final_monthly_amount": quotes["monthly_subscription"]["full"]["final_amount"],
             }
             for class_obj in classes
         ]
@@ -693,10 +757,15 @@ def create_payment():
     if not class_obj:
         return jsonify({"error": "Clase no encontrada"}), 404
 
-    quote = _payment_quote(class_obj, payment_type, payment_option)
+    current_datetime = _current_discount_datetime()
+    if _class_has_finished(class_obj, current_datetime):
+        return jsonify({"error": "No se puede pagar una clase ya finalizada"}), 400
+
+    quote = _payment_quote(payment_type, payment_option, current_datetime)
     amount = quote["amount"]
     discount_percentage = quote["discount_percentage"]
     final_amount = quote["final_amount"]
+    _log_discount_quote(current_datetime, class_obj, discount_percentage, amount, final_amount)
 
     payment = Payment(
         user_id=current_user.id,
