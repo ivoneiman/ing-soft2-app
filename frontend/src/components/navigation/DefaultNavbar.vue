@@ -85,16 +85,20 @@
       </div>
     </div>
 
-    <!-- Derecha: Mostrar QR solo para CLIENT autenticado (desktop) -->
-    <div class="right-section" v-if="authStore.isLoggedIn && roleHelpers.isClient()">
+    <!-- Derecha: acceso rápido a QR/asistencia según rol (desktop) -->
+    <router-link
+      v-if="authStore.isLoggedIn && attendanceShortcutRoute"
+      :to="attendanceShortcutRoute"
+      class="right-section"
+    >
       <span class="present-text">PASAR <br /> PRESENTE</span>
       <img src="/codigo-qr.png" alt="QR" class="qr-image" />
-    </div>
+    </router-link>
   </nav>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { authStore } from '../../services/authStore'
 import { roleHelpers } from '../../utils/roleHelpers'
@@ -106,6 +110,12 @@ const router = useRouter()
 const isDropdownOpen = ref(false)
 const isMobileMenuOpen = ref(false)
 const dropdownRef = ref(null)
+
+const attendanceShortcutRoute = computed(() => {
+  if (roleHelpers.isClient()) return '/mi-qr'
+  if (roleHelpers.isEmployee()) return '/pasar-asistencia'
+  return null
+})
 
 function toggleDropdown() {
   isDropdownOpen.value = !isDropdownOpen.value

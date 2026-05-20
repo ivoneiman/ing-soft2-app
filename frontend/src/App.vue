@@ -117,6 +117,11 @@ p, a, button {
   color: #9ca3af;
 }
 
+a{
+  text-decoration: none;
+  color: #f6ea98;
+}
+
 
 .anton-regular {
   font-family: "Anton", sans-serif;
