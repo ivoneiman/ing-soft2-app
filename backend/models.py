@@ -55,6 +55,7 @@ class Class(db.Model):
     duration_minutes = db.Column(db.Integer, nullable=False, default=60)
     cupoMaximo = db.Column(db.Integer, nullable=False, default=20)
     id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
+    estado = db.Column(db.String(20), default="Activa", nullable=False)  # 'Activa' o 'Cancelada'
 
     # Relación con la actividad (necesaria para el catálogo y respuestas limpias)
     actividad = db.relationship("Actividades", backref="classes")
@@ -73,9 +74,11 @@ class Class(db.Model):
             "id": self.id,
             "name": self.name,
             "fecha_hora": self.fecha_hora.isoformat() if self.fecha_hora else None,
+            "time": self.fecha_hora.strftime("%H:%M") if self.fecha_hora else "",
             "duration_minutes": self.duration_minutes,
             "cupoMaximo": self.cupoMaximo,
             "actividad_name": self.actividad.name if self.actividad else None,
+            "estado": self.estado,
         }
 
 
@@ -85,6 +88,9 @@ class Enrollment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
+    tipo = db.Column(db.String(20), default="Suelta", nullable=False)  # 'Mensual' o 'Suelta'
+    estado = db.Column(db.String(20), default="Activa", nullable=False)  # 'Activa' o 'Cancelada'
+    requiere_reembolso = db.Column(db.Boolean, default=False, nullable=False)  # Para reservas tipo 'Suelta'
 
     user = db.relationship("User", backref=db.backref("enrollments", cascade="all, delete-orphan"))
     class_ = db.relationship("Class", back_populates="enrollments")
@@ -105,3 +111,30 @@ class Attendance(db.Model):
     class_ = db.relationship("Class", back_populates="attendances")
 
     __table_args__ = (db.UniqueConstraint("user_id", "class_id", name="uq_attendance_user_class"),)
+
+# ==============================================================================
+# Módulo de Cancelaciones y Sistema de Créditos (US #19)
+# ==============================================================================
+
+class Credito(db.Model):
+    """Representa los créditos/puntos otorgados a usuarios por clases canceladas."""
+    __tablename__ = "creditos"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False) # Clave foránea corregida a 'users.id'
+    actividad_id = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
+    fecha_expiracion = db.Column(db.DateTime, nullable=False)
+    estado = db.Column(db.String(20), default="Disponible", nullable=False) # 'Disponible', 'Usado'
+
+    # Relaciones para poder consultar fácilmente los datos cruzados
+    user = db.relationship("User", backref=db.backref("creditos", cascade="all, delete-orphan"))
+    actividad = db.relationship("Actividades")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "actividad_name": self.actividad.name if self.actividad else None,
+            "fecha_expiracion": self.fecha_expiracion.isoformat(),
+            "estado": self.estado
+        }

@@ -68,6 +68,13 @@ export function getAvailableClasses() {
   );
 }
 
+export function getAllClasses() {
+  return axios.get(
+    `${API_URL}/classes/all`,
+    { withCredentials: true }
+  );
+}
+
 export function getCatalogAvailability(actividad_id, fecha) {
   return axios.get(
     `${API_URL}/catalog/availability`,
@@ -121,6 +128,18 @@ export function registerAttendance({
   return axios.post(
     `${API_URL}/attendance/register`,
     { user_id, class_id },
+    { withCredentials: true }
+  );
+}
+
+// =========================
+// CANCELACIONES
+// =========================
+
+export function cancelarClaseCompleta(clase_id) {
+  return axios.post(
+    `${API_URL}/classes/${clase_id}/cancelar`,
+    {},
     { withCredentials: true }
   );
 }

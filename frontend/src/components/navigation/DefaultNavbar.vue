@@ -70,6 +70,11 @@
             <router-link v-if="roleHelpers.isAdmin()" to="/reportes" @click="handleDropdownClick">
               Reportes
             </router-link>
+
+            <!-- ADMIN/EMPLOYEE: Panel de Control (Cronograma de Clases y Cancelaciones) -->
+            <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/dashboard" @click="handleDropdownClick">
+              Panel de Control
+            </router-link>
             
             <!-- Cerrar sesión para todos -->
             <a href="#" @click.prevent="handleLogout">

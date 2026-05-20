@@ -21,7 +21,8 @@ const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
 const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
-const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue"); 
+const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue");
+const DashboardView = () => import("../views/dashboard/DashboardView.vue"); 
 
 
 const routes = [
@@ -85,6 +86,12 @@ const routes = [
         path: "crear-usuario",
         name: "CrearUsuario",
         component: CrearUsuarioView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "dashboard",
+        name: "Dashboard",
+        component: DashboardView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
       }
     ],

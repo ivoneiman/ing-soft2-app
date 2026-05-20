@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from calendar import monthrange
 from dotenv import load_dotenv
 
@@ -10,8 +10,8 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from models import db, User
-# Importar todos los modelos requeridos
-from models import Class, Enrollment, Attendance, Actividades
+# Importamos todos los modelos requeridos de models.py (incluyendo Credito que mudamos ahí)
+from models import Class, Enrollment, Attendance, Actividades, Credito
 
 # Carga variables de entorno desde .env
 load_dotenv()
@@ -21,8 +21,6 @@ app = Flask(__name__)
 # ─── Configuración ────────────────────────────────────────────────────────────
 
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
-
-# Base de datos: SQLite por defecto (desarrollo local)
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///app.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
@@ -74,7 +72,6 @@ with app.app_context():
 # ─── Helpers para el Catálogo ──────────────────────────────────────────────────
 
 def _enrollment_counts():
-    """Mapa class_id -> cantidad de inscriptos."""
     counts = {}
     for class_id, enrolled in db.session.query(
         Enrollment.class_id, db.func.count(Enrollment.id)
@@ -84,7 +81,6 @@ def _enrollment_counts():
 
 
 def _class_slot_payload(class_obj, enrolled_count):
-    # Se usa getattr por si duration_minutes no está mapeado en la versión de models de tu compañero
     duration = getattr(class_obj, "duration_minutes", 60)
     cupo_max = class_obj.cupoMaximo if class_obj.cupoMaximo is not None else 20
     available = cupo_max - enrolled_count
@@ -99,6 +95,7 @@ def _class_slot_payload(class_obj, enrolled_count):
         "enrolled": enrolled_count,
         "available_spots": available,
         "is_full": available <= 0,
+        "estado": getattr(class_obj, "estado", "Activa"),
     }
 
 # ─── Rutas API: Autenticación ─────────────────────────────────────────────────
@@ -106,7 +103,6 @@ def _class_slot_payload(class_obj, enrolled_count):
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.get_json()
-
     username = data.get("username")
     apellido = data.get("apellido")
     email = data.get("email")
@@ -121,26 +117,16 @@ def register():
     if existing_user:
         return jsonify({"error": "El email ya está registrado"}), 400
 
-    # Crear usuario
-    new_user = User(
-        username=username,
-        apellido=apellido,
-        email=email,
-        dni=dni,
-        telefono=telefono
-    )
+    new_user = User(username=username, apellido=apellido, email=email, dni=dni, telefono=telefono)
     new_user.set_password(password)
-
     db.session.add(new_user)
     db.session.commit()
-
     return jsonify({"message": "Usuario registrado correctamente"}), 201
 
 
 @app.route("/api/login", methods=["POST"])
 def login():
     data = request.get_json()
-
     email = data.get("email")
     password = data.get("password")
 
@@ -152,15 +138,9 @@ def login():
         return jsonify({"error": "Contraseña incorrecta"}), 401
 
     session["user_id"] = user.id
-
     return jsonify({
         "message": "Login exitoso",
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "role": user.role
-        }
+        "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
     }), 200
 
 
@@ -181,40 +161,28 @@ def me():
         return jsonify({"error": "Usuario no encontrado"}), 404
 
     return jsonify({
-        "user": {
-            "id": user.id,
-            "username": user.username,
-            "email": user.email,
-            "role": user.role
-        }
+        "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
     }), 200
 
-# ─── Rutas API: Actividades y Catálogo ────────────────────────────────────────
+# ─── Rutas API: Actividades, Usuarios y Catálogo ────────────────────────────────────────
 
 @app.route("/api/actividades", methods=["GET"])
 def get_actividades():
     actividades = Actividades.query.all()
-    return jsonify([
-        {"id": actividad.id, "name": actividad.name}
-        for actividad in actividades
-    ]), 200
+    return jsonify([{"id": ac.id, "name": ac.name} for ac in actividades]), 200
+
 
 @app.route("/api/users", methods=["POST"])
 def create_user():
-    """Crea un nuevo usuario (solo para admins y empleados)"""
-    # Verificar autenticación
     user_id = session.get("user_id")
     if not user_id:
         return jsonify({"error": "No autenticado"}), 401
 
-    # Verificar que el usuario sea admin o empleado
     current_user = User.query.get(user_id)
     if not current_user or current_user.role not in ["admin", "employee"]:
         return jsonify({"error": "No tienes permisos para crear usuarios"}), 403
 
     data = request.get_json()
-    
-    # Validaciones básicas
     username = data.get("username", "").strip()
     apellido = data.get("apellido", "").strip()
     email = data.get("email", "").strip()
@@ -228,66 +196,53 @@ def create_user():
     if len(password) < 6:
         return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
 
-    # Verificar si ya existe el email
     existing_email = User.query.filter_by(email=email).first()
     if existing_email:
         return jsonify({"error": "El email ya está registrado"}), 400
 
-    # Crear usuario
-    new_user = User(
-        username=username,
-        apellido=apellido,
-        email=email,
-        dni=dni,
-        telefono=telefono,
-        role="client"  # Por defecto, los nuevos usuarios creados por admin/empleado son clientes
-    )
+    new_user = User(username=username, apellido=apellido, email=email, dni=dni, telefono=telefono, role="client")
     new_user.set_password(password)
-
     db.session.add(new_user)
     db.session.commit()
 
-    return jsonify({
-        "message": "Usuario creado exitosamente",
-        "user": new_user.to_dict()
-    }), 201
-
+    return jsonify({"message": "Usuario creado exitosamente", "user": new_user.to_dict()}), 201
 
 
 @app.route("/api/actividades/<int:actividad_id>/classes", methods=["GET"])
 def get_activity_classes(actividad_id):
     classes = Class.query.filter_by(id_actividad=actividad_id).all()
     return jsonify({
-        "classes": [
-            {
-                "id": c.id,
-                "fecha_hora": c.fecha_hora.isoformat(),
-                "time": c.fecha_hora.strftime("%H:%M")
-            } for c in classes
-        ]
+        "classes": [{"id": c.id, "fecha_hora": c.fecha_hora.isoformat(), "time": c.fecha_hora.strftime("%H:%M")} for c in classes]
     }), 200
+
 
 @app.route("/api/catalog", methods=["GET"])
 def get_catalog():
-    """Devuelve las clases con cupo disponible para que el cliente las vea."""
     enrollment_map = _enrollment_counts()
     capacity_classes = []
-
-    for class_obj in Class.query.all():
+    for class_obj in Class.query.filter_by(estado="Activa").all():
         enrolled_count = enrollment_map.get(class_obj.id, 0)
         cupo_max = class_obj.cupoMaximo if class_obj.cupoMaximo is not None else 20
         if enrolled_count < cupo_max:
             capacity_classes.append(_class_slot_payload(class_obj, enrolled_count))
-
-    if not capacity_classes:
-        return jsonify({"message": "No hay clases con cupo disponibles", "classes": []}), 200
-
     return jsonify({"classes": capacity_classes}), 200
+
+
+@app.route("/api/classes/all", methods=["GET"])
+def get_all_classes():
+    """Devuelve TODAS las clases (activas y canceladas) con conteo de inscritos.
+    Utilizado principalmente por el Dashboard del staff."""
+    enrollment_map = _enrollment_counts()
+    all_classes = []
+    for class_obj in Class.query.all():
+        enrolled_count = enrollment_map.get(class_obj.id, 0)
+        payload = _class_slot_payload(class_obj, enrolled_count)
+        all_classes.append(payload)
+    return jsonify({"classes": all_classes}), 200
 
 
 @app.route("/api/catalog/availability", methods=["GET"])
 def get_catalog_availability():
-    """Clases de una actividad en un día, separadas por cupo disponible y completas."""
     actividad_id = request.args.get("actividad_id", type=int)
     fecha = request.args.get("fecha")
 
@@ -307,12 +262,7 @@ def get_catalog_availability():
     available_slots = []
     full_count = 0
 
-    classes = (
-        Class.query.filter_by(id_actividad=actividad_id)
-        .filter(db.func.date(Class.fecha_hora) == day)
-        .order_by(Class.fecha_hora)
-        .all()
-    )
+    classes = Class.query.filter_by(id_actividad=actividad_id, estado="Activa").filter(db.func.date(Class.fecha_hora) == day).order_by(Class.fecha_hora).all()
 
     for class_obj in classes:
         enrolled_count = enrollment_map.get(class_obj.id, 0)
@@ -322,17 +272,11 @@ def get_catalog_availability():
         else:
             full_count += 1
 
-    return jsonify({
-        "actividad": actividad.name,
-        "fecha": fecha,
-        "available": available_slots,
-        "full_count": full_count,
-    }), 200
+    return jsonify({"actividad": actividad.name, "fecha": fecha, "available": available_slots, "full_count": full_count}), 200
 
 
 @app.route("/api/catalog/days", methods=["GET"])
 def get_catalog_days():
-    """Días de un mes con al menos una clase con cupo para la actividad."""
     actividad_id = request.args.get("actividad_id", type=int)
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
@@ -353,11 +297,7 @@ def get_catalog_days():
     enrollment_map = _enrollment_counts()
     dates_with_cupo = set()
 
-    classes = (
-        Class.query.filter_by(id_actividad=actividad_id)
-        .filter(Class.fecha_hora >= start, Class.fecha_hora <= end)
-        .all()
-    )
+    classes = Class.query.filter_by(id_actividad=actividad_id, estado="Activa").filter(Class.fecha_hora >= start, Class.fecha_hora <= end).all()
 
     for class_obj in classes:
         enrolled_count = enrollment_map.get(class_obj.id, 0)
@@ -393,21 +333,11 @@ def create_class():
     except ValueError:
         return jsonify({"error": "Fecha u hora inválida"}), 400
 
-    existing_class = Class.query.filter_by(
-        id_actividad=actividad.id,
-        fecha_hora=fecha_hora,
-    ).first()
-
+    existing_class = Class.query.filter_by(id_actividad=actividad.id, fecha_hora=fecha_hora).first()
     if existing_class:
         return jsonify({"error": "Ya existe una clase para esa actividad en ese horario"}), 400
 
-    new_class = Class(
-        name=actividad.name,
-        fecha_hora=fecha_hora,
-        id_actividad=actividad.id,
-        cupoMaximo=cupo_maximo
-    )
-
+    new_class = Class(name=actividad.name, fecha_hora=fecha_hora, id_actividad=actividad.id, cupoMaximo=cupo_maximo)
     db.session.add(new_class)
     try:
         db.session.commit()
@@ -420,15 +350,10 @@ def create_class():
 
     return jsonify({
         "message": "Clase creada correctamente",
-        "class": {
-            "id": new_class.id,
-            "name": new_class.name,
-            "fecha_hora": new_class.fecha_hora.isoformat(),
-            "activity_id": new_class.id_actividad,
-        }
+        "class": {"id": new_class.id, "name": new_class.name, "fecha_hora": new_class.fecha_hora.isoformat(), "activity_id": new_class.id_actividad}
     }), 201
 
-# ─── Rutas API: Asistencia QR ─────────────────────────────────────────────────
+# ─── Rutas API: Asistencia QR (ORIGINAL DE TU COMPAÑERO, SIN MODIFICAR) ───────
 
 @app.route("/api/attendance/register", methods=["POST"])
 def register_attendance():
@@ -470,6 +395,45 @@ def register_attendance():
         }
     }), 201
 
+# ─── Rutas API: Gestión de Cancelaciones por Staff (US #19) ───────────────────
+
+@app.route("/api/classes/<int:clase_id>/cancelar", methods=["POST"])
+def cancelar_clase_staff(clase_id):
+    """US #19: El profesor o administrador cancela una clase completa.
+    Simplemente marca la clase como cancelada y libera el turno.
+    """
+    user_id_sesion = session.get("user_id")
+    if not user_id_sesion:
+        return jsonify({"error": "No autenticado"}), 401
+
+    current_user = User.query.get(user_id_sesion)
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos de personal para cancelar clases"}), 403
+
+    class_obj = Class.query.get_or_404(clase_id)
+    
+    # Verifica si la clase ya fue cancelada
+    if class_obj.estado == "Cancelada":
+        return jsonify({"error": "Esta clase ya fue cancelada"}), 400
+
+    # Marca la clase como cancelada
+    class_obj.estado = "Cancelada"
+
+    try:
+        db.session.commit()
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({"error": "Error interno al procesar la cancelación", "details": str(err)}), 500
+
+    return jsonify({
+        "message": f"Clase '{class_obj.name}' cancelada exitosamente. El turno fue liberado en el calendario.",
+        "class_id": clase_id,
+        "class_name": class_obj.name,
+        "estado": "Cancelada"
+    }), 200
+
+
+# ─── Arranque del Servidor ───────────────────────────────────────────────────
 
 if __name__ == "__main__":
     app.run(debug=True)
