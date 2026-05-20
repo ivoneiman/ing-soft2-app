@@ -55,11 +55,8 @@ class Class(db.Model):
     duration_minutes = db.Column(db.Integer, nullable=False, default=60)
     cupoMaximo = db.Column(db.Integer, nullable=False, default=20)
     id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
-<<<<<<< HEAD
     estado = db.Column(db.String(20), default="Activa", nullable=False)  # 'Activa' o 'Cancelada'
-=======
     descuento = db.Column(db.Integer, nullable=False, default=0) # Porcentaje de descuento (0, 40, 70)
->>>>>>> develop
 
     # Relación con la actividad (necesaria para el catálogo y respuestas limpias)
     actividad = db.relationship("Actividades", backref="classes")
@@ -82,11 +79,8 @@ class Class(db.Model):
             "duration_minutes": self.duration_minutes,
             "cupoMaximo": self.cupoMaximo,
             "actividad_name": self.actividad.name if self.actividad else None,
-<<<<<<< HEAD
             "estado": self.estado,
-=======
             "descuento": self.descuento,
->>>>>>> develop
         }
 
 
@@ -129,14 +123,15 @@ class Credito(db.Model):
     __tablename__ = "creditos"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False) # Clave foránea corregida a 'users.id'
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False) 
     actividad_id = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
     fecha_expiracion = db.Column(db.DateTime, nullable=False)
-    estado = db.Column(db.String(20), default="Disponible", nullable=False) # 'Disponible', 'Usado'
+    estado = db.Column(db.String(20), default="Disponible", nullable=False)
 
-    # Relaciones para poder consultar fácilmente los datos cruzados
+    # Relaciones válidas basadas estrictamente en las claves foráneas de arriba
     user = db.relationship("User", backref=db.backref("creditos", cascade="all, delete-orphan"))
-    actividad = db.relationship("Actividades")
+    actividad = db.relationship("Actividades") 
+    # 🌟 NOTA: Si acá abajo tenías una línea que decía algo con "Class", borrala por completo.
 
     def to_dict(self):
         return {
@@ -146,4 +141,3 @@ class Credito(db.Model):
             "fecha_expiracion": self.fecha_expiracion.isoformat(),
             "estado": self.estado
         }
-    class_ = db.relationship("Class", back_populates="attendances")
