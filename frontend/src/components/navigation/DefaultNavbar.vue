@@ -17,6 +17,7 @@
       <router-link to="/" class="nav-item" @click="closeMobileMenu">Home</router-link>
       <router-link to="/actividades" class="nav-item" @click="closeMobileMenu">Actividades</router-link>
       <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/crear-clase" class="nav-item" @click="closeMobileMenu">Crear Clase</router-link>
+      <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/crear-usuario" class="nav-item" @click="closeMobileMenu">Crear Usuario</router-link>
       <router-link to="/sobre-nosotros" class="nav-item" @click="closeMobileMenu">Sobre Nosotros</router-link>
 
       <!-- Si no está autenticado: mostrar Login y Registro -->
@@ -43,6 +44,9 @@
         <router-link v-if="roleHelpers.isClient()" to="/mi-qr" class="nav-item" @click="closeMobileMenu">
           Mi QR
         </router-link>
+        <router-link to="/pagos" class="nav-item" @click="closeMobileMenu">
+          Pagos
+        </router-link>
 
         <!-- EMPLOYEE: Pasar Asistencia -->
         <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" class="nav-item" @click="closeMobileMenu">
@@ -59,15 +63,17 @@
           </button>
 
           <div v-if="isDropdownOpen" class="dropdown-container">
-            <!-- ADMIN: acceso a Configuración, Pagos y Reportes -->
+            <!-- ADMIN: acceso a Configuración y Reportes -->
             <router-link v-if="roleHelpers.isAdmin()" to="/configuracion" @click="handleDropdownClick">
               Configuración
             </router-link>
-            <router-link v-if="roleHelpers.isAdmin()" to="/pagos" @click="handleDropdownClick">
-              Pagos
-            </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/reportes" @click="handleDropdownClick">
               Reportes
+            </router-link>
+
+            <!-- ADMIN/EMPLOYEE: Panel de Control (Cronograma de Clases y Cancelaciones) -->
+            <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/dashboard" @click="handleDropdownClick">
+              Panel de Control
             </router-link>
             
             <!-- Cerrar sesión para todos -->
@@ -79,16 +85,20 @@
       </div>
     </div>
 
-    <!-- Derecha: Mostrar QR solo para CLIENT autenticado (desktop) -->
-    <div class="right-section" v-if="authStore.isLoggedIn && roleHelpers.isClient()">
+    <!-- Derecha: acceso rápido a QR/asistencia según rol (desktop) -->
+    <router-link
+      v-if="authStore.isLoggedIn && attendanceShortcutRoute"
+      :to="attendanceShortcutRoute"
+      class="right-section"
+    >
       <span class="present-text">PASAR <br /> PRESENTE</span>
       <img src="/codigo-qr.png" alt="QR" class="qr-image" />
-    </div>
+    </router-link>
   </nav>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { onClickOutside } from '@vueuse/core'
 import { authStore } from '../../services/authStore'
 import { roleHelpers } from '../../utils/roleHelpers'
@@ -100,6 +110,12 @@ const router = useRouter()
 const isDropdownOpen = ref(false)
 const isMobileMenuOpen = ref(false)
 const dropdownRef = ref(null)
+
+const attendanceShortcutRoute = computed(() => {
+  if (roleHelpers.isClient()) return '/mi-qr'
+  if (roleHelpers.isEmployee()) return '/pasar-asistencia'
+  return null
+})
 
 function toggleDropdown() {
   isDropdownOpen.value = !isDropdownOpen.value

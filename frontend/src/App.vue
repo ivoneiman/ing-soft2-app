@@ -27,8 +27,8 @@ html, body, #app {
 
 body {
   font-family: "Bodoni Moda", serif;
-  background: #f5f5f5;
-  color: #572c57;
+  background:  #572c57;  /* ← Sólido en vez de gradiente */
+  color:  #f5f5f5; 
 }
 
 button {
@@ -77,9 +77,11 @@ input {
   width: 100%;
 }
 
-div {
+.view {
   color: #f5f5f5;
   background: #572c57;
+  min-height: calc(100vh - 140px);
+  padding-bottom: 2rem;
 }
 
 h1 {
@@ -113,6 +115,11 @@ p, a, button {
   letter-spacing: 1.5px;
   font-weight: 300;
   color: #9ca3af;
+}
+
+a{
+  text-decoration: none;
+  color: #f6ea98;
 }
 
 

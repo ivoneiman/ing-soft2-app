@@ -36,11 +36,11 @@ export const authStore = reactive({
     }
   },
 
-  async register(username, email, password) {
+  async register({ username, apellido, email, dni, telefono, password }) {
     this.loading = true
     this.error = null
     try {
-      await register({ username, email, password })
+      await register({ username, apellido, email, dni, telefono, password })
       // Después de registrar, hacer login automático
       return await this.login(email, password)
     } catch (err) {

@@ -21,6 +21,12 @@ const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
 const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
+const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue"); 
+
+// 🌟 CORRECCIÓN 1: El archivo físico se llama index.vue en tu carpeta dashboard
+const DashboardView = () => import("../views/dashboard/DashboardView.vue"); 
+const AdminDiscountsView = () => import("../views/pagos/AdminDiscountsView.vue");
+
 
 const routes = [
   // 🔵 Layout principal (con navbar)
@@ -53,7 +59,7 @@ const routes = [
         path: "pagos",
         name: "Pagos",
         component: PagosView,
-        meta: { requiresAuth: true, requiresAdmin: true }
+        meta: { requiresAuth: true }
       },
       {
         path: "reportes",
@@ -78,7 +84,25 @@ const routes = [
         name: "CrearClase",
         component: CrearClaseView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
-      }
+      },
+      {
+        path: "crear-usuario",
+        name: "CrearUsuario",
+        component: CrearUsuarioView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "dashboard",
+        name: "Dashboard",
+        component: DashboardView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "admin/descuentos",
+        name: "AdminDiscounts",
+        component: AdminDiscountsView,
+        meta: { requiresAuth: true, requiresAdmin: true },
+      } // 🌟 CORRECCIÓN 2: Eliminamos los caracteres invisibles que arrastraba el archivo al final de esta llave
     ],
   },
 
@@ -113,40 +137,30 @@ const router = createRouter({
 
 /**
  * Guard de navegación global
- * Valida:
- * - requiresAuth: usuario debe estar autenticado
- * - requiresAdmin: usuario debe ser admin
- * - requiresEmployee: usuario debe ser employee
- * - requiresClient: usuario debe ser client
  */
 router.beforeEach(async (to, from, next) => {
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
   const requiresAdmin = to.matched.some(record => record.meta.requiresAdmin);
   const requiresEmployee = to.matched.some(record => record.meta.requiresEmployee);
-  const requiresAdminOrEmployee = to.matched.some(record => record.meta.requiresAdminOrEmployee); "agregué eso porque algunas cosas las tienen que poder usar los empleados y los admins"
+  const requiresAdminOrEmployee = to.matched.some(record => record.meta.requiresAdminOrEmployee);
   const requiresClient = to.matched.some(record => record.meta.requiresClient);
 
-  // Si no está autenticado y la ruta lo requiere, redirigir a login
   if (requiresAuth && !roleHelpers.isAuthenticated()) {
     return next('/login');
   }
 
-  // Validar rol admin o employee
   if (requiresAdminOrEmployee && !roleHelpers.hasAnyRole(['admin', 'employee'])) {
     return next('/');
   }
 
-  // Validar rol admin
   if (requiresAdmin && !roleHelpers.isAdmin()) {
     return next('/');
   }
 
-  // Validar rol employee
   if (requiresEmployee && !roleHelpers.isEmployee()) {
     return next('/');
   }
 
-  // Validar rol client
   if (requiresClient && !roleHelpers.isClient()) {
     return next('/');
   }
