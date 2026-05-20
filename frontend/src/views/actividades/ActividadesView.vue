@@ -32,38 +32,45 @@
             @date-selected="onDateSelected"
             @month-change="onMonthChange"
           />
-          <div v-if="!loadingDays && enabledDateKeys.length === 0" class="info-box">
-            No hay clases con cupo este mes para {{ selectedActivityName }}.
-          </div>
         </section>
 
         <!-- Columna derecha: Horarios -->
-        <section v-if="selectedDate" class="selection-col">
+        <section class="selection-col">
           <h2 class="step-title"><span class="step-num">3</span> Horario</h2>
-          <div v-if="loadingSlots" class="info-box">Cargando horarios...</div>
+          
+          <div v-if="loadingDays" class="info-box">Buscando disponibilidad...</div>
+          <div v-else-if="!enabledDateKeys || Object.keys(enabledDateKeys).length === 0" class="info-box">
+            No se encontraron turnos para la actividad seleccionada.
+          </div>
+          <div v-else-if="!selectedDate" class="info-box">
+            Seleccioná un día en el calendario.
+          </div>
           <template v-else>
-            <div class="slots-grid">
-              <button
-                v-for="slot in availableSlots"
-                :key="slot.id"
-                type="button"
-                class="slot-btn"
-                :class="{ active: selectedClassId === slot.id }"
-                @click="selectedClassId = slot.id">
-                <div class="slot-time">{{ slot.time }}</div>
-                <div class="slot-cupo">
-                  {{ slot.available_spots }} {{ slot.available_spots === 1 ? 'cupo' : 'cupos' }}
-                </div>
-              </button>
-            </div>
+            <div v-if="loadingSlots" class="info-box">Cargando horarios...</div>
+            <template v-else>
+              <div class="slots-grid">
+                <button
+                  v-for="slot in availableSlots"
+                  :key="slot.id"
+                  type="button"
+                  class="slot-btn"
+                  :class="{ active: selectedClassId === slot.id }"
+                  @click="selectedClassId = slot.id">
+                  <div class="slot-time">{{ slot.time }}</div>
+                  <div class="slot-cupo">
+                    {{ slot.available_spots }} {{ slot.available_spots === 1 ? 'cupo' : 'cupos' }}
+                  </div>
+                </button>
+              </div>
 
-            <p v-if="!availableSlots.length" class="info-box">
-              No hay horarios con cupo para este día.
-            </p>
+              <p v-if="!availableSlots.length" class="info-box">
+                No hay horarios con cupo para este día.
+              </p>
 
-            <p v-if="fullCount > 0" class="waitlist-note">
-              {{ fullCount }} horario{{ fullCount === 1 ? '' : 's' }} completo{{ fullCount === 1 ? '' : 's' }}.
-            </p>
+              <p v-if="fullCount > 0" class="waitlist-note">
+                {{ fullCount }} horario{{ fullCount === 1 ? '' : 's' }} completo{{ fullCount === 1 ? '' : 's' }}.
+              </p>
+            </template>
           </template>
         </section>
       </div>

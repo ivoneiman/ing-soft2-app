@@ -133,7 +133,7 @@ def main():
         print()
 
         # ─── Crear clases de prueba ───────────────────────────────────────
-
+        """"
         print("📚 Creando clases de prueba...")
         
         class1 = create_test_class(
@@ -170,7 +170,7 @@ def main():
         
         # Client inscrito a una clase
         create_enrollment(client, class1)
-
+        """
         db.session.commit()
         print()
 
