@@ -17,6 +17,7 @@ class User(UserMixin, db.Model):
     telefono = db.Column(db.String(20), nullable=True) # Teléfono del usuario
     password_hash = db.Column(db.String(256), nullable=False)#columna password_hash que es una cadena de texto de hasta 256 caracteres, no puede ser nula, y se usará para almacenar el hash seguro de la contraseña del usuario en lugar de la contraseña en texto plano
     role = db.Column(db.String(20), default="client") # Rol del usuario: client, employee, admin
+    payments = db.relationship("Payment", back_populates="user", cascade="all, delete-orphan")
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -64,6 +65,7 @@ class Class(db.Model):
     # Relaciones con inscripciones y asistencias
     enrollments = db.relationship("Enrollment", back_populates="class_", cascade="all, delete-orphan")
     attendances = db.relationship("Attendance", back_populates="class_", cascade="all, delete-orphan")
+    payments = db.relationship("Payment", back_populates="class_")
 
     # Identificador único unificado para el try/except de app.py de tu compañero
     __table_args__ = (
@@ -140,4 +142,47 @@ class Credito(db.Model):
             "actividad_name": self.actividad.name if self.actividad else None,
             "fecha_expiracion": self.fecha_expiracion.isoformat(),
             "estado": self.estado
+        }
+
+
+class Payment(db.Model):
+    """Registro base de pagos iniciados desde el sistema."""
+    __tablename__ = "payments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=True)
+    payment_type = db.Column(db.String(30), nullable=False)
+    payment_method = db.Column(db.String(30), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    discount_percentage = db.Column(db.Integer, nullable=False, default=0)
+    final_amount = db.Column(db.Float, nullable=False)
+    mercado_pago_preference_id = db.Column(db.String(120), nullable=True)
+    mercado_pago_payment_id = db.Column(db.String(120), nullable=True)
+    status = db.Column(db.String(20), nullable=False, default="pending")
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
+
+    user = db.relationship("User", back_populates="payments")
+    class_ = db.relationship("Class", back_populates="payments")
+
+    VALID_PAYMENT_TYPES = ("monthly_subscription", "individual_class")
+    VALID_PAYMENT_METHODS = ("mercado_pago", "card")
+    VALID_STATUSES = ("pending", "approved", "rejected")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "class_id": self.class_id,
+            "class_name": self.class_.name if self.class_ else None,
+            "actividad": self.class_.actividad.name if self.class_ and self.class_.actividad else None,
+            "payment_type": self.payment_type,
+            "payment_method": self.payment_method,
+            "amount": self.amount,
+            "discount_percentage": self.discount_percentage,
+            "final_amount": self.final_amount,
+            "mercado_pago_preference_id": self.mercado_pago_preference_id,
+            "mercado_pago_payment_id": self.mercado_pago_payment_id,
+            "status": self.status,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }

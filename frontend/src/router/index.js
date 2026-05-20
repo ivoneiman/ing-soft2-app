@@ -59,7 +59,7 @@ const routes = [
         path: "pagos",
         name: "Pagos",
         component: PagosView,
-        meta: { requiresAuth: true, requiresAdmin: true }
+        meta: { requiresAuth: true }
       },
       {
         path: "reportes",

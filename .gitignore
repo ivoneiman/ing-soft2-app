@@ -8,6 +8,7 @@ env/
 *.egg-info/
 
 # Base de datos (siempre generada por seed.py)
+instance/
 *.db
 *.sqlite
 *.sqlite3

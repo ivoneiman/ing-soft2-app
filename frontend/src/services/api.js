@@ -57,6 +57,16 @@ export function getActivityClasses(actividad_id) {
   );
 }
 
+export function getPaymentClasses(testDay) {
+  return axios.get(
+    `${API_URL}/classes`,
+    {
+      params: testDay ? { test_day: testDay } : {},
+      withCredentials: true,
+    }
+  );
+}
+
 // =========================
 // CATÁLOGO
 // =========================
@@ -140,6 +150,34 @@ export function cancelarClaseCompleta(clase_id) {
   return axios.post(
     `${API_URL}/classes/${clase_id}/cancelar`,
     {},
+    { withCredentials: true }
+  );
+}
+
+// PAGOS
+// =========================
+
+export function createPayment({
+  payment_type,
+  payment_method,
+  class_id,
+  payment_option,
+}) {
+  return axios.post(
+    `${API_URL}/payments/create`,
+    {
+      payment_type,
+      payment_method,
+      class_id,
+      payment_option,
+    },
+    { withCredentials: true }
+  );
+}
+
+export function getPaymentHistory() {
+  return axios.get(
+    `${API_URL}/payments/history`,
     { withCredentials: true }
   );
 }
