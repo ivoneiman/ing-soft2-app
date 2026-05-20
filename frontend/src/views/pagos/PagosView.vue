@@ -54,6 +54,14 @@
           </select>
         </div>
 
+        <fieldset v-if="isDiscountTestVisible" class="discount-test-mode">
+          <legend>Modo testing descuentos</legend>
+          <label v-for="option in discountTestOptions" :key="option.value">
+            <input v-model="discountTestDay" type="radio" name="discount-test-day" :value="option.value" />
+            <span>{{ option.label }}</span>
+          </label>
+        </fieldset>
+
         <section v-if="selectedClass" class="payment-summary">
           <h2>Resumen</h2>
           <dl>
@@ -119,7 +127,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { createPayment, getPaymentClasses, getPaymentHistory } from '../../services/api';
 import { roleHelpers } from '../../utils/roleHelpers';
@@ -131,6 +139,14 @@ const isLoadingHistory = ref(false);
 const errorMessage = ref('');
 const classes = ref([]);
 const payments = ref([]);
+const discountTestDay = ref('');
+const isDiscountTestVisible = import.meta.env.DEV || import.meta.env.MODE === 'test';
+const discountTestOptions = [
+  { value: '', label: 'Fecha real' },
+  { value: '10', label: 'Simular día 10 (0%)' },
+  { value: '17', label: 'Simular día 17 (40%)' },
+  { value: '25', label: 'Simular día 25 (70%)' },
+];
 
 const form = reactive({
   class_id: '',
@@ -215,7 +231,7 @@ function paymentStatusLabel(status) {
 
 async function loadClasses() {
   try {
-    const response = await getPaymentClasses();
+    const response = await getPaymentClasses(discountTestDay.value);
     classes.value = response.data.classes || [];
   } catch (err) {
     errorMessage.value = err.response?.data?.error || 'Error del servidor de pagos';
@@ -263,6 +279,10 @@ async function handleSubmit() {
 onMounted(() => {
   loadClasses();
   loadPaymentHistory();
+});
+
+watch(discountTestDay, () => {
+  loadClasses();
 });
 </script>
 
@@ -351,6 +371,29 @@ onMounted(() => {
   border-radius: 6px;
   min-height: 42px;
   padding: 8px 10px;
+}
+
+.discount-test-mode {
+  grid-column: 1 / -1;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 0;
+  padding: 14px 16px 16px;
+}
+
+.discount-test-mode legend {
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.discount-test-mode label {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 8px;
 }
 
 .field-help {

@@ -145,6 +145,36 @@ def _current_discount_datetime():
     return datetime.now(timezone) if timezone else datetime.now()
 
 
+def _valid_test_day(value):
+    try:
+        day = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    if 1 <= day <= 31:
+        return day
+    return None
+
+
+def _discount_datetime_from_request():
+    real_datetime = _current_discount_datetime()
+    test_day = _valid_test_day(request.args.get("test_day"))
+    test_mode = test_day is not None
+
+    if test_mode:
+        last_day = monthrange(real_datetime.year, real_datetime.month)[1]
+        effective_datetime = real_datetime.replace(day=min(test_day, last_day))
+    else:
+        effective_datetime = real_datetime
+
+    print("[Discount Test Mode]", flush=True)
+    print(f"real_day={real_datetime.day}", flush=True)
+    print(f"effective_day={effective_datetime.day}", flush=True)
+    print(f"test_mode={str(test_mode).lower()}", flush=True)
+
+    return effective_datetime
+
+
 def _datetime_in_app_timezone(value):
     if not value:
         return None
@@ -597,7 +627,7 @@ def get_catalog_days():
 @app.route("/api/classes", methods=["GET"])
 def get_classes_for_payments():
     classes = Class.query.order_by(Class.fecha_hora).all()
-    current_datetime = _current_discount_datetime()
+    current_datetime = _discount_datetime_from_request()
     quotes = _payment_quotes(current_datetime)
 
     return jsonify({

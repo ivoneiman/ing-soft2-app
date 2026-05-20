@@ -57,10 +57,13 @@ export function getActivityClasses(actividad_id) {
   );
 }
 
-export function getPaymentClasses() {
+export function getPaymentClasses(testDay) {
   return axios.get(
     `${API_URL}/classes`,
-    { withCredentials: true }
+    {
+      params: testDay ? { test_day: testDay } : {},
+      withCredentials: true,
+    }
   );
 }
 
