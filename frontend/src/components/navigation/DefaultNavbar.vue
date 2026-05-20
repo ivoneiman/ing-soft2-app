@@ -44,6 +44,9 @@
         <router-link v-if="roleHelpers.isClient()" to="/mi-qr" class="nav-item" @click="closeMobileMenu">
           Mi QR
         </router-link>
+        <router-link to="/pagos" class="nav-item" @click="closeMobileMenu">
+          Pagos
+        </router-link>
 
         <!-- EMPLOYEE: Pasar Asistencia -->
         <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" class="nav-item" @click="closeMobileMenu">
@@ -60,12 +63,9 @@
           </button>
 
           <div v-if="isDropdownOpen" class="dropdown-container">
-            <!-- ADMIN: acceso a Configuración, Pagos y Reportes -->
+            <!-- ADMIN: acceso a Configuración y Reportes -->
             <router-link v-if="roleHelpers.isAdmin()" to="/configuracion" @click="handleDropdownClick">
               Configuración
-            </router-link>
-            <router-link v-if="roleHelpers.isAdmin()" to="/pagos" @click="handleDropdownClick">
-              Pagos
             </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/reportes" @click="handleDropdownClick">
               Reportes

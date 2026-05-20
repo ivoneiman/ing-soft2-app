@@ -57,6 +57,13 @@ export function getActivityClasses(actividad_id) {
   );
 }
 
+export function getPaymentClasses() {
+  return axios.get(
+    `${API_URL}/classes`,
+    { withCredentials: true }
+  );
+}
+
 // =========================
 // CATÁLOGO
 // =========================
@@ -121,6 +128,35 @@ export function registerAttendance({
   return axios.post(
     `${API_URL}/attendance/register`,
     { user_id, class_id },
+    { withCredentials: true }
+  );
+}
+
+// =========================
+// PAGOS
+// =========================
+
+export function createPayment({
+  payment_type,
+  payment_method,
+  class_id,
+  payment_option,
+}) {
+  return axios.post(
+    `${API_URL}/payments/create`,
+    {
+      payment_type,
+      payment_method,
+      class_id,
+      payment_option,
+    },
+    { withCredentials: true }
+  );
+}
+
+export function getPaymentHistory() {
+  return axios.get(
+    `${API_URL}/payments/history`,
     { withCredentials: true }
   );
 }
