@@ -50,13 +50,17 @@ class Actividades(db.Model):
 class Class(db.Model):
     """Representa una clase a la que los usuarios pueden inscribirse."""
     __tablename__ = "classes"
+    STATUS_ACTIVE = "Activa"
+    STATUS_CANCELLED = "Cancelada"
+    VALID_STATUSES = (STATUS_ACTIVE, STATUS_CANCELLED)
+
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
     fecha_hora = db.Column(db.DateTime, nullable=False)
     duration_minutes = db.Column(db.Integer, nullable=False, default=60)
     cupoMaximo = db.Column(db.Integer, nullable=False, default=20)
     id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
-    estado = db.Column(db.String(20), default="Activa", nullable=False)  # 'Activa' o 'Cancelada'
+    estado = db.Column(db.String(20), default=STATUS_ACTIVE, nullable=False)
     descuento = db.Column(db.Integer, nullable=False, default=0) # Porcentaje de descuento (0, 40, 70)
 
     # Relación con la actividad (necesaria para el catálogo y respuestas limpias)
@@ -101,9 +105,13 @@ class Enrollment(db.Model):
     class_ = db.relationship("Class", back_populates="enrollments")
     payments = db.relationship("Payment", back_populates="enrollment")
 
-    VALID_STATUSES = ("pending_payment", "paid", "expired", "cancelled", "Activa", "Cancelada")
-    PAYABLE_STATUSES = ("pending_payment",)
-    CAPACITY_STATUSES = ("pending_payment", "paid", "Activa")
+    STATUS_PENDING_PAYMENT = "pending_payment"
+    STATUS_PAID = "paid"
+    STATUS_EXPIRED = "expired"
+    STATUS_CANCELLED = "cancelled"
+    VALID_STATUSES = (STATUS_PENDING_PAYMENT, STATUS_PAID, STATUS_EXPIRED, STATUS_CANCELLED)
+    PAYABLE_STATUSES = (STATUS_PENDING_PAYMENT,)
+    CAPACITY_STATUSES = (STATUS_PENDING_PAYMENT, STATUS_PAID)
 
     # Garantizar que un usuario no se inscriba dos veces a la misma clase
     __table_args__ = (db.UniqueConstraint("user_id", "class_id", name="uq_user_class"),)
@@ -157,7 +165,9 @@ class Payment(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    enrollment_id = db.Column(db.Integer, db.ForeignKey("enrollments.id"), nullable=True)
+    enrollment_id = db.Column(db.Integer, db.ForeignKey("enrollments.id"), nullable=False)
+    # Campo legacy: se conserva por compatibilidad con SQLite/datos anteriores.
+    # Los pagos nuevos se relacionan por enrollment_id.
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=True)
     payment_type = db.Column(db.String(30), nullable=False)
     payment_method = db.Column(db.String(30), nullable=False)
@@ -173,18 +183,24 @@ class Payment(db.Model):
     enrollment = db.relationship("Enrollment", back_populates="payments")
     class_ = db.relationship("Class", back_populates="payments")
 
+    METHOD_MERCADO_PAGO = "mercado_pago"
+    METHOD_CARD = "card"
     VALID_PAYMENT_TYPES = ("monthly_subscription", "individual_class")
-    VALID_PAYMENT_METHODS = ("mercado_pago", "card")
-    VALID_STATUSES = ("pending", "approved", "rejected")
+    VALID_PAYMENT_METHODS = (METHOD_MERCADO_PAGO, METHOD_CARD)
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    VALID_STATUSES = (STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED)
 
     def to_dict(self):
+        class_obj = self.enrollment.class_ if self.enrollment else self.class_
         return {
             "id": self.id,
             "user_id": self.user_id,
             "enrollment_id": self.enrollment_id,
-            "class_id": self.class_id,
-            "class_name": self.class_.name if self.class_ else None,
-            "actividad": self.class_.actividad.name if self.class_ and self.class_.actividad else None,
+            "class_id": class_obj.id if class_obj else self.class_id,
+            "class_name": class_obj.name if class_obj else None,
+            "actividad": class_obj.actividad.name if class_obj and class_obj.actividad else None,
             "payment_type": self.payment_type,
             "payment_method": self.payment_method,
             "amount": self.amount,

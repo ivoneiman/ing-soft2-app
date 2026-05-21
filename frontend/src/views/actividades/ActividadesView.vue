@@ -99,6 +99,7 @@ import { ref, computed, onMounted, onActivated } from "vue";
 import { useRouter } from "vue-router";
 import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
 import { createEnrollment, getActivities, getCatalogAvailability, getCatalogDays } from "../../services/api";
+import { formatLongDate } from "../../utils/formatters";
 
 const DEFAULT_ACTIVITIES = [
   { id: 1, name: "Yoga" },
@@ -126,12 +127,7 @@ const selectedActivityName = computed(() => {
 
 const selectedDateLabel = computed(() => {
   if (!selectedDate.value) return "";
-  return selectedDate.value.toLocaleDateString("es-ES", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  return formatLongDate(selectedDate.value);
 });
 
 const selectedClass = computed(() =>

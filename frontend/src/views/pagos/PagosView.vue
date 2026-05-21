@@ -55,11 +55,11 @@
           <dl class="enrollment-details">
             <div>
               <dt>Fecha y hora</dt>
-              <dd>{{ formatDate(enrollment.fecha_hora) }}</dd>
+              <dd>{{ formatDateTime(enrollment.fecha_hora) }}</dd>
             </div>
             <div>
               <dt>Vencimiento</dt>
-              <dd>{{ formatDate(enrollment.expires_at) }}</dd>
+              <dd>{{ formatDateTime(enrollment.expires_at) }}</dd>
             </div>
             <div>
               <dt>Descuento aplicado</dt>
@@ -117,7 +117,7 @@
         </thead>
         <tbody>
           <tr v-for="payment in payments" :key="payment.id">
-            <td>{{ formatDate(payment.created_at) }}</td>
+            <td>{{ formatDateTime(payment.created_at) }}</td>
             <td>{{ payment.actividad || payment.class_name || '-' }}</td>
             <td>{{ paymentMethodLabel(payment.payment_method) }}</td>
             <td>{{ formatMoney(payment.amount) }}</td>
@@ -136,7 +136,9 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { createPayment, getPaymentHistory, getPendingEnrollments } from '../../services/api';
+import { PAYMENT_METHOD, statusLabel } from '../../constants/statuses';
+import { createPayment, getPaymentDiscountRules, getPaymentHistory, getPendingEnrollments } from '../../services/api';
+import { formatDateTime, formatMoney } from '../../utils/formatters';
 import { roleHelpers } from '../../utils/roleHelpers';
 
 const route = useRoute();
@@ -149,13 +151,20 @@ const errorMessage = ref('');
 const pendingEnrollments = ref([]);
 const payments = ref([]);
 const discountTestDay = ref('');
+const discountRules = ref({ periods: [] });
 const isDiscountTestVisible = import.meta.env.DEV || import.meta.env.MODE === 'test';
-const discountTestOptions = [
-  { value: '', label: 'Fecha real' },
-  { value: '10', label: 'Simular día 10 (0%)' },
-  { value: '17', label: 'Simular día 17 (40%)' },
-  { value: '25', label: 'Simular día 25 (70%)' },
-];
+
+const discountTestOptions = computed(() => {
+  const options = [{ value: '', label: 'Fecha real' }];
+  const sampleDaysByPercentage = { 0: '10', 40: '17', 70: '25' };
+
+  discountRules.value.periods.forEach((period) => {
+    const value = sampleDaysByPercentage[period.percentage];
+    if (value) options.push({ value, label: `Simular día ${value} (${period.percentage}%)` });
+  });
+
+  return options;
+});
 
 const returnMessage = computed(() => {
   if (route.query.status === 'success') return { type: 'success', text: 'Pago aprobado' };
@@ -164,42 +173,16 @@ const returnMessage = computed(() => {
   return null;
 });
 
-function formatDate(value) {
-  if (!value) return '-';
-  return new Intl.DateTimeFormat('es-AR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(new Date(value));
-}
-
-function formatMoney(value) {
-  return new Intl.NumberFormat('es-AR', {
-    style: 'currency',
-    currency: 'ARS',
-  }).format(Number(value || 0));
-}
-
 function enrollmentStatusLabel(status) {
-  const labels = {
-    pending_payment: 'Pendiente de pago',
-    paid: 'Pagada',
-    expired: 'Vencida',
-    cancelled: 'Cancelada',
-  };
-  return labels[status] || status;
+  return statusLabel('enrollment', status);
 }
 
 function paymentMethodLabel(paymentMethod) {
-  return paymentMethod === 'mercado_pago' ? 'Mercado Pago' : '-';
+  return statusLabel('paymentMethod', paymentMethod);
 }
 
 function paymentStatusLabel(status) {
-  const labels = {
-    approved: 'Aprobado',
-    rejected: 'Rechazado',
-    pending: 'Pendiente',
-  };
-  return labels[status] || status;
+  return statusLabel('payment', status);
 }
 
 async function loadPendingEnrollments() {
@@ -228,13 +211,24 @@ async function loadPaymentHistory() {
   }
 }
 
+async function loadDiscountRules() {
+  if (!isDiscountTestVisible) return;
+
+  try {
+    const response = await getPaymentDiscountRules();
+    discountRules.value = response.data || { periods: [] };
+  } catch {
+    discountRules.value = { periods: [] };
+  }
+}
+
 async function payNow(enrollment) {
   errorMessage.value = '';
   isSubmittingId.value = enrollment.id;
   try {
     const response = await createPayment({
       enrollment_id: enrollment.id,
-      payment_method: 'mercado_pago',
+      payment_method: PAYMENT_METHOD.MERCADO_PAGO,
     });
     window.location.href = response.data.init_point;
   } catch (err) {
@@ -246,6 +240,7 @@ async function payNow(enrollment) {
 }
 
 onMounted(() => {
+  loadDiscountRules();
   loadPendingEnrollments();
   loadPaymentHistory();
 });

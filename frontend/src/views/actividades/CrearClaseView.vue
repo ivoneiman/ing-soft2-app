@@ -67,6 +67,7 @@
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
 import { getActivities, createClass, getActivityClasses } from "@/services/api.js";
+import { formatLongDate } from "@/utils/formatters";
 
 const actividades = ref([]);
 const form = reactive({
@@ -83,14 +84,7 @@ const successMessage = ref("");
 const occupiedClasses = ref([]);
 
 const selectedDateLabel = computed(() => {
-  return selectedDate.value
-    ? selectedDate.value.toLocaleDateString("es-ES", {
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      })
-    : "";
+  return formatLongDate(selectedDate.value);
 });
 
 const selectedActivityName = computed(() => {
@@ -106,8 +100,7 @@ const loadOccupiedClasses = async () => {
   try {
     const response = await getActivityClasses(form.activity_id);
     occupiedClasses.value = response.data?.classes || [];
-  } catch (error) {
-    console.error("Error cargando clases ocupadas:", error);
+  } catch {
     occupiedClasses.value = [];
   }
 };
@@ -147,7 +140,6 @@ const loadActivities = async () => {
     const response = await getActivities();
     actividades.value = response.data || [];
   } catch (error) {
-    console.error("Error cargando actividades:", error);
     errorMessage.value = error.message === "Network Error" ? "Servidor backend desconectado." : "Fallo de red.";
     actividades.value = [];
   }
@@ -219,7 +211,6 @@ const submitForm = async () => {
     selectedSlot.value = "";
     loadOccupiedClasses(); // Recargamos los horarios ocupados para la actividad actual
   } catch (error) {
-    console.error("Error al crear clase:", error);
     errorMessage.value = error.response?.data?.error || "Error al crear la clase.";
   }
 };

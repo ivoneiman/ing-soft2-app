@@ -6,8 +6,12 @@
     <div class="tarjeta-oscura-tabla">
       <div class="tabla-encabezado">
         <h2 class="subtitulo-seccion" style="margin: 0; border: none; padding: 0;">Clases Programadas en el Catálogo</h2>
-        <button @click="cargarClases" class="btn-refrescar">Actualizar Lista</button>
+        <button @click="cargarClases" class="btn-refrescar">Actualizar lista</button>
       </div>
+
+      <p v-if="feedbackMessage" :class="['feedback-message', feedbackType]">
+        {{ feedbackMessage }}
+      </p>
 
       <p v-if="cargando" class="loading-text">Cargando clases desde el servidor...</p>
 
@@ -31,31 +35,48 @@
             <tr 
               v-for="clase in clases" 
               :key="clase.id" 
-              :class="{ 'fila-cancelada': clase.estado === 'Cancelada' }"
+              :class="{ 'fila-cancelada': isCancelled(clase) }"
             >
               <td class="col-actividad">{{ clase.name }}</td>
               <td class="texto-celda">{{ formatFecha(clase.fecha_hora) }}</td>
               <td class="col-resaltada texto-celda">{{ clase.time || 'No definido' }} hs</td>
               <td class="texto-celda">{{ clase.enrolled }} / {{ clase.cupoMaximo }}</td>
               <td>
-                <span :class="clase.estado === 'Cancelada' ? 'etiqueta-estado-roja' : 'etiqueta-estado-verde'">
-                  {{ clase.estado === 'Cancelada' ? 'Cancelada' : 'Activa' }}
+                <span :class="isCancelled(clase) ? 'etiqueta-estado-roja' : 'etiqueta-estado-verde'">
+                  {{ classStatusLabel(clase.estado) }}
                 </span>
               </td>
               <td style="text-align: center;">
                 <button 
-                  @click="ejecutarCancelacion(clase.id, clase.name)"
-                  :disabled="clase.estado === 'Cancelada'"
+                  @click="abrirConfirmacionCancelacion(clase)"
+                  :disabled="isCancelled(clase)"
                   class="btn-tabla-cancelar"
-                  :class="{ 'btn-tabla-deshabilitado': clase.estado === 'Cancelada' }"
+                  :class="{ 'btn-tabla-deshabilitado': isCancelled(clase) }"
                 >
-                  {{ clase.estado === 'Cancelada' ? 'Ya Cancelada' : 'Cancelar Clase' }}
+                  {{ isCancelled(clase) ? 'Ya cancelada' : 'Cancelar clase' }}
                 </button>
               </td>
             </tr>
           </tbody>
         </table>
       </div>
+    </div>
+
+    <div v-if="claseSeleccionada" class="modal-backdrop" role="dialog" aria-modal="true">
+      <section class="confirm-modal">
+        <h2>Cancelar clase</h2>
+        <p>
+          ¿Confirmás la cancelación de {{ claseSeleccionada.name }}? El turno se liberará en el calendario.
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="btn-secundario" @click="cerrarConfirmacionCancelacion">
+            Volver
+          </button>
+          <button type="button" :disabled="cancelando" @click="ejecutarCancelacion">
+            {{ cancelando ? 'Cancelando...' : 'Confirmar cancelación' }}
+          </button>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -200,63 +221,134 @@
   border: 1px dashed #9f5f91;
   border-radius: 6px;
 }
+
+.feedback-message {
+  border-radius: 8px;
+  font-family: sans-serif;
+  margin: 0 0 16px;
+  padding: 12px 14px;
+}
+
+.feedback-message.success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.feedback-message.error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 20px;
+  position: fixed;
+  z-index: 1200;
+}
+
+.confirm-modal {
+  background: #fff;
+  border-radius: 8px;
+  color: #4a3a4a;
+  max-width: 420px;
+  padding: 24px;
+  width: 100%;
+}
+
+.confirm-modal h2 {
+  color: #572c57;
+  margin-top: 0;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+
+.btn-secundario {
+  background: #f5f5f5;
+  color: #572c57;
+}
 </style>
 
 <script setup>
 import { ref, onMounted } from "vue";
+import { CLASS_STATUS, statusLabel } from "../../constants/statuses";
 import { getAllClasses, cancelarClaseCompleta } from "../../services/api";
+import { formatShortDate } from "../../utils/formatters";
 
 const clases = ref([]);
 const cargando = ref(false);
+const cancelando = ref(false);
+const claseSeleccionada = ref(null);
+const feedbackMessage = ref("");
+const feedbackType = ref("success");
+
+function isCancelled(clase) {
+  return clase.estado === CLASS_STATUS.CANCELLED;
+}
+
+function classStatusLabel(status) {
+  return statusLabel("class", status || CLASS_STATUS.ACTIVE);
+}
+
+function ordenarClasesPorEstado(todasLasClases) {
+  return [...todasLasClases].sort((a, b) => Number(isCancelled(a)) - Number(isCancelled(b)));
+}
 
 async function cargarClases() {
   cargando.value = true;
+  feedbackMessage.value = "";
   try {
     const response = await getAllClasses();
-    let todasLasClases = response.data.classes || [];
-    
-    todasLasClases.sort((a, b) => {
-      if (a.estado === 'Activa' && b.estado === 'Cancelada') return -1;
-      if (a.estado === 'Cancelada' && b.estado === 'Activa') return 1;
-      return 0;
-    });
-    
-    clases.value = todasLasClases;
+    clases.value = ordenarClasesPorEstado(response.data.classes || []);
   } catch (error) {
-    console.error("Error al cargar clases:", error);
+    feedbackType.value = "error";
+    feedbackMessage.value = error.response?.data?.error || "No se pudieron cargar las clases.";
   } finally {
     cargando.value = false;
   }
 }
 
-async function ejecutarCancelacion(claseId, nombreClase) {
-  const seguro = confirm(`¿Estás seguro de cancelar la clase de ${nombreClase}? Se liberará el turno en el calendario.`);
-  if (!seguro) return;
+function abrirConfirmacionCancelacion(clase) {
+  feedbackMessage.value = "";
+  claseSeleccionada.value = clase;
+}
 
+function cerrarConfirmacionCancelacion() {
+  claseSeleccionada.value = null;
+}
+
+async function ejecutarCancelacion() {
+  if (!claseSeleccionada.value) return;
+
+  cancelando.value = true;
   try {
-    const response = await cancelarClaseCompleta(claseId);
-    alert(response.data.message);
-    
-    const claseAfectada = clases.value.find(c => c.id === claseId);
+    const response = await cancelarClaseCompleta(claseSeleccionada.value.id);
+    const claseAfectada = clases.value.find(c => c.id === claseSeleccionada.value.id);
     if (claseAfectada) {
-      claseAfectada.estado = "Cancelada";
+      claseAfectada.estado = CLASS_STATUS.CANCELLED;
     }
-    
-    clases.value.sort((a, b) => {
-      if (a.estado === 'Activa' && b.estado === 'Cancelada') return -1;
-      if (a.estado === 'Cancelada' && b.estado === 'Activa') return 1;
-      return 0;
-    });
+    clases.value = ordenarClasesPorEstado(clases.value);
+    feedbackType.value = "success";
+    feedbackMessage.value = response.data.message;
+    cerrarConfirmacionCancelacion();
   } catch (error) {
-    const msg = error.message || "No se pudo procesar la cancelación.";
-    alert(msg);
+    feedbackType.value = "error";
+    feedbackMessage.value = error.response?.data?.error || "No se pudo procesar la cancelación.";
+  } finally {
+    cancelando.value = false;
   }
 }
 
 function formatFecha(fechaIso) {
-  if (!fechaIso) return "";
-  const fecha = new Date(fechaIso);
-  return fecha.toLocaleDateString("es-AR", { weekday: 'long', day: 'numeric', month: 'short' });
+  return formatShortDate(fechaIso);
 }
 
 onMounted(() => {
