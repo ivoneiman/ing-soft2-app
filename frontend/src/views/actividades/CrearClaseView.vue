@@ -333,12 +333,6 @@ const submitForm = async () => {
 
 .btn-retry {
   margin-top: 0.75rem;
-  padding: 0.5rem 1rem;
-  background-color: #b91c1c;
-  color: white;
-  border: none;
-  border-radius: 0.5rem;
-  cursor: pointer;
 }
 
 .selection-summary {
@@ -366,17 +360,6 @@ const submitForm = async () => {
 
 .btn-primary {
   width: fit-content;
-  padding: 0.95rem 1.5rem;
-  border: none;
-  border-radius: 9999px;
-  background: #4f46e5;
-  color: white;
-  cursor: pointer;
-  font-weight: 700;
-}
-
-.btn-primary:hover {
-  background: #4338ca;
 }
 
 .message {

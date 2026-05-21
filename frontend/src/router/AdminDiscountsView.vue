@@ -133,8 +133,8 @@ const formatDate = (dateString) => {
 .form-group { margin-bottom: 1.5rem; }
 .form-group label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
 select { width: 100%; padding: 0.5rem; border-radius: 4px; border: 1px solid #ccc; }
-button { width: 100%; padding: 0.75rem; background-color: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-button:disabled { background-color: #999; cursor: not-allowed; }
+button { width: 100%; }
+button:disabled { cursor: not-allowed; }
 .success-msg { color: #155724; background-color: #d4edda; padding: 0.75rem; border-radius: 4px; margin-top: 1rem; text-align: center; }
 .error-msg { color: #721c24; background-color: #f8d7da; padding: 0.75rem; border-radius: 4px; margin-top: 1rem; text-align: center; }
 .loading { text-align: center; color: #666; padding: 2rem; }

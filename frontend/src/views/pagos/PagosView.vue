@@ -3,7 +3,7 @@
     <header class="payments-header">
       <div>
         <h1>Pagos</h1>
-        <p>Suscripciones, clases individuales e historial.</p>
+        <p>Inscripciones pendientes e historial de pagos.</p>
       </div>
 
       <RouterLink v-if="isAdmin" to="/admin/descuentos" class="admin-link">
@@ -15,79 +15,90 @@
       {{ returnMessage.text }}
     </p>
 
-    <section class="payment-panel">
-      <form class="payment-form" @submit.prevent="handleSubmit">
-        <div class="field">
-          <label for="class-id">Actividad / clase</label>
-          <select id="class-id" v-model="form.class_id" required>
-            <option value="" disabled>Seleccionar actividad</option>
-            <option v-for="classItem in payableClasses" :key="classItem.id" :value="classItem.id">
-              {{ classItem.actividad }} - {{ formatDate(classItem.fecha_hora) }}
-            </option>
-          </select>
-          <span v-if="payableClasses.length === 0" class="field-help">
-            No hay clases futuras disponibles para pagar.
-          </span>
-        </div>
+    <nav class="payments-tabs" aria-label="Secciones de pagos">
+      <button type="button" :class="{ active: activeTab === 'pending' }" @click="activeTab = 'pending'">
+        Inscripciones pendientes
+      </button>
+      <button type="button" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
+        Historial de pagos
+      </button>
+    </nav>
 
-        <div class="field">
-          <label for="payment-type">Tipo de pago</label>
-          <select id="payment-type" v-model="form.payment_type" required>
-            <option value="" disabled>Seleccionar tipo de pago</option>
-            <option value="monthly_subscription">Suscripción mensual</option>
-            <option value="individual_class">Clase individual</option>
-          </select>
-        </div>
+    <fieldset v-if="isDiscountTestVisible && activeTab === 'pending'" class="discount-test-mode">
+      <p>Modo testing descuentos</p>
+      <label v-for="option in discountTestOptions" :key="option.value">
+        <input v-model="discountTestDay" type="radio" name="discount-test-day" :value="option.value" />
+        <span>{{ option.label }}</span>
+      </label>
+    </fieldset>
 
-        <div class="field">
-          <label for="payment-option">Forma</label>
-          <select id="payment-option" v-model="form.payment_option" required>
-            <option value="" disabled>Seleccionar forma de pago</option>
-            <option value="full">Pago completo</option>
-            <option value="deposit">Seña</option>
-          </select>
-        </div>
+    <section v-if="activeTab === 'pending'" class="pending-section">
+      <div v-if="isLoadingEnrollments" class="empty-state">Cargando inscripciones...</div>
+      <div v-else-if="pendingEnrollments.length === 0" class="empty-state">
+        No tenés inscripciones pendientes de pago.
+      </div>
 
-        <fieldset v-if="isDiscountTestVisible" class="discount-test-mode">
-          <legend>Modo testing descuentos</legend>
-          <label v-for="option in discountTestOptions" :key="option.value">
-            <input v-model="discountTestDay" type="radio" name="discount-test-day" :value="option.value" />
-            <span>{{ option.label }}</span>
-          </label>
-        </fieldset>
-
-        <section v-if="isPaymentReady" class="payment-summary">
-          <h2>Resumen</h2>
-          <dl>
+      <template v-else>
+        <article
+          v-for="enrollment in pendingEnrollments"
+          :key="enrollment.id"
+          :class="['enrollment-card', { highlighted: String(route.query.enrollment_id) === String(enrollment.id) }]"
+        >
+          <div class="enrollment-main">
             <div>
-              <dt>Clase</dt>
-              <dd>{{ selectedClass.actividad }}</dd>
+              <p class="eyebrow">{{ enrollment.actividad || enrollment.class_name }}</p>
+              <h2>{{ enrollment.class_name }}</h2>
+            </div>
+            <span class="status-pill">{{ enrollmentStatusLabel(enrollment.estado) }}</span>
+          </div>
+
+          <dl class="enrollment-details">
+            <div>
+              <dt>Fecha y hora</dt>
+              <dd>{{ formatDate(enrollment.fecha_hora) }}</dd>
             </div>
             <div>
-              <dt>Precio original</dt>
-              <dd>{{ formatMoney(summary.amount) }}</dd>
+              <dt>Vencimiento</dt>
+              <dd>{{ formatDate(enrollment.expires_at) }}</dd>
             </div>
             <div>
               <dt>Descuento aplicado</dt>
-              <dd>{{ summary.discountPercentage }}%</dd>
+              <dd>{{ Number(enrollment.discount_percentage || 0) }}%</dd>
             </div>
             <div>
-              <dt>Monto final</dt>
-              <dd>{{ formatMoney(summary.finalAmount) }}</dd>
+              <dt>Monto</dt>
+              <dd>{{ formatMoney(enrollment.final_amount) }}</dd>
             </div>
           </dl>
-        </section>
 
-        <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
+          <section class="payment-summary">
+            <h3>Resumen</h3>
+            <dl>
+              <div>
+                <dt>Precio original</dt>
+                <dd>{{ formatMoney(enrollment.amount) }}</dd>
+              </div>
+              <div>
+                <dt>Total a pagar</dt>
+                <dd>{{ formatMoney(enrollment.final_amount) }}</dd>
+              </div>
+            </dl>
+          </section>
 
-        <button class="pay-button" type="submit" :disabled="isSubmitting || !isPaymentReady">
-          {{ isSubmitting ? 'Redirigiendo...' : 'Realizar pago' }}
-        </button>
-      </form>
+          <button
+            class="pay-button"
+            type="button"
+            :disabled="isSubmittingId === enrollment.id || !enrollment.is_payable"
+            @click="payNow(enrollment)"
+          >
+            {{ isSubmittingId === enrollment.id ? 'Redirigiendo...' : 'Pagar ahora' }}
+          </button>
+        </article>
+      </template>
     </section>
 
-    <section class="history-section">
-      <h2>Historial</h2>
+    <section v-else class="history-section">
+      <h2>Historial de pagos</h2>
 
       <div v-if="isLoadingHistory" class="empty-state">Cargando pagos...</div>
       <div v-else-if="payments.length === 0" class="empty-state">Todavía no hay pagos registrados.</div>
@@ -117,21 +128,25 @@
         </tbody>
       </table>
     </section>
+
+    <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
   </main>
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
-import { createPayment, getPaymentClasses, getPaymentHistory } from '../../services/api';
+import { createPayment, getPaymentHistory, getPendingEnrollments } from '../../services/api';
 import { roleHelpers } from '../../utils/roleHelpers';
 
 const route = useRoute();
 const isAdmin = ref(roleHelpers.isAdmin());
-const isSubmitting = ref(false);
+const activeTab = ref(route.query.tab === 'history' ? 'history' : 'pending');
+const isSubmittingId = ref(null);
+const isLoadingEnrollments = ref(false);
 const isLoadingHistory = ref(false);
 const errorMessage = ref('');
-const classes = ref([]);
+const pendingEnrollments = ref([]);
 const payments = ref([]);
 const discountTestDay = ref('');
 const isDiscountTestVisible = import.meta.env.DEV || import.meta.env.MODE === 'test';
@@ -142,68 +157,15 @@ const discountTestOptions = [
   { value: '25', label: 'Simular día 25 (70%)' },
 ];
 
-const form = reactive({
-  class_id: '',
-  payment_type: '',
-  payment_method: 'mercado_pago',
-  payment_option: '',
-});
-
-const payableClasses = computed(() => {
-  return classes.value.filter((classItem) => classItem.is_payable !== false);
-});
-
-const selectedClass = computed(() => {
-  return payableClasses.value.find((classItem) => String(classItem.id) === String(form.class_id));
-});
-
-const isPaymentReady = computed(() => {
-  return Boolean(
-    selectedClass.value &&
-    form.payment_type &&
-    form.payment_option
-  );
-});
-
-const summary = computed(() => {
-  if (!isPaymentReady.value) {
-    return {
-      amount: 0,
-      discountPercentage: 0,
-      finalAmount: 0,
-    };
-  }
-
-  const quote = selectedClass.value.quotes?.[form.payment_type]?.[form.payment_option];
-
-  return {
-    amount: Number(quote?.amount || 0),
-    discountPercentage: Number(quote?.discount_percentage || 0),
-    finalAmount: Number(quote?.final_amount || 0),
-  };
-});
-
 const returnMessage = computed(() => {
-  if (route.query.status === 'success') {
-    return { type: 'success', text: 'Pago aprobado' };
-  }
-
-  if (route.query.status === 'pending') {
-    return { type: 'pending', text: 'Pago pendiente' };
-  }
-
-  if (route.query.status === 'failure') {
-    return { type: 'failure', text: route.query.message || 'Pago rechazado' };
-  }
-
+  if (route.query.status === 'success') return { type: 'success', text: 'Pago aprobado' };
+  if (route.query.status === 'pending') return { type: 'pending', text: 'Pago pendiente' };
+  if (route.query.status === 'failure') return { type: 'failure', text: route.query.message || 'Pago rechazado' };
   return null;
 });
 
 function formatDate(value) {
-  if (!value) {
-    return '-';
-  }
-
+  if (!value) return '-';
   return new Intl.DateTimeFormat('es-AR', {
     dateStyle: 'short',
     timeStyle: 'short',
@@ -217,6 +179,16 @@ function formatMoney(value) {
   }).format(Number(value || 0));
 }
 
+function enrollmentStatusLabel(status) {
+  const labels = {
+    pending_payment: 'Pendiente de pago',
+    paid: 'Pagada',
+    expired: 'Vencida',
+    cancelled: 'Cancelada',
+  };
+  return labels[status] || status;
+}
+
 function paymentMethodLabel(paymentMethod) {
   return paymentMethod === 'mercado_pago' ? 'Mercado Pago' : '-';
 }
@@ -227,21 +199,25 @@ function paymentStatusLabel(status) {
     rejected: 'Rechazado',
     pending: 'Pendiente',
   };
-
   return labels[status] || status;
 }
 
-async function loadClasses() {
+async function loadPendingEnrollments() {
+  isLoadingEnrollments.value = true;
+  errorMessage.value = '';
   try {
-    const response = await getPaymentClasses(discountTestDay.value);
-    classes.value = response.data.classes || [];
+    const response = await getPendingEnrollments(discountTestDay.value);
+    pendingEnrollments.value = response.data.enrollments || [];
   } catch (err) {
     errorMessage.value = err.response?.data?.error || 'Error del servidor de pagos';
+  } finally {
+    isLoadingEnrollments.value = false;
   }
 }
 
 async function loadPaymentHistory() {
   isLoadingHistory.value = true;
+  errorMessage.value = '';
   try {
     const response = await getPaymentHistory();
     payments.value = response.data.payments || [];
@@ -252,47 +228,46 @@ async function loadPaymentHistory() {
   }
 }
 
-async function handleSubmit() {
+async function payNow(enrollment) {
   errorMessage.value = '';
-
-  if (!isPaymentReady.value) {
-    errorMessage.value = 'Debe completar todos los campos para realizar el pago';
-    return;
-  }
-
-  isSubmitting.value = true;
-
+  isSubmittingId.value = enrollment.id;
   try {
     const response = await createPayment({
-      class_id: form.class_id,
-      payment_type: form.payment_type,
-      payment_method: form.payment_method,
-      payment_option: form.payment_option,
+      enrollment_id: enrollment.id,
+      payment_method: 'mercado_pago',
     });
-
     window.location.href = response.data.init_point;
   } catch (err) {
     errorMessage.value = err.response?.data?.error || 'Error del servidor de pagos';
+    loadPendingEnrollments();
   } finally {
-    isSubmitting.value = false;
+    isSubmittingId.value = null;
   }
 }
 
 onMounted(() => {
-  loadClasses();
+  loadPendingEnrollments();
   loadPaymentHistory();
 });
 
 watch(discountTestDay, () => {
-  loadClasses();
+  loadPendingEnrollments();
 });
+
+watch(
+  () => route.query.tab,
+  (tab) => {
+    activeTab.value = tab === 'history' ? 'history' : 'pending';
+  }
+);
 </script>
 
 <style scoped>
 .payments-view {
-  width: min(1040px, calc(100% - 32px));
+  padding: 24px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 0;
+  min-height: calc(100vh - 140px);
 }
 
 .payments-header {
@@ -304,33 +279,61 @@ watch(discountTestDay, () => {
 }
 
 .payments-header h1 {
-  margin: 0 0 6px;
-  font-size: 32px;
+  color: #fff;
+  margin-bottom: 0.5rem;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .payments-header p {
+  color: #e0c0e0;
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.payments-header h1,
+.history-section h2,
+.enrollment-card h2,
+.payment-summary h3 {
   margin: 0;
 }
 
-.admin-link,
-.pay-button {
-  border: 0;
-  border-radius: 6px;
-  background: #572c57;
-  color: #fff;
-  cursor: pointer;
-  font-weight: 700;
-  padding: 12px 16px;
-  text-decoration: none;
+.payments-header p,
+.eyebrow {
+  margin: 0;
+}
+
+.payments-tabs {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.payments-tabs button.active {
+  border-color: #f6ea98;
+  background: #f6ea98;
+  color: #9f5f91;
 }
 
 .return-message,
-.payment-panel,
-.history-section {
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 24px;
+.history-section,
+.discount-test-mode,
+.error-message {
+  background: #fff;
+  border: 2px solid #d0c0d0;
+  border-radius: 20px;
+  color: #4a3a4a;
+  padding: 2rem;
+  margin-bottom: 1.5rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+
+.enrollment-card {
+  background: #fff;
+  border: 2px solid #e8dce8;
+  border-radius: 12px;
+  color: #4a3a4a;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
 }
 
 .return-message {
@@ -339,56 +342,31 @@ watch(discountTestDay, () => {
 
 .return-message.success {
   border-color: #12b76a;
-  color: #027a48;
+  color: #027a48 !important;
 }
 
 .return-message.pending {
   border-color: #f79009;
-  color: #b54708;
+  color: #b54708 !important;
 }
 
 .return-message.failure,
 .error-message {
-  color: #b42318;
-}
-
-.payment-form {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.field label {
-  font-weight: 700;
-}
-
-.field select {
-  border: 1px solid #bbb;
-  border-radius: 6px;
-  min-height: 42px;
-  padding: 8px 10px;
+  color: #b42318 !important;
 }
 
 .discount-test-mode {
-  grid-column: 1 / -1;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 18px;
-  margin: 0;
-  padding: 14px 16px 16px;
+  display: block;
+  padding: 1.5rem 2rem 1.5rem;
 }
 
 .discount-test-mode legend {
+  background: #fff;
+  color: #572c57;
   font-weight: 700;
-  padding: 0 6px;
+  line-height: 1.2;
+  margin-left: 0.5rem;
+  padding: 0 0.5rem;
 }
 
 .discount-test-mode label {
@@ -396,95 +374,133 @@ watch(discountTestDay, () => {
   cursor: pointer;
   display: inline-flex;
   gap: 8px;
+  margin: 0.75rem 1.25rem 0 0;
 }
 
-.field-help {
-  color: #666;
-  font-size: 14px;
+.discount-test-mode input {
+  margin: 0;
+  width: auto;
 }
 
-.payment-summary,
-.error-message,
-.pay-button {
-  grid-column: 1 / -1;
+.pending-section {
+  display: grid;
+  gap: 1rem;
 }
 
-.payment-summary {
-  border-top: 1px solid #ddd;
-  padding-top: 16px;
+.enrollment-card.highlighted {
+  border-color: #9f5f91;
+  box-shadow: 0 0 0 3px rgba(87, 44, 87, 0.14);
 }
 
-.payment-summary h2 {
-  font-size: 20px;
-  margin: 0 0 12px;
+.enrollment-main {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.eyebrow {
+  color: #9f5f91;
+  font-family: "Poppins", sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.status-pill {
+  background: #f6ea98;
+  border-radius: 8px;
+  color: #572c57;
+  flex-shrink: 0;
+  font-family: "Poppins", sans-serif;
+  font-weight: 700;
+  padding: 0.5rem 0.75rem;
+}
+
+.enrollment-details,
+.payment-summary dl {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 1.25rem 0;
 }
 
 .payment-summary dl {
-  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin: 0;
+  margin-bottom: 0;
 }
 
+.enrollment-details div,
 .payment-summary div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  background: #f5e6f5;
+  border: 1px solid #d0c0d0;
+  border-radius: 10px;
+  padding: 1rem;
 }
 
-.payment-summary dt {
+dt {
+  color: #572c57;
+  font-family: "Poppins", sans-serif;
+  font-size: 0.85rem;
   font-weight: 700;
+  margin-bottom: 0.35rem;
 }
 
-.payment-summary dd {
-  margin: 0;
-}
-
-.error-message {
+dd {
+  color: #4a3a4a;
+  font-weight: 700;
   margin: 0;
 }
 
 .pay-button {
-  justify-self: start;
-}
-
-.pay-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.7;
-}
-
-.history-section h2 {
-  margin: 0 0 16px;
+  margin-top: 1rem;
 }
 
 .payments-table {
   border-collapse: collapse;
+  color: #4a3a4a;
   width: 100%;
 }
 
 .payments-table th,
 .payments-table td {
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid #e8dce8;
   padding: 10px;
   text-align: left;
 }
 
-.empty-state {
-  padding: 16px 0;
+.payments-table th {
+  color: #572c57;
 }
 
-@media (max-width: 700px) {
+.empty-state {
+  background: #fff;
+  border: 2px solid #d0c0d0;
+  border-radius: 20px;
+  color: #8a6a8a;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
   .payments-header,
-  .payment-form,
-  .payment-summary dl {
+  .enrollment-main,
+  .payments-tabs {
     display: block;
   }
 
+  .payments-tabs button,
   .admin-link,
-  .field,
-  .pay-button,
-  .payment-summary div {
-    margin-top: 14px;
+  .status-pill {
+    display: inline-block;
+    margin-top: 0.75rem;
+  }
+
+  .enrollment-details,
+  .payment-summary dl {
+    grid-template-columns: 1fr;
   }
 
   .payments-table {

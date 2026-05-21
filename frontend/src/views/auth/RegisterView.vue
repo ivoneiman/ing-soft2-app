@@ -156,13 +156,6 @@ async function onSubmit() {
 
 button {
   width: 100%;
-  padding: 0.65rem;
-  background: #572c57;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 1rem;
-  cursor: pointer;
 }
 
 button:disabled { opacity: 0.6; cursor: not-allowed; }

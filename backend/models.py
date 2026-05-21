@@ -87,17 +87,23 @@ class Class(db.Model):
 
 
 class Enrollment(db.Model):
-    """Enlace many‑to‑many entre User y Class."""
+    """Inscripción de un usuario a una clase y su estado de pago."""
     __tablename__ = "enrollments"
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
     tipo = db.Column(db.String(20), default="Suelta", nullable=False)  # 'Mensual' o 'Suelta'
-    estado = db.Column(db.String(20), default="Activa", nullable=False)  # 'Activa' o 'Cancelada'
+    estado = db.Column(db.String(20), default="pending_payment", nullable=False)
     requiere_reembolso = db.Column(db.Boolean, default=False, nullable=False)  # Para reservas tipo 'Suelta'
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 
     user = db.relationship("User", backref=db.backref("enrollments", cascade="all, delete-orphan"))
     class_ = db.relationship("Class", back_populates="enrollments")
+    payments = db.relationship("Payment", back_populates="enrollment")
+
+    VALID_STATUSES = ("pending_payment", "paid", "expired", "cancelled", "Activa", "Cancelada")
+    PAYABLE_STATUSES = ("pending_payment",)
+    CAPACITY_STATUSES = ("pending_payment", "paid", "Activa")
 
     # Garantizar que un usuario no se inscriba dos veces a la misma clase
     __table_args__ = (db.UniqueConstraint("user_id", "class_id", name="uq_user_class"),)
@@ -151,6 +157,7 @@ class Payment(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    enrollment_id = db.Column(db.Integer, db.ForeignKey("enrollments.id"), nullable=True)
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=True)
     payment_type = db.Column(db.String(30), nullable=False)
     payment_method = db.Column(db.String(30), nullable=False)
@@ -163,6 +170,7 @@ class Payment(db.Model):
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 
     user = db.relationship("User", back_populates="payments")
+    enrollment = db.relationship("Enrollment", back_populates="payments")
     class_ = db.relationship("Class", back_populates="payments")
 
     VALID_PAYMENT_TYPES = ("monthly_subscription", "individual_class")
@@ -173,6 +181,7 @@ class Payment(db.Model):
         return {
             "id": self.id,
             "user_id": self.user_id,
+            "enrollment_id": self.enrollment_id,
             "class_id": self.class_id,
             "class_name": self.class_.name if self.class_ else None,
             "actividad": self.class_.actividad.name if self.class_ and self.class_.actividad else None,

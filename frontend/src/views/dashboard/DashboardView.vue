@@ -70,8 +70,6 @@
 }
 
 .titulo-principal {
-  font-family: 'Anton', sans-serif;
-  font-size: 36px;
   letter-spacing: 1px;
   margin: 0 0 6px 0;
   color: #f5f5f5;
@@ -94,8 +92,6 @@
 }
 
 .subtitulo-seccion {
-  font-family: 'Anta', sans-serif;
-  font-size: 20px;
   color: #f5f5f5;
 }
 
@@ -109,20 +105,7 @@
 
 /* 🌟 Botón Actualizar: Sin borde amarillo, ahora relleno con el violeta de la barra (#9f5f91) */
 .btn-refrescar {
-  background-color: #9f5f91;
-  color: #f5f5f5;
-  font-family: sans-serif;
   font-size: 14px;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: bold;
-  transition: background 0.2s;
-}
-
-.btn-refrescar:hover {
-  background-color: #e26972; /* Color de acento al pasar el mouse */
 }
 
 .tabla-responsiva-contenedor {
@@ -194,27 +177,15 @@
 
 /* Botones de Cancelar en la Tabla */
 .btn-tabla-cancelar {
-  background-color: #e53e3e;
-  color: white;
-  border: none;
-  padding: 8px 14px;
-  border-radius: 4px;
   font-size: 13px;
-  font-weight: bold;
-  cursor: pointer;
-  transition: 0.2s;
   white-space: nowrap;
-  font-family: sans-serif;
 }
 
 .btn-tabla-cancelar:hover:not(:disabled) {
-  background-color: #c53030;
   transform: scale(1.02);
 }
 
 .btn-tabla-deshabilitado {
-  background-color: #a0a0a0 !important;
-  color: #e0e0e0 !important;
   cursor: not-allowed;
 }
 

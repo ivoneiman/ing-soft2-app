@@ -16,8 +16,6 @@
     <div class="center-menu" :class="{ active: isMobileMenuOpen }">
       <router-link to="/" class="nav-item" @click="closeMobileMenu">Home</router-link>
       <router-link to="/actividades" class="nav-item" @click="closeMobileMenu">Actividades</router-link>
-      <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/crear-clase" class="nav-item" @click="closeMobileMenu">Crear Clase</router-link>
-      <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/crear-usuario" class="nav-item" @click="closeMobileMenu">Crear Usuario</router-link>
       <router-link to="/sobre-nosotros" class="nav-item" @click="closeMobileMenu">Sobre Nosotros</router-link>
 
       <!-- Si no está autenticado: mostrar Login y Registro -->
@@ -44,44 +42,76 @@
         <router-link v-if="roleHelpers.isClient()" to="/mi-qr" class="nav-item" @click="closeMobileMenu">
           Mi QR
         </router-link>
-        <router-link to="/pagos" class="nav-item" @click="closeMobileMenu">
-          Pagos
-        </router-link>
-
-        <!-- EMPLOYEE: Pasar Asistencia -->
-        <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" class="nav-item" @click="closeMobileMenu">
-          Pasar Asistencia
-        </router-link>
-
-        <!-- Dropdown perfil -->
-        <div class="dropdown" ref="dropdownRef">
-          <button class="dropdown-header" @click="toggleDropdown">
-            Perfil ({{ roleHelpers.getUserRole() }})
+        <div v-if="roleHelpers.isClient()" class="dropdown" ref="paymentsDropdownRef">
+          <button
+            class="dropdown-header"
+            type="button"
+            :aria-expanded="isPaymentsDropdownOpen"
+            aria-haspopup="true"
+            @click="togglePaymentsDropdown"
+          >
+            Pagos
             <span class="arrow">
-              {{ isDropdownOpen ? '▲' : '▼' }}
+              {{ isPaymentsDropdownOpen ? '▲' : '▼' }}
             </span>
           </button>
 
-          <div v-if="isDropdownOpen" class="dropdown-container">
-            <!-- ADMIN: acceso a Configuración y Reportes -->
-            <router-link v-if="roleHelpers.isAdmin()" to="/configuracion" @click="handleDropdownClick">
-              Configuración
+          <div v-if="isPaymentsDropdownOpen" class="dropdown-container">
+            <router-link to="/pagos?tab=pending" @click="handlePaymentsDropdownClick">
+              Inscripciones pendientes
             </router-link>
-            <router-link v-if="roleHelpers.isAdmin()" to="/reportes" @click="handleDropdownClick">
-              Reportes
+            <router-link to="/pagos?tab=history" @click="handlePaymentsDropdownClick">
+              Historial de pagos
             </router-link>
-
-            <!-- ADMIN/EMPLOYEE: Panel de Control (Cronograma de Clases y Cancelaciones) -->
-            <router-link v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" to="/dashboard" @click="handleDropdownClick">
-              Panel de Control
-            </router-link>
-            
-            <!-- Cerrar sesión para todos -->
-            <a href="#" @click.prevent="handleLogout">
-              Cerrar sesión
-            </a>
           </div>
         </div>
+
+        <!-- Dropdown administrativo -->
+        <div v-if="roleHelpers.isAdmin() || roleHelpers.isEmployee()" class="dropdown" ref="adminDropdownRef">
+          <button
+            class="dropdown-header"
+            type="button"
+            :aria-expanded="isAdminDropdownOpen"
+            aria-haspopup="true"
+            @click="toggleAdminDropdown"
+          >
+            Administración
+            <span class="arrow">
+              {{ isAdminDropdownOpen ? '▲' : '▼' }}
+            </span>
+          </button>
+
+          <div v-if="isAdminDropdownOpen" class="dropdown-container">
+            <router-link to="/crear-clase" @click="handleAdminDropdownClick">
+              Crear clases
+            </router-link>
+            <router-link to="/crear-usuario" @click="handleAdminDropdownClick">
+              Crear Usuario
+            </router-link>
+            <router-link to="/pagos" @click="handleAdminDropdownClick">
+              Pagos
+            </router-link>
+            <router-link to="/dashboard" @click="handleAdminDropdownClick">
+              Dashboard
+            </router-link>
+            <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" @click="handleAdminDropdownClick">
+              Pasar Asistencia
+            </router-link>
+            <router-link v-if="roleHelpers.isAdmin()" to="/configuracion" @click="handleAdminDropdownClick">
+              Configuración
+            </router-link>
+            <router-link v-if="roleHelpers.isAdmin()" to="/reportes" @click="handleAdminDropdownClick">
+              Reportes
+            </router-link>
+            <router-link v-if="roleHelpers.isAdmin()" to="/admin/descuentos" @click="handleAdminDropdownClick">
+              Gestión de descuentos
+            </router-link>
+          </div>
+        </div>
+
+        <a href="#" class="nav-item logout-link" @click.prevent="handleLogout">
+          Cerrar sesión
+        </a>
       </div>
     </div>
 
@@ -107,9 +137,11 @@ import { useRouter, useRoute } from 'vue-router'
 const route = useRoute()
 const router = useRouter()
 
-const isDropdownOpen = ref(false)
+const isAdminDropdownOpen = ref(false)
+const isPaymentsDropdownOpen = ref(false)
 const isMobileMenuOpen = ref(false)
-const dropdownRef = ref(null)
+const adminDropdownRef = ref(null)
+const paymentsDropdownRef = ref(null)
 
 const attendanceShortcutRoute = computed(() => {
   if (roleHelpers.isClient()) return '/mi-qr'
@@ -117,12 +149,20 @@ const attendanceShortcutRoute = computed(() => {
   return null
 })
 
-function toggleDropdown() {
-  isDropdownOpen.value = !isDropdownOpen.value
+function toggleAdminDropdown() {
+  isAdminDropdownOpen.value = !isAdminDropdownOpen.value
 }
 
-function closeDropdown() {
-  isDropdownOpen.value = false
+function closeAdminDropdown() {
+  isAdminDropdownOpen.value = false
+}
+
+function togglePaymentsDropdown() {
+  isPaymentsDropdownOpen.value = !isPaymentsDropdownOpen.value
+}
+
+function closePaymentsDropdown() {
+  isPaymentsDropdownOpen.value = false
 }
 
 function toggleMobileMenu() {
@@ -131,19 +171,30 @@ function toggleMobileMenu() {
 
 function closeMobileMenu() {
   isMobileMenuOpen.value = false
-  closeDropdown()
+  closeAdminDropdown()
+  closePaymentsDropdown()
 }
 
-function handleDropdownClick() {
-  closeDropdown()
+function handleAdminDropdownClick() {
+  closeAdminDropdown()
   closeMobileMenu()
 }
 
-onClickOutside(dropdownRef, () => {
-  closeDropdown()
+function handlePaymentsDropdownClick() {
+  closePaymentsDropdown()
+  closeMobileMenu()
+}
+
+onClickOutside(adminDropdownRef, () => {
+  closeAdminDropdown()
+})
+
+onClickOutside(paymentsDropdownRef, () => {
+  closePaymentsDropdown()
 })
 
 function handleLogout() {
+  closeMobileMenu()
   router.push('/logout')
 }
 </script>
@@ -198,7 +249,8 @@ function handleLogout() {
   display: none;
   flex-direction: column;
   background: none;
-  border: none;
+  border: 0;
+  color: #f6ea98;
   cursor: pointer;
   gap: 5px;
   padding: 8px;
@@ -208,7 +260,7 @@ function handleLogout() {
 .hamburger-btn span {
   width: 24px;
   height: 2px;
-  background: white;
+  background: currentColor;
   transition: all 0.3s ease;
   display: block;
 }
@@ -259,12 +311,17 @@ function handleLogout() {
   white-space: nowrap;
 }
 
-.nav-item:hover {
+.nav-item:hover,
+.router-link-active.nav-item {
   color: #e26972;
 }
 
+.logout-link {
+  color: #f6ea98;
+}
+
 /* ==========================================
-   DROPDOWN PERFIL
+   DROPDOWN ADMINISTRATIVO
    ========================================== */
 
 .dropdown {
@@ -274,14 +331,24 @@ function handleLogout() {
 
 .dropdown-header {
   background: transparent !important;
-  border: none;
-  font-weight: 600;
-  color: #e26972;
+  border: 0;
+  color: rgba(255, 255, 255, 0.9);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 6px;
+  font-family: "Poppins", sans-serif;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+  line-height: 18px;
+  padding: 0;
+  transition: color 0.3s ease;
   white-space: nowrap;
+}
+
+.dropdown-header:hover {
+  color: #e26972;
 }
 
 .arrow {
@@ -365,6 +432,11 @@ function handleLogout() {
 
   .nav-item {
     font-size: 14px;
+  }
+
+  .dropdown-header {
+    font-size: 16px;
+    line-height: 16px;
   }
 }
 

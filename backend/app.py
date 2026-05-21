@@ -64,6 +64,15 @@ def upgrade_database_schema():
         if "class_id" not in columns:
             db.session.execute(text("ALTER TABLE payments ADD COLUMN class_id INTEGER"))
             db.session.commit()
+        if "enrollment_id" not in columns:
+            db.session.execute(text("ALTER TABLE payments ADD COLUMN enrollment_id INTEGER"))
+            db.session.commit()
+
+    if "enrollments" in inspector.get_table_names():
+        columns = [column["name"] for column in inspector.get_columns("enrollments")]
+        if "created_at" not in columns:
+            db.session.execute(text("ALTER TABLE enrollments ADD COLUMN created_at DATETIME"))
+            db.session.commit()
 
 # ─── Crear tablas e insertar actividades base ───────────────────────────────────────────────────
 
@@ -89,7 +98,7 @@ def _enrollment_counts():
     counts = {}
     for class_id, enrolled in db.session.query(
         Enrollment.class_id, db.func.count(Enrollment.id)
-    ).group_by(Enrollment.class_id).all():
+    ).filter(Enrollment.estado.in_(Enrollment.CAPACITY_STATUSES)).group_by(Enrollment.class_id).all():
         counts[class_id] = enrolled
     return counts
 
@@ -251,6 +260,51 @@ def _payment_quotes(current_datetime=None):
             "full": _payment_quote("individual_class", "full", current_datetime),
             "deposit": _payment_quote("individual_class", "deposit", current_datetime),
         },
+    }
+
+
+def _payment_type_for_enrollment(enrollment):
+    return "monthly_subscription" if getattr(enrollment, "tipo", None) == "Mensual" else "individual_class"
+
+
+def _expire_enrollment_if_needed(enrollment, current_datetime=None):
+    if not enrollment or enrollment.estado != "pending_payment":
+        return False
+
+    if _class_has_finished(enrollment.class_, current_datetime):
+        enrollment.estado = "expired"
+        return True
+
+    return False
+
+
+def _has_approved_payment(enrollment):
+    return any(payment.status == "approved" for payment in getattr(enrollment, "payments", []))
+
+
+def _enrollment_payment_quote(enrollment, current_datetime=None):
+    return _payment_quote(_payment_type_for_enrollment(enrollment), "full", current_datetime)
+
+
+def _enrollment_payload(enrollment, current_datetime=None):
+    class_obj = enrollment.class_
+    quote = _enrollment_payment_quote(enrollment, current_datetime)
+    return {
+        "id": enrollment.id,
+        "user_id": enrollment.user_id,
+        "class_id": enrollment.class_id,
+        "class_name": class_obj.name if class_obj else None,
+        "actividad": class_obj.actividad.name if class_obj and class_obj.actividad else None,
+        "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj and class_obj.fecha_hora else None,
+        "estado": enrollment.estado,
+        "tipo": enrollment.tipo,
+        "expires_at": class_obj.fecha_hora.isoformat() if class_obj and class_obj.fecha_hora else None,
+        "payment_type": _payment_type_for_enrollment(enrollment),
+        "payment_option": "full",
+        "amount": quote["amount"],
+        "discount_percentage": quote["discount_percentage"],
+        "final_amount": quote["final_amount"],
+        "is_payable": enrollment.estado == "pending_payment" and not _class_has_finished(class_obj, current_datetime),
     }
 
 
@@ -592,6 +646,96 @@ def get_classes_for_payments():
     }), 200
 
 
+@app.route("/api/enrollments", methods=["POST"])
+def create_enrollment():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    data = request.get_json() or {}
+    class_id = data.get("class_id")
+    if not class_id:
+        return jsonify({"error": "Debe seleccionar una clase para inscribirse"}), 400
+
+    class_obj = Class.query.get(class_id)
+    if not class_obj:
+        return jsonify({"error": "Clase no encontrada"}), 404
+
+    if getattr(class_obj, "estado", "Activa") != "Activa":
+        return jsonify({"error": "La clase no está disponible para inscripción"}), 400
+
+    current_datetime = _current_discount_datetime()
+    if _class_has_finished(class_obj, current_datetime):
+        return jsonify({"error": "No se puede inscribir a una clase que ya comenzó"}), 400
+
+    enrollment = Enrollment.query.filter_by(user_id=current_user.id, class_id=class_obj.id).first()
+    enrollment_map = _enrollment_counts()
+    cupo_max = class_obj.cupoMaximo if class_obj.cupoMaximo is not None else 20
+    if enrollment:
+        _expire_enrollment_if_needed(enrollment, current_datetime)
+        if enrollment.estado == "paid" or _has_approved_payment(enrollment):
+            enrollment.estado = "paid"
+            db.session.commit()
+            return jsonify({"error": "Ya estás inscripto y pagaste esta clase"}), 409
+        if enrollment.estado == "pending_payment":
+            db.session.commit()
+            return jsonify({
+                "message": "Ya tenés una inscripción pendiente de pago",
+                "enrollment": _enrollment_payload(enrollment, current_datetime),
+                "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
+            }), 200
+        if enrollment.estado in ["expired", "cancelled", "Cancelada"]:
+            if enrollment_map.get(class_obj.id, 0) >= cupo_max:
+                db.session.commit()
+                return jsonify({"error": "No quedan cupos disponibles para esta clase"}), 409
+            enrollment.estado = "pending_payment"
+            enrollment.requiere_reembolso = False
+    else:
+        if enrollment_map.get(class_obj.id, 0) >= cupo_max:
+            return jsonify({"error": "No quedan cupos disponibles para esta clase"}), 409
+        enrollment = Enrollment(
+            user_id=current_user.id,
+            class_id=class_obj.id,
+            tipo=data.get("tipo") or "Suelta",
+            estado="pending_payment",
+        )
+        db.session.add(enrollment)
+
+    db.session.commit()
+    return jsonify({
+        "message": "Inscripción creada. Podés completar el pago ahora o más adelante.",
+        "enrollment": _enrollment_payload(enrollment, current_datetime),
+        "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
+    }), 201
+
+
+@app.route("/api/enrollments/pending", methods=["GET"])
+def pending_enrollments():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    current_datetime = _discount_datetime_from_request()
+    enrollments = (
+        Enrollment.query
+        .filter_by(user_id=current_user.id)
+        .order_by(Enrollment.id.desc())
+        .all()
+    )
+
+    changed = False
+    pending = []
+    for enrollment in enrollments:
+        changed = _expire_enrollment_if_needed(enrollment, current_datetime) or changed
+        if enrollment.estado == "pending_payment" and not _has_approved_payment(enrollment):
+            pending.append(_enrollment_payload(enrollment, current_datetime))
+
+    if changed:
+        db.session.commit()
+
+    return jsonify({"enrollments": pending}), 200
+
+
 @app.route("/api/classes", methods=["POST"])
 def create_class():
     data = request.get_json() or {}
@@ -659,6 +803,8 @@ def register_attendance():
     enrollment = Enrollment.query.filter_by(user_id=user_id, class_id=class_id).first()
     if not enrollment:
         return jsonify({"error": "Usuario no está inscrito a la clase"}), 403
+    if enrollment.estado not in ["paid", "Activa"]:
+        return jsonify({"error": "La inscripción no está pagada"}), 403
 
     existing = Attendance.query.filter_by(user_id=user_id, class_id=class_id).first()
     if existing:
@@ -727,13 +873,9 @@ def create_payment():
         return jsonify({"error": "No autenticado"}), 401
 
     data = request.get_json() or {}
-    payment_type = data.get("payment_type")
-    payment_method = data.get("payment_method")
-    payment_option = data.get("payment_option", "full")
-    class_id = data.get("class_id")
-
-    if payment_type not in Payment.VALID_PAYMENT_TYPES:
-        return jsonify({"error": "Tipo de pago inválido"}), 400
+    payment_method = data.get("payment_method", "mercado_pago")
+    enrollment_id = data.get("enrollment_id")
+    payment_option = "full"
 
     if payment_method not in Payment.VALID_PAYMENT_METHODS:
         return jsonify({"error": "Método de pago inválido"}), 400
@@ -741,20 +883,33 @@ def create_payment():
     if payment_method != "mercado_pago":
         return jsonify({"error": "Por ahora solo está disponible Mercado Pago Checkout Pro"}), 400
 
-    if payment_option not in ["full", "deposit"]:
-        return jsonify({"error": "Opción de pago inválida"}), 400
+    if not enrollment_id:
+        return jsonify({"error": "Debe seleccionar una inscripción pendiente para pagar"}), 400
 
-    if not class_id:
-        return jsonify({"error": "Debe seleccionar una clase o actividad para pagar"}), 400
+    enrollment = Enrollment.query.get(enrollment_id)
+    if not enrollment or enrollment.user_id != current_user.id:
+        return jsonify({"error": "Inscripción no encontrada"}), 404
 
-    class_obj = Class.query.get(class_id)
+    class_obj = enrollment.class_
     if not class_obj:
         return jsonify({"error": "Clase no encontrada"}), 404
 
     current_datetime = _current_discount_datetime()
     if _class_has_finished(class_obj, current_datetime):
+        if enrollment.estado == "pending_payment":
+            enrollment.estado = "expired"
+            db.session.commit()
         return jsonify({"error": "No se puede pagar una clase ya finalizada"}), 400
 
+    if enrollment.estado != "pending_payment":
+        return jsonify({"error": "La inscripción no está pendiente de pago"}), 400
+
+    if _has_approved_payment(enrollment):
+        enrollment.estado = "paid"
+        db.session.commit()
+        return jsonify({"error": "La inscripción ya tiene un pago aprobado"}), 409
+
+    payment_type = _payment_type_for_enrollment(enrollment)
     quote = _payment_quote(payment_type, payment_option, current_datetime)
     amount = quote["amount"]
     discount_percentage = quote["discount_percentage"]
@@ -763,6 +918,7 @@ def create_payment():
 
     payment = Payment(
         user_id=current_user.id,
+        enrollment_id=enrollment.id,
         class_id=class_obj.id,
         payment_type=payment_type,
         payment_method=payment_method,
@@ -862,6 +1018,7 @@ def create_payment():
 
     return jsonify({
         "payment_id": payment.id,
+        "enrollment_id": enrollment.id,
         "init_point": init_point,
         "amount": amount,
         "discount_percentage": discount_percentage,
@@ -899,6 +1056,8 @@ def mercado_pago_return(result):
 
     if result == "success" or mercado_pago_status == "approved":
         payment.status = "approved"
+        if payment.enrollment:
+            payment.enrollment.estado = "paid"
         redirect_status = "success"
         message = None
     elif result == "pending" or mercado_pago_status in ["pending", "in_process"]:

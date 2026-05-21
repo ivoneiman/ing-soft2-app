@@ -57,16 +57,6 @@ export function getActivityClasses(actividad_id) {
   );
 }
 
-export function getPaymentClasses(testDay) {
-  return axios.get(
-    `${API_URL}/classes`,
-    {
-      params: testDay ? { test_day: testDay } : {},
-      withCredentials: true,
-    }
-  );
-}
-
 // =========================
 // CATÁLOGO
 // =========================
@@ -154,22 +144,36 @@ export function cancelarClaseCompleta(clase_id) {
   );
 }
 
+export function createEnrollment({ class_id, tipo }) {
+  return axios.post(
+    `${API_URL}/enrollments`,
+    { class_id, tipo },
+    { withCredentials: true }
+  );
+}
+
+export function getPendingEnrollments(testDay) {
+  return axios.get(
+    `${API_URL}/enrollments/pending`,
+    {
+      params: testDay ? { test_day: testDay } : {},
+      withCredentials: true,
+    }
+  );
+}
+
 // PAGOS
 // =========================
 
 export function createPayment({
-  payment_type,
   payment_method,
-  class_id,
-  payment_option,
+  enrollment_id,
 }) {
   return axios.post(
     `${API_URL}/payments/create`,
     {
-      payment_type,
       payment_method,
-      class_id,
-      payment_option,
+      enrollment_id,
     },
     { withCredentials: true }
   );

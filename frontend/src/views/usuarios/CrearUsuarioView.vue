@@ -135,8 +135,6 @@ async function onSubmit() {
 }
 
 h2 {
-  font-family: 'Anton', sans-serif;
-  font-size: 2rem;
   color: #f6ea98;
   margin-bottom: 0.25rem;
   text-transform: uppercase;
@@ -204,24 +202,8 @@ form {
 
 button {
   flex: 1;
-  padding: 0.7rem;
-  border: none;
-  border-radius: 6px;
-  font-size: 1rem;
-  cursor: pointer;
-  font-family: 'Anta', sans-serif;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
-button[type="submit"] { background: #e26972; color: white; }
-button[type="submit"]:hover { background: #d45560; }
 button[type="submit"]:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.btn-secondary {
-  background: rgba(255,255,255,0.1);
-  color: #f5f5f5;
-  border: 1px solid rgba(255,255,255,0.2);
-}
-.btn-secondary:hover { background: rgba(255,255,255,0.18); }
 </style>

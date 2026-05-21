@@ -84,8 +84,8 @@
           <li><strong>Horario:</strong> {{ selectedClass.time }} ({{ selectedClass.duration_minutes }} min)</li>
           <li><strong>Cupos libres:</strong> {{ selectedClass.available_spots }}</li>
         </ul>
-        <button type="button" class="btn-inscribe" disabled title="Próximamente">
-          Inscribirme (próximamente)
+        <button type="button" class="btn-inscribe" :disabled="isSubmittingEnrollment" @click="handleEnrollment">
+          {{ isSubmittingEnrollment ? 'Creando inscripción...' : 'Inscribirse' }}
         </button>
       </section>
 
@@ -95,9 +95,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onActivated, onBeforeUnmount } from "vue";
+import { ref, computed, onMounted, onActivated } from "vue";
+import { useRouter } from "vue-router";
 import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
-import { getActivities, getCatalogAvailability, getCatalogDays } from "../../services/api";
+import { createEnrollment, getActivities, getCatalogAvailability, getCatalogDays } from "../../services/api";
 
 const DEFAULT_ACTIVITIES = [
   { id: 1, name: "Yoga" },
@@ -114,7 +115,9 @@ const enabledDateKeys = ref([]);
 const fullCount = ref(0);
 const loadingDays = ref(false);
 const loadingSlots = ref(false);
+const isSubmittingEnrollment = ref(false);
 const error = ref("");
+const router = useRouter();
 
 const selectedActivityName = computed(() => {
   const act = activities.value.find((a) => a.id === selectedActivityId.value);
@@ -209,6 +212,28 @@ async function onDateSelected(date) {
   }
 }
 
+async function handleEnrollment() {
+  if (!selectedClass.value) return;
+
+  isSubmittingEnrollment.value = true;
+  error.value = "";
+  try {
+    const res = await createEnrollment({ class_id: selectedClass.value.id, tipo: "Suelta" });
+    const enrollmentId = res.data?.enrollment?.id;
+    router.push({
+      path: "/pagos",
+      query: {
+        tab: "pending",
+        ...(enrollmentId ? { enrollment_id: enrollmentId } : {}),
+      },
+    });
+  } catch (err) {
+    error.value = err.response?.data?.error || "No se pudo crear la inscripción.";
+  } finally {
+    isSubmittingEnrollment.value = false;
+  }
+}
+
 onMounted(() => {
   loadActivities();
 });
@@ -232,8 +257,6 @@ onActivated(() => {
 }
 
 .catalog-header h1 {
-  font-family: "Anton", sans-serif;
-  font-size: 2.5rem;
   color: #fff;
   margin-bottom: 0.5rem;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
@@ -261,8 +284,6 @@ onActivated(() => {
 }
 
 .step-title {
-  font-family: "Anton", sans-serif;
-  font-size: 1.3rem;
   color: #572c57;
   margin-bottom: 1rem;
   display: flex;
@@ -291,29 +312,19 @@ onActivated(() => {
 
 .activity-btn {
   padding: 1rem 0.75rem;
-  border: 2px solid #d0c0d0;
-  border-radius: 14px;
-  background: #fafaf8;
-  color: #572c57;
-  font-weight: 700;
-  cursor: pointer;
   transition: all 0.25s ease;
-  font-family: "Anton", sans-serif;
-  font-size: 1.05rem;
   box-shadow: 0 2px 5px rgba(87, 44, 87, 0.05);
 }
 
 .activity-btn:hover {
-  border-color: #9f5f91;
-  background: #f5e6f5;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(87, 44, 87, 0.15);
 }
 
 .activity-btn.active {
-  border-color: #572c57;
-  background: linear-gradient(135deg, #9f5f91 0%, #572c57 100%);
-  color: #fff;
+  border-color: #f6ea98;
+  background: #f6ea98;
+  color: #9f5f91;
   box-shadow: 0 4px 15px rgba(87, 44, 87, 0.25);
 }
 
@@ -339,30 +350,21 @@ onActivated(() => {
 
 .slot-btn {
   padding: 1rem;
-  border: 2px solid #d0c0d0;
-  border-radius: 12px;
-  background: #fafaf8;
-  color: #572c57;
-  cursor: pointer;
   transition: all 0.2s ease;
   text-align: center;
 }
 
 .slot-btn:hover {
-  border-color: #9f5f91;
-  background: #f5e6f5;
   transform: translateY(-2px);
 }
 
 .slot-btn.active {
-  border-color: #572c57;
-  background: linear-gradient(135deg, #9f5f91 0%, #572c57 100%);
-  color: #fff;
+  border-color: #f6ea98;
+  background: #f6ea98;
+  color: #9f5f91;
 }
 
 .slot-time {
-  font-family: "Anton", sans-serif;
-  font-size: 1.3rem;
   margin-bottom: 0.25rem;
 }
 
@@ -391,10 +393,8 @@ onActivated(() => {
 }
 
 .summary h3 {
-  font-family: "Anton", sans-serif;
   color: #572c57;
   margin-bottom: 1rem;
-  font-size: 1.2rem;
 }
 
 .summary-list {
@@ -417,16 +417,12 @@ onActivated(() => {
 
 .btn-inscribe {
   width: 100%;
-  padding: 1rem;
-  border: none;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #9f5f91 0%, #572c57 100%);
-  color: #fff;
-  font-weight: 700;
-  cursor: not-allowed;
-  opacity: 0.65;
-  font-size: 1.05rem;
   transition: all 0.3s ease;
+}
+
+.btn-inscribe:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .waitlist-note {
