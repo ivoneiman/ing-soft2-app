@@ -123,7 +123,18 @@ def _enrollment_counts():
 def _class_slot_payload(class_obj, enrolled_count):
     duration = getattr(class_obj, "duration_minutes", 60)
     cupo_max = class_obj.cupoMaximo if class_obj.cupoMaximo is not None else 20
-    available = cupo_max - enrolled_count
+    
+    # 🌟 CORRECCIÓN CRÍTICA: Si la clase está cancelada, liberamos los cupos para el frontend
+    clase_estado = getattr(class_obj, "estado", Class.STATUS_ACTIVE)
+    if clase_estado == Class.STATUS_CANCELLED:
+        available = cupo_max
+        enrolled = 0
+        is_full = False
+    else:
+        available = cupo_max - enrolled_count
+        enrolled = enrolled_count
+        is_full = available <= 0
+
     return {
         "id": class_obj.id,
         "name": class_obj.name,
@@ -132,10 +143,10 @@ def _class_slot_payload(class_obj, enrolled_count):
         "time": class_obj.fecha_hora.strftime("%H:%M") if class_obj.fecha_hora else "",
         "duration_minutes": duration,
         "cupoMaximo": cupo_max,
-        "enrolled": enrolled_count,
+        "enrolled": enrolled,
         "available_spots": available,
-        "is_full": available <= 0,
-        "estado": getattr(class_obj, "estado", Class.STATUS_ACTIVE),
+        "is_full": is_full,
+        "estado": clase_estado,
         "descuento": class_obj.descuento,
     }
 
@@ -593,7 +604,8 @@ def create_user():
 
 @app.route("/api/actividades/<int:actividad_id>/classes", methods=["GET"])
 def get_activity_classes(actividad_id):
-    classes = Class.query.filter_by(id_actividad=actividad_id).all()
+    # 🌟 FILTRADO SEGURO: Enviamos al frontend únicamente las clases activas
+    classes = Class.query.filter_by(id_actividad=actividad_id, estado=Class.STATUS_ACTIVE).all()
     return jsonify({
         "classes": [{"id": c.id, "fecha_hora": c.fecha_hora.isoformat(), "time": c.fecha_hora.strftime("%H:%M")} for c in classes]
     }), 200
@@ -613,7 +625,7 @@ def get_catalog():
 
 @app.route("/api/classes/all", methods=["GET"])
 def get_all_classes():
-    """Devuelve TODAS las clases (activas y canceladas) con conteo de inscritos.
+    """Devuelve TODAS las clases con conteo de inscritos.
     Utilizado principalmente por el Dashboard del staff."""
     enrollment_map = _enrollment_counts()
     class_payloads = []
@@ -645,6 +657,7 @@ def get_catalog_availability():
     available_slots = []
     full_count = 0
 
+    # 🌟 Traemos solo las clases activas para que no bloqueen horarios en el catálogo
     classes = Class.query.filter_by(id_actividad=actividad_id, estado=Class.STATUS_ACTIVE).filter(db.func.date(Class.fecha_hora) == day).order_by(Class.fecha_hora).all()
 
     for class_obj in classes:
@@ -680,6 +693,7 @@ def get_catalog_days():
     enrollment_map = _enrollment_counts()
     dates_with_cupo = set()
 
+    # 🌟 Consideramos solo las clases activas para marcar los días con disponibilidad
     classes = Class.query.filter_by(id_actividad=actividad_id, estado=Class.STATUS_ACTIVE).filter(Class.fecha_hora >= start, Class.fecha_hora <= end).all()
 
     for class_obj in classes:
@@ -690,7 +704,7 @@ def get_catalog_days():
 
     return jsonify({"dates": sorted(dates_with_cupo)}), 200
 
-# ─── Rutas API: Gestión de Clases (Compañero) ───────────────────────────
+# ─── Rutas API: Gestión de Clases (Inscripciones de Alumnos) ───────────────────
 
 @app.route("/api/enrollments", methods=["POST"])
 def create_enrollment():
@@ -801,27 +815,31 @@ def create_class():
     except ValueError:
         return jsonify({"error": "Fecha u hora inválida"}), 400
 
-    existing_class = Class.query.filter_by(id_actividad=actividad.id, fecha_hora=fecha_hora).first()
+    # Buscamos colisiones ignorando por completo las clases canceladas
+    target_str = fecha_hora.strftime("%Y-%m-%d %H:%M")
+    all_activity_classes = Class.query.filter_by(id_actividad=actividad.id).all()
+    
+    existing_class = None
+    for c in all_activity_classes:
+        if c.fecha_hora and c.fecha_hora.strftime("%Y-%m-%d %H:%M") == target_str:
+            existing_class = c
+            break
+    
     if existing_class:
-        return jsonify({"error": "Ya existe una clase para esa actividad en ese horario"}), 400
-
-    new_class = Class(name=actividad.name, fecha_hora=fecha_hora, id_actividad=actividad.id, cupoMaximo=cupo_maximo)
-    db.session.add(new_class)
-    try:
+        # Si existe y está activa, rebota
+        if getattr(existing_class, "estado", Class.STATUS_ACTIVE) == Class.STATUS_ACTIVE:
+            return jsonify({"error": "Ya existe una clase activa para esa actividad en ese horario"}), 400
+        
+        # 🌟 Si existía pero estaba cancelada, la RECICLAMOS para no violar la restricción única de SQLite
+        existing_class.estado = Class.STATUS_ACTIVE
+        existing_class.cupoMaximo = cupo_maximo
         db.session.commit()
-    except IntegrityError as err:
-        db.session.rollback()
-        error_text = str(err.orig).lower()
-        if "actividad_horario_unico" in error_text or "unique constraint" in error_text:
-            return jsonify({"error": "Ya existe una clase para esa actividad en ese horario"}), 400
-        return jsonify({"error": "Error interno al crear la clase"}), 500
+        return jsonify({
+            "message": "Clase restablecida correctamente en este horario",
+            "class": {"id": existing_class.id, "name": existing_class.name, "fecha_hora": existing_class.fecha_hora.isoformat(), "activity_id": existing_class.id_actividad}
+        }), 201
 
-    return jsonify({
-        "message": "Clase creada correctamente",
-        "class": {"id": new_class.id, "name": new_class.name, "fecha_hora": new_class.fecha_hora.isoformat(), "activity_id": new_class.id_actividad}
-    }), 201
-
-# ─── Rutas API: Asistencia QR (ORIGINAL DE TU COMPAÑERO, SIN MODIFICAR) ───────
+# ─── Rutas API: Asistencia QR (Compañero) ───────────────────────────────────
 
 @app.route("/api/attendance/register", methods=["POST"])
 def register_attendance():
@@ -835,7 +853,7 @@ def register_attendance():
 
     user = User.query.get(user_id)
     if not user:
-        return jsonify({"error": "Usuario inexistente"}), 404
+        return jsonify({"error": "Usuario Cards inexistente"}), 404
 
     class_obj = Class.query.get(class_id)
     if not class_obj:
@@ -870,7 +888,7 @@ def register_attendance():
 @app.route("/api/classes/<int:clase_id>/cancelar", methods=["POST"])
 def cancelar_clase_staff(clase_id):
     """US #19: El profesor o administrador cancela una clase completa.
-    Simplemente marca la clase como cancelada y libera el turno.
+    Marca la clase como cancelada y libera el horario para nuevas asignaciones.
     """
     user_id_sesion = session.get("user_id")
     if not user_id_sesion:
@@ -882,12 +900,17 @@ def cancelar_clase_staff(clase_id):
 
     class_obj = Class.query.get_or_404(clase_id)
     
-    # Verifica si la clase ya fue cancelada
     if class_obj.estado == Class.STATUS_CANCELLED:
         return jsonify({"error": "Esta clase ya fue cancelada"}), 400
 
     # Marca la clase como cancelada
     class_obj.estado = Class.STATUS_CANCELLED
+
+    # Cancelamos también todas las inscripciones activas de esta clase
+    inscripciones = Enrollment.query.filter_by(class_id=clase_id).all()
+    for inscripcion in inscripciones:
+        if inscripcion.estado != Enrollment.STATUS_CANCELLED:
+            inscripcion.estado = Enrollment.STATUS_CANCELLED
 
     try:
         db.session.commit()
@@ -903,9 +926,7 @@ def cancelar_clase_staff(clase_id):
     }), 200
 
 
-# ─── Arranque del Servidor ───────────────────────────────────────────────────
-
-# ─── Rutas API: Pagos ────────────────────────────────────────────────────────
+# ─── Rutas API: Pasarela de Pagos (Mercado Pago) ──────────────────────────────
 
 @app.route("/api/payments/create", methods=["POST"])
 def create_payment():
