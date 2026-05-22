@@ -136,6 +136,25 @@ export function cancelarClaseCompleta(clase_id) {
   );
 }
 
+// =========================
+// CONFIGURACIONES
+// =========================
+
+export function getNotificationConfig() {
+  return axios.get(
+    `${API_URL}/settings/notification-message`,
+    REQUEST_CONFIG
+  );
+}
+
+export function saveNotificationConfig(message) {
+  return axios.put(
+    `${API_URL}/settings/notification-message`,
+    { message },
+    REQUEST_CONFIG
+  );
+}
+
 export function createEnrollment({ class_id, tipo }) {
   return axios.post(
     `${API_URL}/enrollments`,

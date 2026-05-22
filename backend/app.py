@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from mercadopago_config import get_mercadopago_client
 from models import db, User
 # Importar todos los modelos requeridos
-from models import Class, Enrollment, Attendance, Actividades, Credito, Payment
+from models import Class, Enrollment, Attendance, Actividades, Credito, Payment, SystemSetting
 
 # Carga variables de entorno desde .env
 load_dotenv()
@@ -957,6 +957,48 @@ def cancelar_clase_staff(clase_id):
         "class_name": class_obj.name,
         "estado": Class.STATUS_CANCELLED
     }), 200
+
+
+@app.route("/api/settings/notification-message", methods=["GET"])
+def get_notification_message():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+    if current_user.role != "admin":
+        return jsonify({"error": "No tienes permisos para acceder a esta configuración"}), 403
+
+    setting = SystemSetting.query.filter_by(key="cancellation_notification_message").first()
+    return jsonify({"message": setting.value if setting else ""}), 200
+
+
+@app.route("/api/settings/notification-message", methods=["PUT"])
+def update_notification_message():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+    if current_user.role != "admin":
+        return jsonify({"error": "No tienes permisos para modificar esta configuración"}), 403
+
+    data = request.get_json() or {}
+    message = data.get("message", "")
+    if not isinstance(message, str) or not message.strip():
+        return jsonify({"error": "El mensaje es obligatorio"}), 400
+
+    trimmed_message = message.strip()
+    setting = SystemSetting.query.filter_by(key="cancellation_notification_message").first()
+    if not setting:
+        setting = SystemSetting(key="cancellation_notification_message", value=trimmed_message)
+        db.session.add(setting)
+    else:
+        setting.value = trimmed_message
+
+    try:
+        db.session.commit()
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({"error": "Error interno al guardar la configuración", "details": str(err)}), 500
+
+    return jsonify({"message": "Mensaje de notificación actualizado correctamente", "notification_message": setting.value}), 200
 
 
 # ─── Rutas API: Pasarela de Pagos (Mercado Pago) ──────────────────────────────

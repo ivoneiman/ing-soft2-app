@@ -211,3 +211,19 @@ class Payment(db.Model):
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class SystemSetting(db.Model):
+    """Configuraciones globales del sistema."""
+    __tablename__ = "system_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(120), unique=True, nullable=False)
+    value = db.Column(db.Text, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "key": self.key,
+            "value": self.value,
+        }
