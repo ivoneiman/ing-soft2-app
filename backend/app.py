@@ -806,7 +806,7 @@ def create_class():
     if not activity_id or not date_str or not time_str:
         return jsonify({"error": "Todos los campos son obligatorios"}), 400
 
-    actividad = Actividades.query.get(activity_id)
+    actividad = db.session.get(Actividades, activity_id)
     if not actividad:
         return jsonify({"error": "Actividad no encontrada"}), 404
 
@@ -815,7 +815,7 @@ def create_class():
     except ValueError:
         return jsonify({"error": "Fecha u hora inválida"}), 400
 
-    # Buscamos colisiones ignorando por completo las clases canceladas
+    # 1. Buscamos si ya existe CUALQUIER registro en ese horario para esta actividad
     target_str = fecha_hora.strftime("%Y-%m-%d %H:%M")
     all_activity_classes = Class.query.filter_by(id_actividad=actividad.id).all()
     
@@ -826,18 +826,51 @@ def create_class():
             break
     
     if existing_class:
-        # Si existe y está activa, rebota
+        # Si la clase existe y sigue ACTIVA, rebota normalmente
         if getattr(existing_class, "estado", Class.STATUS_ACTIVE) == Class.STATUS_ACTIVE:
             return jsonify({"error": "Ya existe una clase activa para esa actividad en ese horario"}), 400
         
-        # 🌟 Si existía pero estaba cancelada, la RECICLAMOS para no violar la restricción única de SQLite
+        # 🌟 SI EXISTÍA PERO ESTABA CANCELADA: La reactivamos sin tocar los registros hijos
         existing_class.estado = Class.STATUS_ACTIVE
         existing_class.cupoMaximo = cupo_maximo
+        
+        try:
+            db.session.commit()
+            return jsonify({
+                "message": "Clase reactivada correctamente en este horario",
+                "class": {
+                    "id": existing_class.id,
+                    "name": existing_class.name,
+                    "fecha_hora": existing_class.fecha_hora.isoformat(),
+                    "activity_id": existing_class.id_actividad
+                }
+            }), 201
+        except Exception as err:
+            db.session.rollback()
+            return jsonify({"error": f"Error interno al reactivar la clase: {str(err)}"}), 500
+
+    # 2. Si el horario estaba virgen, creamos un registro nuevo desde cero
+    new_class = Class(name=actividad.name, fecha_hora=fecha_hora, id_actividad=actividad.id, cupoMaximo=cupo_maximo)
+    db.session.add(new_class)
+    
+    try:
         db.session.commit()
-        return jsonify({
-            "message": "Clase restablecida correctamente en este horario",
-            "class": {"id": existing_class.id, "name": existing_class.name, "fecha_hora": existing_class.fecha_hora.isoformat(), "activity_id": existing_class.id_actividad}
-        }), 201
+    except IntegrityError as err:
+        db.session.rollback()
+        return jsonify({"error": "Ya existe una clase para esa actividad en ese horario"}), 400
+    except Exception as err:
+        db.session.rollback()
+        return jsonify({"error": f"Error interno: {str(err)}"}), 500
+
+    return jsonify({
+        "message": "Clase creada correctamente",
+        "class": {
+            "id": new_class.id,
+            "name": new_class.name,
+            "fecha_hora": new_class.fecha_hora.isoformat(),
+            "activity_id": new_class.id_actividad
+        }
+    }), 201
 
 # ─── Rutas API: Asistencia QR (Compañero) ───────────────────────────────────
 
