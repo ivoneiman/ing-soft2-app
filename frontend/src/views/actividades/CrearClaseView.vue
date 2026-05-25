@@ -23,10 +23,10 @@
       <!-- PASO 2: Aparece solo cuando se ha seleccionado una actividad -->
       <div class="schedule-section" v-if="form.activity_id">
         <label>
-          Tipo de clase
+          Tipo de creación
           <select v-model="form.tipo">
-            <option value="individual">Individual</option>
-            <option value="mensual">Mensual</option>
+            <option value="individual">Clase sola</option>
+            <option value="mensual">Clase mensual</option>
           </select>
         </label>
         <label>Fecha y Horario</label>
@@ -250,7 +250,7 @@ const submitForm = async () => {
     );
 
     if (conflicts.length > 0) {
-      errorMessage.value = `No se puede crear la clase de manera mensual porque ya existen clases en estas fechas: ${conflicts.join(', ')}.`;
+      errorMessage.value = `No se puede crear la clase de manera mensual porque ya existen clases para la misma actividad en estas fechas: ${conflicts.join(', ')}.`;
       return;
     }
 
