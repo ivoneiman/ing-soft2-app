@@ -95,7 +95,8 @@ export function createClass({
   activity_id,
   date,
   time,
-  cupoMaximo
+  cupoMaximo,
+  tipo = "individual",
 }) {
   return axios.post(
     `${API_URL}/classes`,
@@ -103,7 +104,8 @@ export function createClass({
       activity_id,
       date,
       time,
-      cupoMaximo
+      cupoMaximo,
+      tipo,
     },
     REQUEST_CONFIG
   );
