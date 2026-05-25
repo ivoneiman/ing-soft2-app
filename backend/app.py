@@ -57,8 +57,6 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE classes ADD COLUMN id_actividad INTEGER"))
         if "descuento" not in columns:
             db.session.execute(text("ALTER TABLE classes ADD COLUMN descuento INTEGER DEFAULT 0"))
-        if "tipo" not in columns:
-            db.session.execute(text("ALTER TABLE classes ADD COLUMN tipo VARCHAR(20) DEFAULT 'individual'"))
         db.session.commit()
 
     if "payments" in inspector.get_table_names():
@@ -113,7 +111,6 @@ def _class_slot_payload(class_obj, enrolled_count):
         "is_full": available <= 0,
         "estado": getattr(class_obj, "estado", "Activa"),
         "descuento": class_obj.descuento,
-        "tipo": getattr(class_obj, "tipo", "individual"),
     }
 
 
@@ -470,7 +467,7 @@ def create_user():
 def get_activity_classes(actividad_id):
     classes = Class.query.filter_by(id_actividad=actividad_id).all()
     return jsonify({
-        "classes": [{"id": c.id, "fecha_hora": c.fecha_hora.isoformat(), "time": c.fecha_hora.strftime("%H:%M"), "tipo": getattr(c, "tipo", "individual")} for c in classes]
+        "classes": [{"id": c.id, "fecha_hora": c.fecha_hora.isoformat(), "time": c.fecha_hora.strftime("%H:%M")} for c in classes]
     }), 200
 
 
@@ -619,15 +616,11 @@ def create_class():
     except ValueError:
         return jsonify({"error": "Fecha u hora inválida"}), 400
 
-    tipo = data.get("tipo", "individual")
-    if tipo not in ("individual", "mensual"):
-        tipo = "individual"
-
     existing_class = Class.query.filter_by(id_actividad=actividad.id, fecha_hora=fecha_hora).first()
     if existing_class:
         return jsonify({"error": "Ya existe una clase para esa actividad en ese horario"}), 400
 
-    new_class = Class(name=actividad.name, fecha_hora=fecha_hora, id_actividad=actividad.id, cupoMaximo=cupo_maximo, tipo=tipo)
+    new_class = Class(name=actividad.name, fecha_hora=fecha_hora, id_actividad=actividad.id, cupoMaximo=cupo_maximo)
     db.session.add(new_class)
     try:
         db.session.commit()
