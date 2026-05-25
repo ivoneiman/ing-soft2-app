@@ -180,21 +180,12 @@ watch(
 }
 
 .nav-btn {
-  background: #f6ea98;
-  border: 2px solid #8b7500;
-  color: #8b7500;
   font-size: 1.1rem;
-  font-weight: 700;
   padding: 0.5rem 0.8rem;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
   min-width: 40px;
 }
 
 .nav-btn:hover:not(:disabled) {
-  background: #8b7500;
-  color: #fff;
   transform: scale(1.1);
 }
 
@@ -221,14 +212,8 @@ watch(
 
 .calendar-day {
   aspect-ratio: 1;
-  border: 2px solid transparent;
-  border-radius: 10px;
-  background: #fff;
-  color: #8b7500;
-  font-weight: 600;
-  cursor: not-allowed;
-  transition: all 0.15s ease;
   font-size: 0.9rem;
+  padding: 0;
 }
 
 .calendar-day.empty {
@@ -238,22 +223,18 @@ watch(
 }
 
 .calendar-day.enabled {
-  border-color: #f6ea98;
   cursor: pointer;
-  background: #fffdf0;
 }
 
 .calendar-day.enabled:hover {
-  background: #f6ea98;
-  border-color: #8b7500;
   transform: scale(1.08);
   box-shadow: 0 2px 8px rgba(139, 117, 0, 0.15);
 }
 
 .calendar-day.selected {
   background: #f6ea98;
-  color: #8b7500;
-  border-color: #8b7500;
+  color: #9f5f91;
+  border-color: #f6ea98;
   font-weight: 700;
   box-shadow: 0 3px 10px rgba(139, 117, 0, 0.3);
 }
@@ -264,9 +245,6 @@ watch(
 }
 
 .calendar-day:disabled {
-  background: #f5f5f5;
-  color: #ccc;
-  border-color: #e0e0e0;
   cursor: not-allowed;
 }
 </style>

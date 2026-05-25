@@ -1,26 +1,25 @@
 import axios from "axios";
 
-const API_URL = "http://localhost:5000/api";
-
-console.log("API_URL EN PRODUCCION:", API_URL);
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+const REQUEST_CONFIG = { withCredentials: true };
 
 // =========================
 // AUTH
 // =========================
 
 export function register({ username, apellido, email, dni, telefono, password }) {
-  return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, { withCredentials: true });
+  return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
 }
 
 export function crearUsuario({ username, apellido, email, dni, telefono, password }) {
-  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password }, { withCredentials: true });
+  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
 }
 
 export function login({ email, password, remember }) {
   return axios.post(
     `${API_URL}/login`,
     { email, password, remember },
-    { withCredentials: true }
+    REQUEST_CONFIG
   );
 }
 
@@ -28,14 +27,14 @@ export function logout() {
   return axios.post(
     `${API_URL}/logout`,
     {},
-    { withCredentials: true }
+    REQUEST_CONFIG
   );
 }
 
 export function getCurrentUser() {
   return axios.get(
     `${API_URL}/me`,
-    { withCredentials: true }
+    REQUEST_CONFIG
   );
 }
 
@@ -46,24 +45,14 @@ export function getCurrentUser() {
 export function getActivities() {
   return axios.get(
     `${API_URL}/actividades`,
-    { withCredentials: true }
+    REQUEST_CONFIG
   );
 }
 
 export function getActivityClasses(actividad_id) {
   return axios.get(
     `${API_URL}/actividades/${actividad_id}/classes`,
-    { withCredentials: true }
-  );
-}
-
-export function getPaymentClasses(testDay) {
-  return axios.get(
-    `${API_URL}/classes`,
-    {
-      params: testDay ? { test_day: testDay } : {},
-      withCredentials: true,
-    }
+    REQUEST_CONFIG
   );
 }
 
@@ -71,17 +60,10 @@ export function getPaymentClasses(testDay) {
 // CATÁLOGO
 // =========================
 
-export function getAvailableClasses() {
-  return axios.get(
-    `${API_URL}/catalog`,
-    { withCredentials: true }
-  );
-}
-
 export function getAllClasses() {
   return axios.get(
     `${API_URL}/classes/all`,
-    { withCredentials: true }
+    REQUEST_CONFIG
   );
 }
 
@@ -90,7 +72,7 @@ export function getCatalogAvailability(actividad_id, fecha) {
     `${API_URL}/catalog/availability`,
     {
       params: { actividad_id, fecha },
-      withCredentials: true,
+      ...REQUEST_CONFIG,
     }
   );
 }
@@ -100,7 +82,7 @@ export function getCatalogDays(actividad_id, year, month) {
     `${API_URL}/catalog/days`,
     {
       params: { actividad_id, year, month },
-      withCredentials: true,
+      ...REQUEST_CONFIG,
     }
   );
 }
@@ -123,7 +105,7 @@ export function createClass({
       time,
       cupoMaximo
     },
-    { withCredentials: true }
+    REQUEST_CONFIG
   );
 }
 
@@ -138,7 +120,7 @@ export function registerAttendance({
   return axios.post(
     `${API_URL}/attendance/register`,
     { user_id, class_id },
-    { withCredentials: true }
+    REQUEST_CONFIG
   );
 }
 
@@ -150,7 +132,25 @@ export function cancelarClaseCompleta(clase_id) {
   return axios.post(
     `${API_URL}/classes/${clase_id}/cancelar`,
     {},
-    { withCredentials: true }
+    REQUEST_CONFIG
+  );
+}
+
+export function createEnrollment({ class_id, tipo }) {
+  return axios.post(
+    `${API_URL}/enrollments`,
+    { class_id, tipo },
+    REQUEST_CONFIG
+  );
+}
+
+export function getPendingEnrollments(testDay) {
+  return axios.get(
+    `${API_URL}/enrollments/pending`,
+    {
+      params: testDay ? { test_day: testDay } : {},
+      ...REQUEST_CONFIG,
+    }
   );
 }
 
@@ -158,26 +158,40 @@ export function cancelarClaseCompleta(clase_id) {
 // =========================
 
 export function createPayment({
-  payment_type,
   payment_method,
-  class_id,
-  payment_option,
+  enrollment_id,
 }) {
   return axios.post(
     `${API_URL}/payments/create`,
     {
-      payment_type,
       payment_method,
-      class_id,
-      payment_option,
+      enrollment_id,
     },
-    { withCredentials: true }
+    REQUEST_CONFIG
   );
 }
 
 export function getPaymentHistory() {
   return axios.get(
     `${API_URL}/payments/history`,
-    { withCredentials: true }
+    REQUEST_CONFIG
+  );
+}
+
+export function getPaymentDiscountRules(testDay) {
+  return axios.get(
+    `${API_URL}/payments/discount-rules`,
+    {
+      params: testDay ? { test_day: testDay } : {},
+      ...REQUEST_CONFIG,
+    }
+  );
+}
+
+export function applyClassDiscount(classId, descuento) {
+  return axios.put(
+    `${API_URL}/classes/${classId}/discount`,
+    { descuento },
+    REQUEST_CONFIG
   );
 }
