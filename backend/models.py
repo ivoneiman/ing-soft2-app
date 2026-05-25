@@ -58,6 +58,7 @@ class Class(db.Model):
     id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
     estado = db.Column(db.String(20), default="Activa", nullable=False)  # 'Activa' o 'Cancelada'
     descuento = db.Column(db.Integer, nullable=False, default=0) # Porcentaje de descuento (0, 40, 70)
+    tipo = db.Column(db.String(20), nullable=False)  # 'individual' o 'mensual'
 
     # Relación con la actividad (necesaria para el catálogo y respuestas limpias)
     actividad = db.relationship("Actividades", backref="classes")
@@ -83,6 +84,7 @@ class Class(db.Model):
             "actividad_name": self.actividad.name if self.actividad else None,
             "estado": self.estado,
             "descuento": self.descuento,
+            "tipo": self.tipo,
         }
 
 

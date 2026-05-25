@@ -220,6 +220,7 @@ const submitForm = async () => {
         date: form.date,
         time: form.time,
         cupoMaximo: form.cupoMaximo,
+        tipo: form.tipo,
       });
 
       successMessage.value = "Clase creada exitosamente.";
@@ -263,6 +264,7 @@ const submitForm = async () => {
           date: fechaStr,
           time: form.time,
           cupoMaximo: form.cupoMaximo,
+          tipo: form.tipo,
         });
         createdDates.push(fechaStr);
       } catch (err) {
