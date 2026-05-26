@@ -14,10 +14,23 @@ export const PAYMENT_STATUS = {
   PENDING: 'pending',
   APPROVED: 'approved',
   REJECTED: 'rejected',
+  EXPIRED: 'expired',
 };
 
 export const PAYMENT_METHOD = {
   MERCADO_PAGO: 'mercado_pago',
+  CREDIT: 'credit',
+};
+
+export const ENROLLMENT_TYPE = {
+  SINGLE: 'Suelta',
+  MONTHLY: 'Mensual',
+};
+
+export const CREDIT_STATUS = {
+  AVAILABLE: 'available',
+  USED: 'used',
+  EXPIRED: 'expired',
 };
 
 export const STATUS_LABELS = {
@@ -35,13 +48,19 @@ export const STATUS_LABELS = {
     [PAYMENT_STATUS.APPROVED]: 'Aprobado',
     [PAYMENT_STATUS.REJECTED]: 'Rechazado',
     [PAYMENT_STATUS.PENDING]: 'Pendiente',
+    [PAYMENT_STATUS.EXPIRED]: 'Vencido',
   },
   paymentMethod: {
     [PAYMENT_METHOD.MERCADO_PAGO]: 'Mercado Pago',
+    [PAYMENT_METHOD.CREDIT]: 'Crédito',
+  },
+  credit: {
+    [CREDIT_STATUS.AVAILABLE]: 'Disponible',
+    [CREDIT_STATUS.USED]: 'Usado',
+    [CREDIT_STATUS.EXPIRED]: 'Vencido',
   },
 };
 
 export function statusLabel(group, status) {
   return STATUS_LABELS[group]?.[status] || status || '-';
 }
-

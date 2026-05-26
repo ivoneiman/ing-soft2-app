@@ -126,6 +126,13 @@ export function registerAttendance({
   );
 }
 
+export function getClassAttendance(classId) {
+  return axios.get(
+    `${API_URL}/classes/${classId}/attendance`,
+    REQUEST_CONFIG
+  );
+}
+
 // =========================
 // CANCELACIONES
 // =========================
@@ -187,6 +194,20 @@ export function getPaymentDiscountRules(testDay) {
       params: testDay ? { test_day: testDay } : {},
       ...REQUEST_CONFIG,
     }
+  );
+}
+
+export function getMyCredits() {
+  return axios.get(
+    `${API_URL}/credits/my`,
+    REQUEST_CONFIG
+  );
+}
+
+export function getMyNotifications() {
+  return axios.get(
+    `${API_URL}/notifications/my`,
+    REQUEST_CONFIG
   );
 }
 
