@@ -190,7 +190,8 @@ class Payment(db.Model):
     STATUS_PENDING = "pending"
     STATUS_APPROVED = "approved"
     STATUS_REJECTED = "rejected"
-    VALID_STATUSES = (STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED)
+    STATUS_EXPIRED = "expired"
+    VALID_STATUSES = (STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED, STATUS_EXPIRED)
 
     def to_dict(self):
         class_obj = self.enrollment.class_ if self.enrollment else self.class_

@@ -14,6 +14,7 @@ export const PAYMENT_STATUS = {
   PENDING: 'pending',
   APPROVED: 'approved',
   REJECTED: 'rejected',
+  EXPIRED: 'expired',
 };
 
 export const PAYMENT_METHOD = {
@@ -35,6 +36,7 @@ export const STATUS_LABELS = {
     [PAYMENT_STATUS.APPROVED]: 'Aprobado',
     [PAYMENT_STATUS.REJECTED]: 'Rechazado',
     [PAYMENT_STATUS.PENDING]: 'Pendiente',
+    [PAYMENT_STATUS.EXPIRED]: 'Vencido',
   },
   paymentMethod: {
     [PAYMENT_METHOD.MERCADO_PAGO]: 'Mercado Pago',
@@ -44,4 +46,3 @@ export const STATUS_LABELS = {
 export function statusLabel(group, status) {
   return STATUS_LABELS[group]?.[status] || status || '-';
 }
-

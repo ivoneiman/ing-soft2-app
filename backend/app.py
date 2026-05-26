@@ -266,6 +266,12 @@ def _class_has_finished(class_obj, current_datetime=None):
     return class_datetime <= current_datetime
 
 
+def _payment_expires_at(class_obj):
+    if not class_obj or not class_obj.fecha_hora:
+        return None
+    return class_obj.fecha_hora - timedelta(minutes=1)
+
+
 def _payment_amount(payment_type, payment_option):
     if payment_type == "monthly_subscription":
         return _configured_amount("PAYMENT_MONTHLY_AMOUNT", 10000)
@@ -306,6 +312,7 @@ def _expire_enrollment_if_needed(enrollment, current_datetime=None):
 
     if _class_has_finished(enrollment.class_, current_datetime):
         enrollment.estado = Enrollment.STATUS_EXPIRED
+        _expire_payment_for_enrollment(enrollment, current_datetime)
         return True
 
     return False
@@ -313,6 +320,42 @@ def _expire_enrollment_if_needed(enrollment, current_datetime=None):
 
 def _has_approved_payment(enrollment):
     return any(payment.status == Payment.STATUS_APPROVED for payment in getattr(enrollment, "payments", []))
+
+
+def _expire_payment_for_enrollment(enrollment, current_datetime=None):
+    if not enrollment or _has_approved_payment(enrollment):
+        return False
+
+    changed = False
+    has_expired_payment = False
+    payments = list(getattr(enrollment, "payments", []) or [])
+
+    for payment in payments:
+        if payment.status == Payment.STATUS_EXPIRED:
+            has_expired_payment = True
+        elif payment.status == Payment.STATUS_PENDING:
+            payment.status = Payment.STATUS_EXPIRED
+            has_expired_payment = True
+            changed = True
+
+    if not has_expired_payment:
+        quote = _enrollment_payment_quote(enrollment, current_datetime)
+        expired_payment = Payment(
+            user_id=enrollment.user_id,
+            enrollment_id=enrollment.id,
+            class_id=enrollment.class_id,
+            payment_type=_payment_type_for_enrollment(enrollment),
+            payment_method=Payment.METHOD_MERCADO_PAGO,
+            amount=quote["amount"],
+            discount_percentage=quote["discount_percentage"],
+            final_amount=quote["final_amount"],
+            status=Payment.STATUS_EXPIRED,
+            created_at=_payment_expires_at(enrollment.class_) or current_datetime,
+        )
+        db.session.add(expired_payment)
+        changed = True
+
+    return changed
 
 
 def _class_capacity(class_obj):
@@ -339,6 +382,7 @@ def _validate_enrollment_payable(enrollment, current_user, current_datetime):
     if _class_has_finished(class_obj, current_datetime):
         if enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
             enrollment.estado = Enrollment.STATUS_EXPIRED
+            _expire_payment_for_enrollment(enrollment, current_datetime)
             db.session.commit()
         return "No se puede pagar una clase ya finalizada", 400
     if enrollment.estado != Enrollment.STATUS_PENDING_PAYMENT:
@@ -374,6 +418,7 @@ def _enrollment_payment_quote(enrollment, current_datetime=None):
 def _enrollment_payload(enrollment, current_datetime=None):
     class_obj = enrollment.class_
     quote = _enrollment_payment_quote(enrollment, current_datetime)
+    expires_at = _payment_expires_at(class_obj)
     return {
         "id": enrollment.id,
         "user_id": enrollment.user_id,
@@ -383,7 +428,7 @@ def _enrollment_payload(enrollment, current_datetime=None):
         "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj and class_obj.fecha_hora else None,
         "estado": enrollment.estado,
         "tipo": enrollment.tipo,
-        "expires_at": class_obj.fecha_hora.isoformat() if class_obj and class_obj.fecha_hora else None,
+        "expires_at": expires_at.isoformat() if expires_at else None,
         "payment_type": _payment_type_for_enrollment(enrollment),
         "payment_option": "full",
         "amount": quote["amount"],
@@ -1108,6 +1153,7 @@ def create_payment():
 def mercado_pago_return(result):
     print("[MercadoPago Callback] RESULT:", result, flush=True)
     print("[MercadoPago Callback] QUERY PARAMS:", request.args.to_dict(), flush=True)
+    current_datetime = _current_discount_datetime()
     payment_reference = request.args.get("external_reference")
     preference_id = request.args.get("preference_id")
     mercado_pago_payment_id = request.args.get("payment_id") or request.args.get("collection_id")
@@ -1132,7 +1178,17 @@ def mercado_pago_return(result):
     if mercado_pago_payment_id:
         payment.mercado_pago_payment_id = str(mercado_pago_payment_id)
 
-    if (result == "success" or mercado_pago_status == "approved") and _enrollment_has_other_approved_payment(payment):
+    if (
+        payment.status != Payment.STATUS_APPROVED
+        and payment.enrollment
+        and _class_has_finished(payment.enrollment.class_, current_datetime)
+    ):
+        payment.status = Payment.STATUS_EXPIRED
+        if payment.enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
+            payment.enrollment.estado = Enrollment.STATUS_EXPIRED
+        redirect_status = "failure"
+        message = "El período de pago de la inscripción venció"
+    elif (result == "success" or mercado_pago_status == "approved") and _enrollment_has_other_approved_payment(payment):
         payment.status = Payment.STATUS_REJECTED
         redirect_status = "failure"
         message = "La inscripción ya tiene un pago aprobado"
@@ -1163,6 +1219,17 @@ def payment_history():
     current_user = _get_authenticated_user()
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
+
+    current_datetime = _current_discount_datetime()
+    enrollments = Enrollment.query.filter_by(user_id=current_user.id).all()
+    changed = False
+    for enrollment in enrollments:
+        changed = _expire_enrollment_if_needed(enrollment, current_datetime) or changed
+        if enrollment.estado == Enrollment.STATUS_EXPIRED:
+            changed = _expire_payment_for_enrollment(enrollment, current_datetime) or changed
+
+    if changed:
+        db.session.commit()
 
     payments = (
         Payment.query
