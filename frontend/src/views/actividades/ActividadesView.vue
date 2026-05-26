@@ -99,7 +99,9 @@
 import { ref, computed, onMounted, onActivated } from "vue";
 import { useRouter } from "vue-router";
 import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
+import { PAYMENT_TAB } from "../../constants/payments";
 import { createEnrollment, getActivities, getCatalogAvailability, getCatalogDays } from "../../services/api";
+import { ENROLLMENT_TYPE } from "../../constants/statuses";
 import { formatLongDate } from "../../utils/formatters";
 
 const DEFAULT_ACTIVITIES = [
@@ -218,7 +220,7 @@ async function handleEnrollment() {
   error.value = "";
   successMessage.value = "";
   try {
-    const res = await createEnrollment({ class_id: selectedClass.value.id, tipo: "Suelta" });
+    const res = await createEnrollment({ class_id: selectedClass.value.id, tipo: ENROLLMENT_TYPE.SINGLE });
     if (res.data?.credit_used) {
       successMessage.value = res.data?.message || "Inscripción realizada utilizando crédito";
       selectedClassId.value = "";
@@ -229,7 +231,7 @@ async function handleEnrollment() {
     router.push({
       path: "/pagos",
       query: {
-        tab: "pending",
+        tab: PAYMENT_TAB.PENDING,
         ...(enrollmentId ? { enrollment_id: enrollmentId } : {}),
       },
     });

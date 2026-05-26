@@ -16,21 +16,21 @@
     </p>
 
     <nav class="payments-tabs" aria-label="Secciones de pagos">
-      <button type="button" :class="{ active: activeTab === 'pending' }" @click="activeTab = 'pending'">
+      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.PENDING }" @click="activeTab = PAYMENT_TAB.PENDING">
         Inscripciones pendientes
       </button>
-      <button type="button" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
+      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.HISTORY }" @click="activeTab = PAYMENT_TAB.HISTORY">
         Historial de pagos
       </button>
-      <button type="button" :class="{ active: activeTab === 'credits' }" @click="activeTab = 'credits'">
+      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.CREDITS }" @click="activeTab = PAYMENT_TAB.CREDITS">
         Créditos
       </button>
-      <button type="button" :class="{ active: activeTab === 'notifications' }" @click="activeTab = 'notifications'">
+      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.NOTIFICATIONS }" @click="activeTab = PAYMENT_TAB.NOTIFICATIONS">
         Notificaciones
       </button>
     </nav>
 
-    <fieldset v-if="isDiscountTestVisible && activeTab === 'pending'" class="discount-test-mode">
+    <fieldset v-if="isDiscountTestVisible && activeTab === PAYMENT_TAB.PENDING" class="discount-test-mode">
       <p>Modo testing descuentos</p>
       <label v-for="option in discountTestOptions" :key="option.value">
         <input v-model="discountTestDay" type="radio" name="discount-test-day" :value="option.value" />
@@ -38,7 +38,7 @@
       </label>
     </fieldset>
 
-    <section v-if="activeTab === 'pending'" class="pending-section">
+    <section v-if="activeTab === PAYMENT_TAB.PENDING" class="pending-section">
       <div v-if="isLoadingEnrollments" class="empty-state">Cargando inscripciones...</div>
       <div v-else-if="pendingEnrollments.length === 0" class="empty-state">
         No tenés inscripciones pendientes de pago.
@@ -103,7 +103,7 @@
       </template>
     </section>
 
-    <section v-else-if="activeTab === 'history'" class="history-section">
+    <section v-else-if="activeTab === PAYMENT_TAB.HISTORY" class="history-section">
       <h2>Historial de pagos</h2>
 
       <div v-if="isLoadingHistory" class="empty-state">Cargando pagos...</div>
@@ -135,7 +135,7 @@
       </table>
     </section>
 
-    <section v-else-if="activeTab === 'credits'" class="history-section">
+    <section v-else-if="activeTab === PAYMENT_TAB.CREDITS" class="history-section">
       <h2>Créditos disponibles</h2>
 
       <div v-if="isLoadingCredits" class="empty-state">Cargando créditos...</div>
@@ -186,6 +186,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { PAYMENT_METHOD, statusLabel } from '../../constants/statuses';
+import { PAYMENT_RETURN_MESSAGES, PAYMENT_RETURN_STATUS, PAYMENT_TAB, PAYMENT_TABS } from '../../constants/payments';
 import {
   createPayment,
   getMyCredits,
@@ -199,8 +200,7 @@ import { roleHelpers } from '../../utils/roleHelpers';
 
 const route = useRoute();
 const isAdmin = ref(roleHelpers.isAdmin());
-const tabNames = ['pending', 'history', 'credits', 'notifications'];
-const activeTab = ref(tabNames.includes(route.query.tab) ? route.query.tab : 'pending');
+const activeTab = ref(PAYMENT_TABS.includes(route.query.tab) ? route.query.tab : PAYMENT_TAB.PENDING);
 const isSubmittingId = ref(null);
 const isLoadingEnrollments = ref(false);
 const isLoadingHistory = ref(false);
@@ -228,10 +228,8 @@ const discountTestOptions = computed(() => {
 });
 
 const returnMessage = computed(() => {
-  if (route.query.status === 'success') return { type: 'success', text: 'Pago aprobado' };
-  if (route.query.status === 'credit') return { type: 'success', text: 'Inscripción realizada utilizando crédito' };
-  if (route.query.status === 'pending') return { type: 'pending', text: 'Pago pendiente' };
-  if (route.query.status === 'failure') return { type: 'failure', text: route.query.message || 'Pago rechazado' };
+  if (PAYMENT_RETURN_MESSAGES[route.query.status]) return PAYMENT_RETURN_MESSAGES[route.query.status];
+  if (route.query.status === PAYMENT_RETURN_STATUS.FAILURE) return { type: 'failure', text: route.query.message || 'Pago rechazado' };
   return null;
 });
 
@@ -346,7 +344,7 @@ watch(discountTestDay, () => {
 watch(
   () => route.query.tab,
   (tab) => {
-    activeTab.value = tabNames.includes(tab) ? tab : 'pending';
+    activeTab.value = PAYMENT_TABS.includes(tab) ? tab : PAYMENT_TAB.PENDING;
   }
 );
 </script>

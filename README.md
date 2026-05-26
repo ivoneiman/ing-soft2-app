@@ -136,6 +136,7 @@ Al ejecutar `seed.py` se crean automáticamente:
 ing-soft2-app/
 ├── backend/
 │   ├── app.py                  ← Servidor Flask + rutas API
+│   ├── email_service.py        ← Envío de emails transaccionales con Resend
 │   ├── models.py               ← Modelos SQLAlchemy (User, Class, Enrollment, Attendance)
 │   ├── seed.py                 ← Datos de prueba (IMPORTANTE)
 │   ├── requirements.txt         ← Dependencias Python
@@ -240,9 +241,36 @@ Crear archivo `.env` en `backend/` basado en `.env.example`:
 SECRET_KEY=dev-secret-key
 CORS_ORIGINS=http://localhost:5173
 ENVIRONMENT=development
+
+# Mercado Pago
+MERCADOPAGO_PUBLIC_KEY=
+MERCADOPAGO_ACCESS_TOKEN=
+MERCADOPAGO_CHECKOUT_MODE=sandbox
+
+# Emails transaccionales con Resend
+RESEND_API_KEY=
+EMAIL_FROM=onboarding@resend.dev
 ```
 
-En producción, cambiar valores por seguros.
+### Emails con Resend
+
+El sistema usa Resend para enviar emails cuando una clase se cancela. Además de crear las notificaciones internas y los créditos reutilizables, el backend intenta enviar emails al usuario afectado.
+
+Para probar emails en desarrollo:
+
+1. Crear una cuenta gratuita en [Resend](https://resend.com/).
+2. Crear una API key.
+3. Copiar `backend/.env.example` a `backend/.env`.
+4. Completar:
+
+```env
+RESEND_API_KEY=tu_api_key_de_resend
+EMAIL_FROM=onboarding@resend.dev
+```
+
+Cada integrante del equipo debe usar su propia API key en su `.env` local. No commitear claves reales.
+
+Nota: `onboarding@resend.dev` sirve para pruebas. Para enviar desde un remitente propio en producción hace falta verificar un dominio en Resend.
 
 ---
 

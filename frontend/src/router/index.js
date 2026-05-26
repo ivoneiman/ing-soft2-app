@@ -20,6 +20,7 @@ const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
+const AttendanceClassesView = () => import("../views/actividades/AttendanceClassesView.vue");
 const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
 const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue"); 
 
@@ -76,6 +77,12 @@ const routes = [
       {
         path: "pasar-asistencia",
         name: "PasarAsistencia",
+        component: AttendanceClassesView,
+        meta: { requiresAuth: true, requiresEmployee: true }
+      },
+      {
+        path: "scan-qr/:classId",
+        name: "ScanQr",
         component: ScanQrView,
         meta: { requiresAuth: true, requiresEmployee: true }
       },
