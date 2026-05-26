@@ -22,6 +22,13 @@
 
       <!-- PASO 2: Aparece solo cuando se ha seleccionado una actividad -->
       <div class="schedule-section" v-if="form.activity_id">
+        <label>
+          Tipo de creación
+          <select v-model="form.tipo">
+            <option value="individual">Clase sola</option>
+            <option value="mensual">Clase mensual</option>
+          </select>
+        </label>
         <label>Fecha y Horario</label>
         
         <div class="calendar-layout">
@@ -48,6 +55,7 @@
               <div class="selection-summary">
                 <p><strong>Actividad:</strong> {{ selectedActivityName }}</p>
                 <p><strong>Fecha:</strong> <span>{{ selectedDateLabel }}</span></p>
+                <p><strong>Tipo de creacion:</strong> {{ form.tipo === 'mensual' ? 'Mensual (repetirá el mismo día y hora en el mes)' : 'Individual' }}</p>
                 <p><strong>Hora:</strong> {{ selectedSlot }}</p>
               </div>
               <button class="btn-primary" type="submit">Crear Clase</button>
@@ -67,7 +75,7 @@
 import { ref, reactive, computed, onMounted, watch } from "vue";
 import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
 import { getActivities, createClass, getActivityClasses } from "@/services/api.js";
-import { formatLongDate } from "@/utils/formatters";
+import { formatLongDate } from "@/utils/formatters.js";
 
 const actividades = ref([]);
 const form = reactive({
@@ -75,6 +83,7 @@ const form = reactive({
   date: "",
   time: "",
   cupoMaximo: 20,
+  tipo: 'individual',
 });
 
 const selectedDate = ref(null);
@@ -100,7 +109,8 @@ const loadOccupiedClasses = async () => {
   try {
     const response = await getActivityClasses(form.activity_id);
     occupiedClasses.value = response.data?.classes || [];
-  } catch {
+  } catch (error) {
+    console.error("Error cargando clases ocupadas:", error);
     occupiedClasses.value = [];
   }
 };
@@ -140,6 +150,7 @@ const loadActivities = async () => {
     const response = await getActivities();
     actividades.value = response.data || [];
   } catch (error) {
+    console.error("Error cargando actividades:", error);
     errorMessage.value = error.message === "Network Error" ? "Servidor backend desconectado." : "Fallo de red.";
     actividades.value = [];
   }
@@ -197,19 +208,68 @@ const submitForm = async () => {
   }
 
   try {
-    await createClass({
-      activity_id: Number(form.activity_id),
-      date: form.date,
-      time: form.time,
-      cupoMaximo: form.cupoMaximo,
-    });
+    if (form.tipo === 'individual') {
+      await createClass({
+        activity_id: Number(form.activity_id),
+        date: form.date,
+        time: form.time,
+        cupoMaximo: form.cupoMaximo,
+        tipo: form.tipo,
+      });
 
-    successMessage.value = "Clase creada exitosamente.";
-    // Limpiamos solo la hora para poder agregar otra clase en el mismo día rápidamente.
-    // La actividad y la fecha se mantienen para que el usuario vea el horario desaparecer de la lista.
-    form.time = "";
-    selectedSlot.value = "";
-    loadOccupiedClasses(); // Recargamos los horarios ocupados para la actividad actual
+      successMessage.value = "Clase creada exitosamente.";
+      form.time = "";
+      selectedSlot.value = "";
+      await loadOccupiedClasses();
+      return;
+    }
+
+    // Si es mensual: primero calcular todas las fechas objetivo (mismo día de la semana)
+    const startDate = new Date(selectedDate.value);
+    const month = startDate.getMonth();
+    const targetDates = [];
+    let iterDate = new Date(startDate);
+
+    while (iterDate.getMonth() === month) {
+      const y = iterDate.getFullYear();
+      const m = String(iterDate.getMonth() + 1).padStart(2, '0');
+      const d = String(iterDate.getDate()).padStart(2, '0');
+      const fechaStr = `${y}-${m}-${d}`;
+      targetDates.push(fechaStr);
+      iterDate.setDate(iterDate.getDate() + 7);
+    }
+
+    // Comprobar conflictos antes de crear: si alguna fecha ya tiene clase en ese horario, bloquear toda la operación
+    const conflicts = targetDates.filter(fechaStr =>
+      occupiedClasses.value.some(c => c.fecha_hora && c.fecha_hora.startsWith(fechaStr) && c.time === form.time)
+    );
+
+    if (conflicts.length > 0) {
+      errorMessage.value = `No se puede crear la clase de manera mensual porque ya existen clases para la misma actividad en estas fechas: ${conflicts.join(', ')}.`;
+      return;
+    }
+
+    // No hay conflictos: crear todas las fechas
+    const createdDates = [];
+    for (const fechaStr of targetDates) {
+      try {
+        await createClass({
+          activity_id: Number(form.activity_id),
+          date: fechaStr,
+          time: form.time,
+          cupoMaximo: form.cupoMaximo,
+          tipo: form.tipo,
+        });
+        createdDates.push(fechaStr);
+      } catch (err) {
+        // Si hay error creando alguna fecha, reportarlo y continuar
+      }
+    }
+
+    successMessage.value = createdDates.length > 0 ? `Clases creadas: ${createdDates.join(', ')}.` : 'No se crearon clases.';
+    form.time = '';
+    selectedSlot.value = '';
+    await loadOccupiedClasses();
   } catch (error) {
     errorMessage.value = error.response?.data?.error || "Error al crear la clase.";
   }
@@ -324,6 +384,12 @@ const submitForm = async () => {
 
 .btn-retry {
   margin-top: 0.75rem;
+  padding: 0.5rem 1rem;
+  background-color: #b91c1c;
+  color: white;
+  border: none;
+  border-radius: 0.5rem;
+  cursor: pointer;
 }
 
 .selection-summary {
