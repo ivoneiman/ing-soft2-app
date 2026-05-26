@@ -14,10 +14,18 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
-from mercadopago_config import get_mercadopago_client
-from models import db, User
-# Importar todos los modelos requeridos
-from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment
+try:
+    from email_service import send_class_cancelled_email, send_credit_generated_email
+    from mercadopago_config import get_mercadopago_client
+    from models import db, User
+    # Importar todos los modelos requeridos
+    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment
+except ModuleNotFoundError:
+    from .email_service import send_class_cancelled_email, send_credit_generated_email
+    from .mercadopago_config import get_mercadopago_client
+    from .models import db, User
+    # Importar todos los modelos requeridos
+    from .models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment
 
 # Carga variables de entorno desde .env
 load_dotenv()
@@ -79,9 +87,16 @@ def upgrade_database_schema():
 
     if "enrollments" in inspector.get_table_names():
         columns = [column["name"] for column in inspector.get_columns("enrollments")]
+        if "tipo" not in columns:
+            db.session.execute(text("ALTER TABLE enrollments ADD COLUMN tipo VARCHAR(20) DEFAULT 'Suelta'"))
+        if "estado" not in columns:
+            db.session.execute(text("ALTER TABLE enrollments ADD COLUMN estado VARCHAR(20) DEFAULT 'pending_payment'"))
+        if "requiere_reembolso" not in columns:
+            db.session.execute(text("ALTER TABLE enrollments ADD COLUMN requiere_reembolso BOOLEAN DEFAULT 0"))
         if "created_at" not in columns:
             db.session.execute(text("ALTER TABLE enrollments ADD COLUMN created_at DATETIME"))
-            db.session.commit()
+        db.session.commit()
+
         db.session.execute(text("UPDATE enrollments SET estado = :new_status WHERE estado = :legacy_status"), {
             "new_status": Enrollment.STATUS_PAID,
             "legacy_status": Class.STATUS_ACTIVE,
@@ -1228,6 +1243,7 @@ def cancelar_clase_staff(clase_id):
     current_datetime = _current_discount_datetime()
     credits_created = 0
     notifications_created = 0
+    email_jobs = []
     for inscripcion in inscripciones:
         credit = _generate_credit_for_paid_enrollment(inscripcion, class_obj, current_datetime)
         credited = credit is not None
@@ -1239,11 +1255,20 @@ def cancelar_clase_staff(clase_id):
         if inscripcion.estado != Enrollment.STATUS_CANCELLED:
             inscripcion.estado = Enrollment.STATUS_CANCELLED
 
+        email_jobs.append((inscripcion.user, class_obj, credit))
+
     try:
         db.session.commit()
     except Exception as err:
         db.session.rollback()
         return jsonify({"error": "Error interno al procesar la cancelación", "details": str(err)}), 500
+
+    emails_sent = 0
+    for user, cancelled_class, credit in email_jobs:
+        if send_class_cancelled_email(user, cancelled_class, credit_generated=credit is not None):
+            emails_sent += 1
+        if credit and send_credit_generated_email(user, cancelled_class, credit):
+            emails_sent += 1
 
     return jsonify({
         "message": f"Clase '{class_obj.name}' cancelada exitosamente. El turno fue liberado en el calendario.",
@@ -1252,6 +1277,7 @@ def cancelar_clase_staff(clase_id):
         "estado": Class.STATUS_CANCELLED,
         "credits_created": credits_created,
         "notifications_created": notifications_created,
+        "emails_sent": emails_sent,
     }), 200
 
 
