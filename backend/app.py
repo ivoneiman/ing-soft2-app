@@ -325,6 +325,8 @@ def _has_approved_payment(enrollment):
 def _expire_payment_for_enrollment(enrollment, current_datetime=None):
     if not enrollment or _has_approved_payment(enrollment):
         return False
+    if not _class_has_finished(enrollment.class_, current_datetime):
+        return False
 
     changed = False
     has_expired_payment = False
@@ -354,6 +356,30 @@ def _expire_payment_for_enrollment(enrollment, current_datetime=None):
         )
         db.session.add(expired_payment)
         changed = True
+
+    return changed
+
+
+def _restore_future_expired_enrollment_if_needed(enrollment, current_datetime=None):
+    if not enrollment or _has_approved_payment(enrollment):
+        return False
+    if _class_has_finished(enrollment.class_, current_datetime):
+        return False
+
+    current_datetime = current_datetime or _current_discount_datetime()
+    current_datetime = _datetime_in_app_timezone(current_datetime)
+    changed = False
+    if enrollment.estado == Enrollment.STATUS_EXPIRED:
+        enrollment.estado = Enrollment.STATUS_PENDING_PAYMENT
+        changed = True
+
+    for payment in list(getattr(enrollment, "payments", []) or []):
+        if payment.status == Payment.STATUS_EXPIRED:
+            payment.status = Payment.STATUS_PENDING
+            payment_created_at = _datetime_in_app_timezone(payment.created_at)
+            if payment_created_at and payment_created_at > current_datetime:
+                payment.created_at = current_datetime.replace(tzinfo=None)
+            changed = True
 
     return changed
 
@@ -1224,8 +1250,9 @@ def payment_history():
     enrollments = Enrollment.query.filter_by(user_id=current_user.id).all()
     changed = False
     for enrollment in enrollments:
+        changed = _restore_future_expired_enrollment_if_needed(enrollment, current_datetime) or changed
         changed = _expire_enrollment_if_needed(enrollment, current_datetime) or changed
-        if enrollment.estado == Enrollment.STATUS_EXPIRED:
+        if enrollment.estado == Enrollment.STATUS_EXPIRED and _class_has_finished(enrollment.class_, current_datetime):
             changed = _expire_payment_for_enrollment(enrollment, current_datetime) or changed
 
     if changed:
