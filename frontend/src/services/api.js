@@ -126,6 +126,13 @@ export function registerAttendance({
   );
 }
 
+export function getClassAttendance(classId) {
+  return axios.get(
+    `${API_URL}/classes/${classId}/attendance`,
+    REQUEST_CONFIG
+  );
+}
+
 // =========================
 // CANCELACIONES
 // =========================

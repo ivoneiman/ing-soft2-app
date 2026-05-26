@@ -22,6 +22,11 @@ export const PAYMENT_METHOD = {
   CREDIT: 'credit',
 };
 
+export const ENROLLMENT_TYPE = {
+  SINGLE: 'Suelta',
+  MONTHLY: 'Mensual',
+};
+
 export const CREDIT_STATUS = {
   AVAILABLE: 'available',
   USED: 'used',
