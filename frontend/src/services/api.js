@@ -190,6 +190,20 @@ export function getPaymentDiscountRules(testDay) {
   );
 }
 
+export function getMyCredits() {
+  return axios.get(
+    `${API_URL}/credits/my`,
+    REQUEST_CONFIG
+  );
+}
+
+export function getMyNotifications() {
+  return axios.get(
+    `${API_URL}/notifications/my`,
+    REQUEST_CONFIG
+  );
+}
+
 export function applyClassDiscount(classId, descuento) {
   return axios.put(
     `${API_URL}/classes/${classId}/discount`,

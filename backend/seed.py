@@ -249,6 +249,13 @@ def ensure_payment(enrollment, status, created_at=None):
     return payment
 
 
+def ensure_class_active(class_obj):
+    """Deja una clase semilla disponible para repetir pruebas luego de cancelarla."""
+    if class_obj.estado != Class.STATUS_ACTIVE:
+        class_obj.estado = Class.STATUS_ACTIVE
+        print(f"   [OK] Clase reactivada para pruebas: {class_obj.name}")
+
+
 def create_client_payment_examples(client, actividad_yoga, actividad_funcional, actividad_pilates, today):
     """Crea casos de ejemplo para historial de pagos de client@test.com."""
     print("Creando casos de pagos para client@test.com...")
@@ -320,6 +327,39 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
         rejected_enrollment,
         Payment.STATUS_REJECTED,
         created_at=today - timedelta(hours=1),
+    )
+
+
+def create_client_credit_examples(client, actividad_pilates, today):
+    """Crea un flujo claro para probar créditos por cancelación con client@test.com."""
+    print("Creando casos de créditos para client@test.com...")
+
+    cancellable_class = create_test_class(
+        "Credito Test - Pilates Cancelable",
+        at_app_time(today + timedelta(days=7), 15),
+        actividad_pilates,
+    )
+    ensure_class_active(cancellable_class)
+    paid_enrollment = ensure_enrollment(
+        client,
+        cancellable_class,
+        estado=Enrollment.STATUS_PAID,
+    )
+    ensure_payment(
+        paid_enrollment,
+        Payment.STATUS_APPROVED,
+        created_at=today - timedelta(hours=3),
+    )
+
+    target_class = create_test_class(
+        "Credito Test - Pilates Destino",
+        at_app_time(today + timedelta(days=8), 15),
+        actividad_pilates,
+    )
+    ensure_class_active(target_class)
+    print(
+        "   [INFO] Para probar: cancelar 'Credito Test - Pilates Cancelable' "
+        "y luego inscribir client@test.com en 'Credito Test - Pilates Destino'."
     )
 
 
@@ -443,6 +483,12 @@ def main():
         # ─── Casos de historial de pagos para client@test.com ───────────────
 
         create_client_payment_examples(client, actividad1, actividad2, actividad3, today)
+        db.session.commit()
+        print()
+
+        # ─── Casos para probar créditos por cancelación ─────────────────────
+
+        create_client_credit_examples(client, actividad3, today)
         db.session.commit()
         print()
 

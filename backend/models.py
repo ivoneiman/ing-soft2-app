@@ -131,31 +131,75 @@ class Attendance(db.Model):
     __table_args__ = (db.UniqueConstraint("user_id", "class_id", name="uq_attendance_user_class"),)
 
 # ==============================================================================
-# Módulo de Cancelaciones y Sistema de Créditos (US #19)
+# Módulo de Cancelaciones, Créditos y Notificaciones
 # ==============================================================================
 
-class Credito(db.Model):
-    """Representa los créditos/puntos otorgados a usuarios por clases canceladas."""
+class Credit(db.Model):
+    """Crédito reutilizable generado por una clase cancelada."""
     __tablename__ = "creditos"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False) 
-    actividad_id = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
-    fecha_expiracion = db.Column(db.DateTime, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    activity_id = db.Column("actividad_id", db.Integer, db.ForeignKey("actividades.id"), nullable=False)
+    origin_class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=True)
+    enrollment_id = db.Column(db.Integer, db.ForeignKey("enrollments.id"), nullable=True)
+    expires_at = db.Column("fecha_expiracion", db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
     estado = db.Column(db.String(20), default="Disponible", nullable=False)
 
-    # Relaciones válidas basadas estrictamente en las claves foráneas de arriba
     user = db.relationship("User", backref=db.backref("creditos", cascade="all, delete-orphan"))
-    actividad = db.relationship("Actividades") 
-    # 🌟 NOTA: Si acá abajo tenías una línea que decía algo con "Class", borrala por completo.
+    actividad = db.relationship("Actividades")
+    origin_class = db.relationship("Class", foreign_keys=[origin_class_id])
+    enrollment = db.relationship("Enrollment", foreign_keys=[enrollment_id])
+
+    STATUS_AVAILABLE = "Disponible"
+    STATUS_USED = "Usado"
+
+    def to_dict(self):
+        estado = self.STATUS_USED if self.used else self.estado
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "activity_id": self.activity_id,
+            "actividad_name": self.actividad.name if self.actividad else None,
+            "origin_class_id": self.origin_class_id,
+            "origin_class_name": self.origin_class.name if self.origin_class else None,
+            "enrollment_id": self.enrollment_id,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "fecha_expiracion": self.expires_at.isoformat() if self.expires_at else None,
+            "used": self.used,
+            "used_at": self.used_at.isoformat() if self.used_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "estado": estado,
+        }
+
+
+Credito = Credit
+
+
+class Notification(db.Model):
+    """Notificación simple para avisos visibles en la cuenta del usuario."""
+    __tablename__ = "notifications"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    title = db.Column(db.String(160), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    read = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
+
+    user = db.relationship("User", backref=db.backref("notifications", cascade="all, delete-orphan"))
 
     def to_dict(self):
         return {
             "id": self.id,
             "user_id": self.user_id,
-            "actividad_name": self.actividad.name if self.actividad else None,
-            "fecha_expiracion": self.fecha_expiracion.isoformat(),
-            "estado": self.estado
+            "title": self.title,
+            "message": self.message,
+            "read": self.read,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -185,8 +229,9 @@ class Payment(db.Model):
 
     METHOD_MERCADO_PAGO = "mercado_pago"
     METHOD_CARD = "card"
+    METHOD_CREDIT = "credit"
     VALID_PAYMENT_TYPES = ("monthly_subscription", "individual_class")
-    VALID_PAYMENT_METHODS = (METHOD_MERCADO_PAGO, METHOD_CARD)
+    VALID_PAYMENT_METHODS = (METHOD_MERCADO_PAGO, METHOD_CARD, METHOD_CREDIT)
     STATUS_PENDING = "pending"
     STATUS_APPROVED = "approved"
     STATUS_REJECTED = "rejected"

@@ -19,6 +19,13 @@ export const PAYMENT_STATUS = {
 
 export const PAYMENT_METHOD = {
   MERCADO_PAGO: 'mercado_pago',
+  CREDIT: 'credit',
+};
+
+export const CREDIT_STATUS = {
+  AVAILABLE: 'available',
+  USED: 'used',
+  EXPIRED: 'expired',
 };
 
 export const STATUS_LABELS = {
@@ -40,6 +47,12 @@ export const STATUS_LABELS = {
   },
   paymentMethod: {
     [PAYMENT_METHOD.MERCADO_PAGO]: 'Mercado Pago',
+    [PAYMENT_METHOD.CREDIT]: 'Crédito',
+  },
+  credit: {
+    [CREDIT_STATUS.AVAILABLE]: 'Disponible',
+    [CREDIT_STATUS.USED]: 'Usado',
+    [CREDIT_STATUS.EXPIRED]: 'Vencido',
   },
 };
 

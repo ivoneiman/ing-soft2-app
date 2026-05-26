@@ -89,6 +89,7 @@
         </button>
       </section>
 
+      <p v-if="successMessage" class="success">{{ successMessage }}</p>
       <p v-if="error" class="error">{{ error }}</p>
     </div>
   </div>
@@ -118,6 +119,7 @@ const loadingDays = ref(false);
 const loadingSlots = ref(false);
 const isSubmittingEnrollment = ref(false);
 const error = ref("");
+const successMessage = ref("");
 const router = useRouter();
 
 const selectedActivityName = computed(() => {
@@ -164,6 +166,7 @@ function selectActivity(id) {
   fullCount.value = 0;
   enabledDateKeys.value = [];
   error.value = "";
+  successMessage.value = "";
   
   const now = new Date();
   loadMonthDays(now.getFullYear(), now.getMonth() + 1);
@@ -213,8 +216,15 @@ async function handleEnrollment() {
 
   isSubmittingEnrollment.value = true;
   error.value = "";
+  successMessage.value = "";
   try {
     const res = await createEnrollment({ class_id: selectedClass.value.id, tipo: "Suelta" });
+    if (res.data?.credit_used) {
+      successMessage.value = res.data?.message || "Inscripción realizada utilizando crédito";
+      selectedClassId.value = "";
+      await onDateSelected(selectedDate.value);
+      return;
+    }
     const enrollmentId = res.data?.enrollment?.id;
     router.push({
       path: "/pagos",
@@ -439,6 +449,16 @@ onActivated(() => {
   border-radius: 10px;
   border-left: 4px solid #b91c1c;
   font-weight: 500;
+}
+
+.success {
+  margin-top: 1rem;
+  padding: 1rem;
+  color: #027a48;
+  background: #ecfdf3;
+  border-radius: 10px;
+  border-left: 4px solid #12b76a;
+  font-weight: 700;
 }
 
 /* Responsive */

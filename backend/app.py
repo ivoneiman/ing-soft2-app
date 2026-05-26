@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from mercadopago_config import get_mercadopago_client
 from models import db, User
 # Importar todos los modelos requeridos
-from models import Class, Enrollment, Attendance, Actividades, Credito, Payment
+from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment
 
 # Carga variables de entorno desde .env
 load_dotenv()
@@ -29,6 +29,7 @@ DISCOUNT_PERIODS = (
     {"percentage": 70, "start_day": 21, "end_day": None},
 )
 ENROLLMENT_REOPENABLE_STATUSES = (Enrollment.STATUS_EXPIRED, Enrollment.STATUS_CANCELLED)
+CREDIT_EXPIRATION_DAYS = 30
 
 app = Flask(__name__)
 
@@ -89,6 +90,32 @@ def upgrade_database_schema():
             "new_status": Enrollment.STATUS_CANCELLED,
             "legacy_status": Class.STATUS_CANCELLED,
         })
+        db.session.commit()
+
+    if "creditos" in inspector.get_table_names():
+        columns = [column["name"] for column in inspector.get_columns("creditos")]
+        if "origin_class_id" not in columns:
+            db.session.execute(text("ALTER TABLE creditos ADD COLUMN origin_class_id INTEGER"))
+        if "enrollment_id" not in columns:
+            db.session.execute(text("ALTER TABLE creditos ADD COLUMN enrollment_id INTEGER"))
+        if "used" not in columns:
+            db.session.execute(text("ALTER TABLE creditos ADD COLUMN used BOOLEAN DEFAULT 0"))
+        if "used_at" not in columns:
+            db.session.execute(text("ALTER TABLE creditos ADD COLUMN used_at DATETIME"))
+        if "created_at" not in columns:
+            db.session.execute(text("ALTER TABLE creditos ADD COLUMN created_at DATETIME"))
+        db.session.execute(text("UPDATE creditos SET used = 0 WHERE used IS NULL"))
+        db.session.execute(text("UPDATE creditos SET used = 1 WHERE estado = :used_status"), {
+            "used_status": Credit.STATUS_USED,
+        })
+        db.session.commit()
+
+    if "notifications" in inspector.get_table_names():
+        columns = [column["name"] for column in inspector.get_columns("notifications")]
+        if "read" not in columns:
+            db.session.execute(text("ALTER TABLE notifications ADD COLUMN read BOOLEAN DEFAULT 0"))
+        if "created_at" not in columns:
+            db.session.execute(text("ALTER TABLE notifications ADD COLUMN created_at DATETIME"))
         db.session.commit()
 
 # ─── Crear tablas e insertar actividades base ───────────────────────────────────────────────────
@@ -322,6 +349,126 @@ def _has_approved_payment(enrollment):
     return any(payment.status == Payment.STATUS_APPROVED for payment in getattr(enrollment, "payments", []))
 
 
+def _credit_expiration_from(current_datetime=None):
+    current_datetime = current_datetime or _current_discount_datetime()
+    current_datetime = _datetime_in_app_timezone(current_datetime)
+    return (current_datetime + timedelta(days=CREDIT_EXPIRATION_DAYS)).replace(tzinfo=None)
+
+
+def _is_credit_valid(credit, activity_id, current_datetime=None):
+    if not credit or credit.activity_id != activity_id or credit.used:
+        return False
+
+    expires_at = _datetime_in_app_timezone(credit.expires_at)
+    current_datetime = _datetime_in_app_timezone(current_datetime or _current_discount_datetime())
+    return bool(expires_at and expires_at > current_datetime)
+
+
+def _available_credit_for_user_activity(user_id, activity_id, current_datetime=None):
+    credits = (
+        Credit.query
+        .filter_by(user_id=user_id, activity_id=activity_id, used=False)
+        .order_by(Credit.expires_at.asc(), Credit.id.asc())
+        .all()
+    )
+    for credit in credits:
+        if _is_credit_valid(credit, activity_id, current_datetime):
+            return credit
+    return None
+
+
+def _consume_credit_for_enrollment(credit, enrollment, current_datetime=None):
+    if not _is_credit_valid(credit, enrollment.class_.id_actividad, current_datetime):
+        return False
+
+    current_datetime = current_datetime or _current_discount_datetime()
+    credit.used = True
+    credit.used_at = _datetime_in_app_timezone(current_datetime).replace(tzinfo=None)
+    credit.estado = Credit.STATUS_USED
+    enrollment.estado = Enrollment.STATUS_PAID
+    enrollment.requiere_reembolso = False
+
+    payment = Payment(
+        user_id=enrollment.user_id,
+        enrollment_id=enrollment.id,
+        class_id=enrollment.class_id,
+        payment_type=_payment_type_for_enrollment(enrollment),
+        payment_method=Payment.METHOD_CREDIT,
+        amount=0,
+        discount_percentage=0,
+        final_amount=0,
+        status=Payment.STATUS_APPROVED,
+    )
+    db.session.add(payment)
+    print(
+        f"[Credits] Crédito {credit.id} consumido por usuario {enrollment.user_id} "
+        f"para enrollment {enrollment.id}",
+        flush=True,
+    )
+    return True
+
+
+def _create_cancellation_notification(enrollment, class_obj, credited):
+    class_datetime = class_obj.fecha_hora.strftime("%d/%m/%Y %H:%M") if class_obj.fecha_hora else "fecha a confirmar"
+    if credited:
+        message = (
+            f"La clase {class_obj.name} del día {class_datetime} fue cancelada. "
+            "Se acreditó un crédito reutilizable en tu cuenta."
+        )
+    else:
+        message = f"La clase {class_obj.name} del día {class_datetime} fue cancelada."
+
+    db.session.add(Notification(
+        user_id=enrollment.user_id,
+        title="Clase cancelada",
+        message=message,
+    ))
+
+
+def _credit_exists_for_cancelled_enrollment(enrollment, class_obj):
+    query = Credit.query.filter_by(
+        user_id=enrollment.user_id,
+        activity_id=class_obj.id_actividad,
+        origin_class_id=class_obj.id,
+    )
+    if not enrollment.id:
+        return query.first() is not None
+
+    return (
+        query.filter(Credit.enrollment_id == enrollment.id).first() is not None
+        or query.filter(Credit.enrollment_id.is_(None)).first() is not None
+    )
+
+
+def _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime=None):
+    if not (enrollment.estado == Enrollment.STATUS_PAID or _has_approved_payment(enrollment)):
+        return None
+    if _credit_exists_for_cancelled_enrollment(enrollment, class_obj):
+        print(
+            f"[Credits] Crédito ya existente para enrollment {enrollment.id} "
+            f"por clase cancelada {class_obj.id}",
+            flush=True,
+        )
+        return None
+
+    credit = Credit(
+        user_id=enrollment.user_id,
+        activity_id=class_obj.id_actividad,
+        origin_class_id=class_obj.id,
+        enrollment_id=enrollment.id,
+        expires_at=_credit_expiration_from(current_datetime),
+        used=False,
+        estado=Credit.STATUS_AVAILABLE,
+    )
+    db.session.add(credit)
+    print(
+        f"[Credits] Crédito creado para usuario {enrollment.user_id}, "
+        f"actividad {class_obj.id_actividad}, enrollment {enrollment.id}",
+        flush=True,
+    )
+    return credit
+
+
 def _expire_payment_for_enrollment(enrollment, current_datetime=None):
     if not enrollment or _has_approved_payment(enrollment):
         return False
@@ -462,6 +609,15 @@ def _enrollment_payload(enrollment, current_datetime=None):
         "final_amount": quote["final_amount"],
         "is_payable": enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT and not _class_has_finished(class_obj, current_datetime),
     }
+
+
+def _credit_enrollment_response(enrollment, credit, current_datetime=None, status_code=201):
+    return jsonify({
+        "message": "Inscripción realizada utilizando crédito",
+        "credit_used": True,
+        "credit_id": credit.id,
+        "enrollment": _enrollment_payload(enrollment, current_datetime),
+    }), status_code
 
 
 def _log_discount_quote(current_datetime, class_obj, discount_percentage, amount, final_amount):
@@ -804,6 +960,11 @@ def create_enrollment():
             db.session.commit()
             return jsonify({"error": "Ya estás inscripto y pagaste esta clase"}), 409
         if enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
+            credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_datetime)
+            if credit:
+                _consume_credit_for_enrollment(credit, enrollment, current_datetime)
+                db.session.commit()
+                return _credit_enrollment_response(enrollment, credit, current_datetime, 200)
             db.session.commit()
             return jsonify({
                 "message": "Ya tenés una inscripción pendiente de pago",
@@ -816,6 +977,7 @@ def create_enrollment():
                 return jsonify({"error": "No quedan cupos disponibles para esta clase"}), 409
             enrollment.estado = Enrollment.STATUS_PENDING_PAYMENT
             enrollment.requiere_reembolso = False
+            enrollment.tipo = data.get("tipo") or enrollment.tipo or "Suelta"
     else:
         if enrollment_map.get(class_obj.id, 0) >= cupo_max:
             return jsonify({"error": "No quedan cupos disponibles para esta clase"}), 409
@@ -826,6 +988,13 @@ def create_enrollment():
             estado=Enrollment.STATUS_PENDING_PAYMENT,
         )
         db.session.add(enrollment)
+
+    db.session.flush()
+    credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_datetime)
+    if credit:
+        _consume_credit_for_enrollment(credit, enrollment, current_datetime)
+        db.session.commit()
+        return _credit_enrollment_response(enrollment, credit, current_datetime, 201)
 
     db.session.commit()
     return jsonify({
@@ -860,6 +1029,50 @@ def pending_enrollments():
         db.session.commit()
 
     return jsonify({"enrollments": pending}), 200
+
+
+@app.route("/api/credits/my", methods=["GET"])
+def my_credits():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    current_datetime = _current_discount_datetime()
+    credits = (
+        Credit.query
+        .filter_by(user_id=current_user.id)
+        .order_by(Credit.expires_at.asc(), Credit.id.desc())
+        .all()
+    )
+    payload = []
+    for credit in credits:
+        item = credit.to_dict()
+        if credit.used:
+            item["status"] = "used"
+        elif not _is_credit_valid(credit, credit.activity_id, current_datetime):
+            item["status"] = "expired"
+            item["estado"] = "Vencido"
+        else:
+            item["status"] = "available"
+            item["estado"] = Credit.STATUS_AVAILABLE
+        payload.append(item)
+
+    return jsonify({"credits": payload}), 200
+
+
+@app.route("/api/notifications/my", methods=["GET"])
+def my_notifications():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    notifications = (
+        Notification.query
+        .filter_by(user_id=current_user.id)
+        .order_by(Notification.created_at.desc(), Notification.id.desc())
+        .all()
+    )
+    return jsonify({"notifications": [notification.to_dict() for notification in notifications]}), 200
 
 
 @app.route("/api/classes", methods=["POST"])
@@ -1012,7 +1225,17 @@ def cancelar_clase_staff(clase_id):
 
     # Cancelamos también todas las inscripciones activas de esta clase
     inscripciones = Enrollment.query.filter_by(class_id=clase_id).all()
+    current_datetime = _current_discount_datetime()
+    credits_created = 0
+    notifications_created = 0
     for inscripcion in inscripciones:
+        credit = _generate_credit_for_paid_enrollment(inscripcion, class_obj, current_datetime)
+        credited = credit is not None
+        if credited:
+            credits_created += 1
+        _create_cancellation_notification(inscripcion, class_obj, credited)
+        notifications_created += 1
+
         if inscripcion.estado != Enrollment.STATUS_CANCELLED:
             inscripcion.estado = Enrollment.STATUS_CANCELLED
 
@@ -1026,7 +1249,9 @@ def cancelar_clase_staff(clase_id):
         "message": f"Clase '{class_obj.name}' cancelada exitosamente. El turno fue liberado en el calendario.",
         "class_id": clase_id,
         "class_name": class_obj.name,
-        "estado": Class.STATUS_CANCELLED
+        "estado": Class.STATUS_CANCELLED,
+        "credits_created": credits_created,
+        "notifications_created": notifications_created,
     }), 200
 
 
