@@ -27,28 +27,8 @@ html, body, #app {
 
 body {
   font-family: "Bodoni Moda", serif;
-  background: #f5f5f5;
-  color: #572c57;
-}
-
-button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  background: #9f5f91;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background 0.3s ease;
-}
-
-button:hover {
-  background: #572c57;
-}
-
-button:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
+  background:  #572c57;  /* ← Sólido en vez de gradiente */
+  color:  #f5f5f5; 
 }
 
 input {
@@ -77,42 +57,92 @@ input {
   width: 100%;
 }
 
-div {
+.view {
   color: #f5f5f5;
   background: #572c57;
+  min-height: calc(100vh - 140px);
+  padding-bottom: 2rem;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  font-family: "Anton", sans-serif;
+  font-weight: 400;
+  line-height: 1.1;
 }
 
 h1 {
-  font-family: "Anton", sans-serif;
   font-size: 57px;
   margin-bottom: 16px;
 }
 
 h2 {
-  font-family: "Anton", sans-serif;
-  font-size: 35px;
+  font-size: 43px;
   margin-bottom: 12px;
 }
 
 h3 {
-  font-family: "Anton", sans-serif;
-  font-size: 25px;
+  font-size: 32px;
   margin-bottom: 10px;
 }
 
 h4 {
-  font-family: "Anton", sans-serif;
-  font-size: 20px;
+  font-size: 24px;
   margin-bottom: 8px;
 }
 
-p, a, button {
+h5 {
+  font-size: 18px;
+  margin-bottom: 6px;
+}
+
+p, a {
   font-family: "Poppins", sans-serif;
   font-size: 20px;
   line-height: 18px;
   letter-spacing: 1.5px;
   font-weight: 300;
   color: #9ca3af;
+}
+
+button,
+.pay-button,
+.admin-link {
+  border: 2px solid #9f5f91;
+  border-radius: 6px;
+  background: #9f5f91;
+  color: #f6ea98;
+  cursor: pointer;
+  font-family: "Poppins", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 18px;
+  letter-spacing: 1.5px;
+  padding: 12px 16px;
+  text-decoration: none;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+button:hover:not(:disabled),
+.pay-button:hover:not(:disabled),
+.admin-link:hover {
+  background: #f6ea98;
+  border-color: #f6ea98;
+  color: #9f5f91;
+}
+
+button:disabled,
+.pay-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+a{
+  text-decoration: none;
+  color: #f6ea98;
 }
 
 
@@ -146,18 +176,22 @@ p, a, button {
   }
 
   h2 {
-    font-size: 28px;
+    font-size: 32px;
   }
 
   h3 {
-    font-size: 20px;
+    font-size: 24px;
   }
 
   h4 {
-    font-size: 16px;
+    font-size: 18px;
   }
 
-  p, a, button {
+  h5 {
+    font-size: 15px;
+  }
+
+  p, a, button, .pay-button, .admin-link {
     font-size: 16px;
     line-height: 16px;
   }
@@ -175,26 +209,29 @@ p, a, button {
   }
 
   h2 {
-    font-size: 24px;
+    font-size: 25px;
   }
 
   h3 {
-    font-size: 18px;
+    font-size: 20px;
   }
 
   h4 {
-    font-size: 14px;
+    font-size: 16px;
   }
 
-  p, a, button {
+  h5 {
+    font-size: 13px;
+  }
+
+  p, a, button, .pay-button, .admin-link {
     font-size: 14px;
     line-height: 14px;
     letter-spacing: 0.5px;
   }
 
   button {
-    padding: 8px 12px;
-    font-size: 12px;
+    padding: 10px 14px;
   }
 
   input {
@@ -217,26 +254,29 @@ p, a, button {
   }
 
   h2 {
-    font-size: 18px;
+    font-size: 20px;
   }
 
   h3 {
-    font-size: 14px;
+    font-size: 16px;
   }
 
   h4 {
+    font-size: 14px;
+  }
+
+  h5 {
     font-size: 12px;
   }
 
-  p, a, button {
+  p, a, button, .pay-button, .admin-link {
     font-size: 12px;
     line-height: 12px;
     letter-spacing: 0px;
   }
 
   button {
-    padding: 6px 10px;
-    font-size: 11px;
+    padding: 8px 12px;
   }
 
   input {

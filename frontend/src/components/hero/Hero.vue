@@ -62,7 +62,6 @@
 
 /* Título */
 .hero-title {
-  font-size: 80px;
   font-weight: 500;
   line-height: 1;
   margin-bottom: 20px;
@@ -85,33 +84,11 @@
 }
 
 .btn-primary {
-  padding: 14px 28px;
-  background: #9f5f91;
-  border: none;
-  border-radius: 8px;
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.3s ease;
-}
-
-.btn-primary:hover {
-  background: #8a4f8a;
+  padding-inline: 28px;
 }
 
 .btn-secondary {
-  padding: 14px 28px;
-  background: rgba(255, 255, 255, 0.301);
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.3s ease;
-}
-
-.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.2);
+  padding-inline: 28px;
 }
 
 /* ==========================================
@@ -124,18 +101,13 @@
     padding-top: 80px;
   }
 
-  .hero-title {
-    font-size: 60px;
-  }
-
   .hero-subtitle {
     font-size: 14px;
   }
 
   .btn-primary,
   .btn-secondary {
-    padding: 12px 20px;
-    font-size: 14px;
+    padding-inline: 20px;
   }
 }
 
@@ -161,7 +133,6 @@
   }
 
   .hero-title {
-    font-size: 40px;
     line-height: 1.2;
     margin-bottom: 16px;
   }
@@ -179,8 +150,6 @@
 
   .btn-primary,
   .btn-secondary {
-    padding: 10px 16px;
-    font-size: 12px;
     flex: 1;
     max-width: 150px;
   }
@@ -203,7 +172,6 @@
   }
 
   .hero-title {
-    font-size: 28px;
     margin-bottom: 12px;
   }
 
@@ -221,8 +189,6 @@
   .btn-secondary {
     width: 100%;
     max-width: none;
-    padding: 12px 16px;
-    font-size: 12px;
   }
 }
 </style>

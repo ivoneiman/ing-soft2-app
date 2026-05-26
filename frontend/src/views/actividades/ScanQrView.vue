@@ -63,6 +63,12 @@ const onScanFailure = (error) => {
 
 onMounted(async () => {
   try {
+    // Verificar que el elemento DOM existe
+    if (!qrReaderElement.value) {
+      errorMessage.value = 'Error: elemento de cámara no encontrado en el DOM';
+      return;
+    }
+
     html5QrcodeScanner = new Html5Qrcode('qr-reader');
 
     const config = {
@@ -78,7 +84,9 @@ onMounted(async () => {
       onScanFailure
     );
   } catch (err) {
-    errorMessage.value = 'No se pudo inicializar la cámara: ' + err.message;
+    // Manejar diferentes tipos de errores
+    const errorMsg = err?.message || err?.toString() || String(err);
+    errorMessage.value = `No se pudo inicializar la cámara: ${errorMsg}`;
     console.error('Camera initialization error:', err);
   }
 });

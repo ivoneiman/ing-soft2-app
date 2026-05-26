@@ -67,9 +67,6 @@ function cancelLogout() {
   gap: 1rem;
   justify-content: center;
 }
-.buttons button {
-  padding: 0.5rem 1rem;
-}
 .processing {
   text-align: center;
 }
