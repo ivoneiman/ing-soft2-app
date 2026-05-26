@@ -93,9 +93,27 @@ def next_available_datetime(actividad_id, fecha_hora, ignore_class_id=None):
         candidate = candidate + timedelta(days=1)
 
 
-def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=None):
+def previous_available_datetime(actividad_id, fecha_hora, ignore_class_id=None):
+    """Evita chocar con la restriccion unica buscando fechas anteriores."""
+    candidate = fecha_hora
+    while True:
+        query = Class.query.filter_by(
+            fecha_hora=candidate,
+            id_actividad=actividad_id,
+        )
+        if ignore_class_id is not None:
+            query = query.filter(Class.id != ignore_class_id)
+
+        if query.first() is None:
+            return candidate
+
+        candidate = candidate - timedelta(days=1)
+
+
+def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=None, search_direction="forward"):
     """Crea o actualiza una clase semilla sin duplicarla."""
     fecha_hora = as_naive_datetime(fecha_hora)
+    find_available_datetime = previous_available_datetime if search_direction == "backward" else next_available_datetime
     existing_by_name = find_class_by_name_and_activity(name, actividad.id)
     found_legacy_name = False
     if not existing_by_name:
@@ -106,7 +124,7 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
                 break
 
     if existing_by_name:
-        fecha_hora = next_available_datetime(
+        fecha_hora = find_available_datetime(
             actividad.id,
             fecha_hora,
             ignore_class_id=existing_by_name.id,
@@ -126,7 +144,7 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
         print_class_log(existing_by_name, action)
         return existing_by_name
 
-    fecha_hora = next_available_datetime(actividad.id, fecha_hora)
+    fecha_hora = find_available_datetime(actividad.id, fecha_hora)
 
     class_obj = Class(
         name=name,
@@ -240,6 +258,7 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
         today - timedelta(days=1),
         actividad_yoga,
         legacy_names=["Seed Pago Vencido - Yoga"],
+        search_direction="backward",
     )
     expired_enrollment = ensure_enrollment(
         client,
