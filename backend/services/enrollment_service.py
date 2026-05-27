@@ -9,6 +9,7 @@ try:
         has_approved_payment,
         payment_expires_at,
         payment_type_for_enrollment,
+        recompute_enrollment_payment_state,
     )
 except ModuleNotFoundError:
     from ..constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, PAYMENT_OPTION_FULL
@@ -21,6 +22,7 @@ except ModuleNotFoundError:
         has_approved_payment,
         payment_expires_at,
         payment_type_for_enrollment,
+        recompute_enrollment_payment_state,
     )
 
 
@@ -98,6 +100,7 @@ def validate_enrollment_payable(enrollment, current_user, current_dt):
 
 
 def enrollment_payload(enrollment, current_dt=None):
+    recompute_enrollment_payment_state(enrollment, current_dt)
     class_obj = enrollment.class_
     quote = enrollment_payment_quote(enrollment, current_dt)
     expires_at = payment_expires_at(class_obj)
@@ -111,11 +114,16 @@ def enrollment_payload(enrollment, current_dt=None):
         "estado": enrollment.estado,
         "tipo": enrollment.tipo,
         "expires_at": expires_at.isoformat() if expires_at else None,
+        "product_type": payment_type_for_enrollment(enrollment),
         "payment_type": payment_type_for_enrollment(enrollment),
         "payment_option": PAYMENT_OPTION_FULL,
         "amount": quote["amount"],
         "discount_percentage": quote["discount_percentage"],
         "final_amount": quote["final_amount"],
+        "total_amount": enrollment.total_amount,
+        "paid_amount": enrollment.paid_amount,
+        "remaining_amount": enrollment.remaining_amount,
+        "payment_status": enrollment.payment_status,
         "is_payable": (
             enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT
             and not class_has_finished(class_obj, current_dt)

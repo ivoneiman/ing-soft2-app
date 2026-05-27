@@ -23,6 +23,12 @@ try:
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
         ENROLLMENT_TYPE_MONTHLY,
+        ENROLLMENT_PAYMENT_STATUS_EXPIRED,
+        ENROLLMENT_PAYMENT_STATUS_PAID,
+        ENROLLMENT_PAYMENT_STATUS_PENDING,
+        PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
+        PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION,
+        PAYMENT_TYPE_FULL,
         MERCADO_PAGO_STATUS_APPROVED,
         MERCADO_PAGO_STATUS_IN_PROCESS,
         MERCADO_PAGO_STATUS_PENDING,
@@ -43,6 +49,12 @@ except ModuleNotFoundError:
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
         ENROLLMENT_TYPE_MONTHLY,
+        ENROLLMENT_PAYMENT_STATUS_EXPIRED,
+        ENROLLMENT_PAYMENT_STATUS_PAID,
+        ENROLLMENT_PAYMENT_STATUS_PENDING,
+        PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
+        PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION,
+        PAYMENT_TYPE_FULL,
         MERCADO_PAGO_STATUS_APPROVED,
         MERCADO_PAGO_STATUS_IN_PROCESS,
         MERCADO_PAGO_STATUS_PENDING,
@@ -117,6 +129,46 @@ def upgrade_database_schema():
         if "enrollment_id" not in columns:
             db.session.execute(text("ALTER TABLE payments ADD COLUMN enrollment_id INTEGER"))
             db.session.commit()
+        if "product_type" not in columns:
+            db.session.execute(text("ALTER TABLE payments ADD COLUMN product_type VARCHAR(30)"))
+            db.session.commit()
+        if "registered_by_user_id" not in columns:
+            db.session.execute(text("ALTER TABLE payments ADD COLUMN registered_by_user_id INTEGER"))
+            db.session.commit()
+        if "notes" not in columns:
+            db.session.execute(text("ALTER TABLE payments ADD COLUMN notes TEXT"))
+            db.session.commit()
+
+        db.session.execute(text(
+            "UPDATE payments "
+            "SET product_type = payment_type "
+            "WHERE product_type IS NULL "
+            "AND payment_type IN (:monthly_type, :individual_type, :legacy_single_type)"
+        ), {
+            "monthly_type": PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION,
+            "individual_type": PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
+            "legacy_single_type": "single_class",
+        })
+        db.session.execute(text(
+            "UPDATE payments "
+            "SET product_type = :individual_type "
+            "WHERE product_type = :legacy_single_type"
+        ), {
+            "individual_type": PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
+            "legacy_single_type": "single_class",
+        })
+        db.session.execute(text(
+            "UPDATE payments "
+            "SET payment_type = :full_type "
+            "WHERE payment_type IS NULL "
+            "OR payment_type IN (:monthly_type, :individual_type, :legacy_single_type)"
+        ), {
+            "full_type": PAYMENT_TYPE_FULL,
+            "monthly_type": PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION,
+            "individual_type": PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
+            "legacy_single_type": "single_class",
+        })
+        db.session.commit()
 
     if "enrollments" in inspector.get_table_names():
         columns = [column["name"] for column in inspector.get_columns("enrollments")]
@@ -128,6 +180,14 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE enrollments ADD COLUMN requiere_reembolso BOOLEAN DEFAULT 0"))
         if "created_at" not in columns:
             db.session.execute(text("ALTER TABLE enrollments ADD COLUMN created_at DATETIME"))
+        if "total_amount" not in columns:
+            db.session.execute(text("ALTER TABLE enrollments ADD COLUMN total_amount FLOAT DEFAULT 0"))
+        if "paid_amount" not in columns:
+            db.session.execute(text("ALTER TABLE enrollments ADD COLUMN paid_amount FLOAT DEFAULT 0"))
+        if "remaining_amount" not in columns:
+            db.session.execute(text("ALTER TABLE enrollments ADD COLUMN remaining_amount FLOAT DEFAULT 0"))
+        if "payment_status" not in columns:
+            db.session.execute(text(f"ALTER TABLE enrollments ADD COLUMN payment_status VARCHAR(20) DEFAULT '{ENROLLMENT_PAYMENT_STATUS_PENDING}'"))
         db.session.commit()
 
         db.session.execute(text("UPDATE enrollments SET estado = :new_status WHERE estado = :legacy_status"), {
@@ -138,6 +198,22 @@ def upgrade_database_schema():
             "new_status": Enrollment.STATUS_CANCELLED,
             "legacy_status": Class.STATUS_CANCELLED,
         })
+        db.session.execute(text(
+            "UPDATE enrollments SET payment_status = :expired_status WHERE estado = :expired_enrollment_status"
+        ), {
+            "expired_status": ENROLLMENT_PAYMENT_STATUS_EXPIRED,
+            "expired_enrollment_status": Enrollment.STATUS_EXPIRED,
+        })
+        db.session.execute(text(
+            "UPDATE enrollments SET payment_status = :paid_status WHERE estado = :paid_enrollment_status"
+        ), {
+            "paid_status": ENROLLMENT_PAYMENT_STATUS_PAID,
+            "paid_enrollment_status": Enrollment.STATUS_PAID,
+        })
+        db.session.commit()
+
+        for enrollment in Enrollment.query.all():
+            payment_service.recompute_enrollment_payment_state(enrollment)
         db.session.commit()
 
     if "creditos" in inspector.get_table_names():
@@ -1281,7 +1357,8 @@ def create_payment():
     payment = Payment(
         user_id=current_user.id,
         enrollment_id=enrollment.id,
-        payment_type=payment_type,
+        product_type=payment_type,
+        payment_type=Payment.TYPE_FULL,
         payment_method=payment_method,
         amount=amount,
         discount_percentage=discount_percentage,

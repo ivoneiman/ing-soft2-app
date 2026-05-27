@@ -9,13 +9,24 @@ try:
     from constants import (
         DISCOUNT_PERCENTAGES,
         DISCOUNT_PERIODS,
+        ENROLLMENT_PAYMENT_STATUS_EXPIRED,
+        ENROLLMENT_PAYMENT_STATUS_PAID,
+        ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID,
+        ENROLLMENT_PAYMENT_STATUS_PENDING,
+        ENROLLMENT_STATUS_EXPIRED,
+        ENROLLMENT_STATUS_PAID,
         ENROLLMENT_TYPE_MONTHLY,
+        PAYMENT_METHOD_CREDIT,
         PAYMENT_METHOD_MERCADO_PAGO,
         PAYMENT_OPTION_DEPOSIT,
         PAYMENT_OPTION_FULL,
+        PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
+        PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION,
+        PAYMENT_PRODUCT_TYPES,
         PAYMENT_STATUS_APPROVED,
         PAYMENT_STATUS_EXPIRED,
         PAYMENT_STATUS_PENDING,
+        PAYMENT_TYPE_FULL,
         PAYMENT_TYPE_INDIVIDUAL_CLASS,
         PAYMENT_TYPE_MONTHLY_SUBSCRIPTION,
     )
@@ -25,13 +36,24 @@ except ModuleNotFoundError:
     from ..constants import (
         DISCOUNT_PERCENTAGES,
         DISCOUNT_PERIODS,
+        ENROLLMENT_PAYMENT_STATUS_EXPIRED,
+        ENROLLMENT_PAYMENT_STATUS_PAID,
+        ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID,
+        ENROLLMENT_PAYMENT_STATUS_PENDING,
+        ENROLLMENT_STATUS_EXPIRED,
+        ENROLLMENT_STATUS_PAID,
         ENROLLMENT_TYPE_MONTHLY,
+        PAYMENT_METHOD_CREDIT,
         PAYMENT_METHOD_MERCADO_PAGO,
         PAYMENT_OPTION_DEPOSIT,
         PAYMENT_OPTION_FULL,
+        PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
+        PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION,
+        PAYMENT_PRODUCT_TYPES,
         PAYMENT_STATUS_APPROVED,
         PAYMENT_STATUS_EXPIRED,
         PAYMENT_STATUS_PENDING,
+        PAYMENT_TYPE_FULL,
         PAYMENT_TYPE_INDIVIDUAL_CLASS,
         PAYMENT_TYPE_MONTHLY_SUBSCRIPTION,
     )
@@ -92,8 +114,8 @@ def payment_expires_at(class_obj):
     return class_obj.fecha_hora - timedelta(minutes=1)
 
 
-def payment_amount(payment_type, payment_option):
-    if payment_type == PAYMENT_TYPE_MONTHLY_SUBSCRIPTION:
+def payment_amount(product_type, payment_option):
+    if product_type == PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION:
         return configured_amount("PAYMENT_MONTHLY_AMOUNT", 10000)
 
     amount = configured_amount("PAYMENT_CLASS_AMOUNT", 3000)
@@ -110,8 +132,8 @@ def calculate_final_amount(amount, discount_percentage):
     return float(final_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
-def payment_quote(payment_type, payment_option=PAYMENT_OPTION_FULL, current_dt=None):
-    amount = payment_amount(payment_type, payment_option)
+def payment_quote(product_type, payment_option=PAYMENT_OPTION_FULL, current_dt=None):
+    amount = payment_amount(product_type, payment_option)
     discount_percentage = current_discount_period_percentage(current_dt)
     return {
         "amount": amount,
@@ -120,23 +142,125 @@ def payment_quote(payment_type, payment_option=PAYMENT_OPTION_FULL, current_dt=N
     }
 
 
-def payment_type_for_enrollment(enrollment):
+def product_type_for_enrollment(enrollment):
     return (
-        PAYMENT_TYPE_MONTHLY_SUBSCRIPTION
+        PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION
         if getattr(enrollment, "tipo", None) == ENROLLMENT_TYPE_MONTHLY
-        else PAYMENT_TYPE_INDIVIDUAL_CLASS
+        else PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS
     )
+
+
+def payment_type_for_enrollment(enrollment):
+    return product_type_for_enrollment(enrollment)
+
+
+def normalize_payment_record(payment):
+    if not payment:
+        return False
+
+    changed = False
+    if getattr(payment, "product_type", None) not in PAYMENT_PRODUCT_TYPES:
+        legacy_type = getattr(payment, "payment_type", None)
+        if legacy_type in PAYMENT_PRODUCT_TYPES:
+            payment.product_type = legacy_type
+            changed = True
+    if getattr(payment, "payment_type", None) in PAYMENT_PRODUCT_TYPES or not getattr(payment, "payment_type", None):
+        payment.payment_type = PAYMENT_TYPE_FULL
+        changed = True
+    return changed
+
+
+def approved_payments(enrollment):
+    return [
+        payment
+        for payment in getattr(enrollment, "payments", []) or []
+        if payment.status == PAYMENT_STATUS_APPROVED
+    ]
 
 
 def has_approved_payment(enrollment):
-    return any(
-        payment.status == PAYMENT_STATUS_APPROVED
-        for payment in getattr(enrollment, "payments", [])
-    )
+    return bool(approved_payments(enrollment))
 
 
 def enrollment_payment_quote(enrollment, current_dt=None):
-    return payment_quote(payment_type_for_enrollment(enrollment), PAYMENT_OPTION_FULL, current_dt)
+    return payment_quote(product_type_for_enrollment(enrollment), PAYMENT_OPTION_FULL, current_dt)
+
+
+def enrollment_total_amount(enrollment, current_dt=None):
+    if not enrollment:
+        return 0
+
+    stored_total = float(getattr(enrollment, "total_amount", 0) or 0)
+    if stored_total > 0:
+        return stored_total
+
+    payments = list(getattr(enrollment, "payments", []) or [])
+    for payment in payments:
+        if getattr(payment, "status", None) in (PAYMENT_STATUS_APPROVED, PAYMENT_STATUS_PENDING):
+            final_amount = float(getattr(payment, "final_amount", 0) or 0)
+            if final_amount > 0:
+                return final_amount
+
+    return float(enrollment_payment_quote(enrollment, current_dt)["final_amount"])
+
+
+def approved_payment_amount(enrollment, total_amount=None):
+    total = float(total_amount or 0)
+    paid = 0
+    for payment in approved_payments(enrollment):
+        normalize_payment_record(payment)
+        final_amount = float(getattr(payment, "final_amount", 0) or 0)
+        if getattr(payment, "payment_method", None) == PAYMENT_METHOD_CREDIT and final_amount == 0 and total > 0:
+            paid += total
+        else:
+            paid += final_amount
+    return paid
+
+
+def recompute_enrollment_payment_state(enrollment, current_dt=None):
+    if not enrollment:
+        return False
+
+    previous = (
+        float(getattr(enrollment, "total_amount", 0) or 0),
+        float(getattr(enrollment, "paid_amount", 0) or 0),
+        float(getattr(enrollment, "remaining_amount", 0) or 0),
+        getattr(enrollment, "payment_status", None),
+        getattr(enrollment, "estado", None),
+    )
+
+    for payment in list(getattr(enrollment, "payments", []) or []):
+        normalize_payment_record(payment)
+
+    total_amount = round(enrollment_total_amount(enrollment, current_dt), 2)
+    paid_amount = round(approved_payment_amount(enrollment, total_amount), 2)
+    if getattr(enrollment, "estado", None) == ENROLLMENT_STATUS_PAID and paid_amount == 0 and total_amount > 0:
+        paid_amount = total_amount
+    remaining_amount = round(max(total_amount - paid_amount, 0), 2)
+
+    if getattr(enrollment, "estado", None) == ENROLLMENT_STATUS_EXPIRED:
+        payment_status = ENROLLMENT_PAYMENT_STATUS_EXPIRED
+    elif total_amount > 0 and remaining_amount <= 0:
+        payment_status = ENROLLMENT_PAYMENT_STATUS_PAID
+        enrollment.estado = ENROLLMENT_STATUS_PAID
+    elif paid_amount > 0:
+        payment_status = ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID
+    else:
+        payment_status = ENROLLMENT_PAYMENT_STATUS_PENDING
+
+    enrollment.total_amount = total_amount
+    enrollment.paid_amount = paid_amount
+    enrollment.remaining_amount = remaining_amount
+    enrollment.payment_status = payment_status
+
+    current = (
+        enrollment.total_amount,
+        enrollment.paid_amount,
+        enrollment.remaining_amount,
+        enrollment.payment_status,
+        enrollment.estado,
+    )
+    return current != previous
 
 
 def expire_payment_for_enrollment(enrollment, current_dt=None):
@@ -163,7 +287,8 @@ def expire_payment_for_enrollment(enrollment, current_dt=None):
             user_id=enrollment.user_id,
             enrollment_id=enrollment.id,
             class_id=enrollment.class_id,
-            payment_type=payment_type_for_enrollment(enrollment),
+            product_type=product_type_for_enrollment(enrollment),
+            payment_type=PAYMENT_TYPE_FULL,
             payment_method=PAYMENT_METHOD_MERCADO_PAGO,
             amount=quote_data["amount"],
             discount_percentage=quote_data["discount_percentage"],

@@ -14,7 +14,7 @@ try:
     )
     from models import Credit, Payment, db
     from services.datetime_service import current_datetime, datetime_in_app_timezone
-    from services.payment_service import payment_type_for_enrollment
+    from services.payment_service import payment_type_for_enrollment, recompute_enrollment_payment_state
 except ModuleNotFoundError:
     from ..constants import (
         CREDIT_API_STATUS_AVAILABLE,
@@ -28,7 +28,7 @@ except ModuleNotFoundError:
     )
     from ..models import Credit, Payment, db
     from .datetime_service import current_datetime, datetime_in_app_timezone
-    from .payment_service import payment_type_for_enrollment
+    from .payment_service import payment_type_for_enrollment, recompute_enrollment_payment_state
 
 logger = logging.getLogger(__name__)
 
@@ -77,17 +77,21 @@ def consume_credit_for_enrollment(credit, enrollment, current_dt=None):
     enrollment.estado = enrollment.STATUS_PAID
     enrollment.requiere_reembolso = False
 
-    db.session.add(Payment(
+    payment = Payment(
         user_id=enrollment.user_id,
         enrollment_id=enrollment.id,
         class_id=enrollment.class_id,
-        payment_type=payment_type_for_enrollment(enrollment),
+        product_type=payment_type_for_enrollment(enrollment),
+        payment_type=Payment.TYPE_FULL,
         payment_method=PAYMENT_METHOD_CREDIT,
         amount=0,
         discount_percentage=0,
         final_amount=0,
         status=PAYMENT_STATUS_APPROVED,
-    ))
+    )
+    db.session.add(payment)
+    db.session.flush()
+    recompute_enrollment_payment_state(enrollment, current_dt)
     logger.info(
         "[Credits] consumido credit_id=%s user_id=%s enrollment_id=%s",
         credit.id,
