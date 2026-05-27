@@ -30,14 +30,6 @@
       </button>
     </nav>
 
-    <fieldset v-if="isDiscountTestVisible && activeTab === PAYMENT_TAB.PENDING" class="discount-test-mode">
-      <p>Modo testing descuentos</p>
-      <label v-for="option in discountTestOptions" :key="option.value">
-        <input v-model="discountTestDay" type="radio" name="discount-test-day" :value="option.value" />
-        <span>{{ option.label }}</span>
-      </label>
-    </fieldset>
-
     <section v-if="activeTab === PAYMENT_TAB.PENDING" class="pending-section">
       <div v-if="isLoadingEnrollments" class="empty-state">Cargando inscripciones...</div>
       <div v-else-if="pendingEnrollments.length === 0" class="empty-state">
@@ -191,7 +183,6 @@ import {
   createPayment,
   getMyCredits,
   getMyNotifications,
-  getPaymentDiscountRules,
   getPaymentHistory,
   getPendingEnrollments,
 } from '../../services/api';
@@ -211,21 +202,6 @@ const pendingEnrollments = ref([]);
 const payments = ref([]);
 const credits = ref([]);
 const notifications = ref([]);
-const discountTestDay = ref('');
-const discountRules = ref({ periods: [] });
-const isDiscountTestVisible = import.meta.env.DEV || import.meta.env.MODE === 'test';
-
-const discountTestOptions = computed(() => {
-  const options = [{ value: '', label: 'Fecha real' }];
-  const sampleDaysByPercentage = { 0: '10', 40: '17', 70: '25' };
-
-  discountRules.value.periods.forEach((period) => {
-    const value = sampleDaysByPercentage[period.percentage];
-    if (value) options.push({ value, label: `Simular día ${value} (${period.percentage}%)` });
-  });
-
-  return options;
-});
 
 const returnMessage = computed(() => {
   if (PAYMENT_RETURN_MESSAGES[route.query.status]) return PAYMENT_RETURN_MESSAGES[route.query.status];
@@ -251,12 +227,11 @@ function creditStatusLabel(status) {
 
 async function loadPendingEnrollments() {
   isLoadingEnrollments.value = true;
-  errorMessage.value = '';
   try {
-    const response = await getPendingEnrollments(discountTestDay.value);
+    const response = await getPendingEnrollments();
     pendingEnrollments.value = response.data.enrollments || [];
   } catch (err) {
-    errorMessage.value = err.response?.data?.error || 'Error del servidor de pagos';
+    console.error("Error cargando inscripciones:", err);
   } finally {
     isLoadingEnrollments.value = false;
   }
@@ -264,12 +239,11 @@ async function loadPendingEnrollments() {
 
 async function loadPaymentHistory() {
   isLoadingHistory.value = true;
-  errorMessage.value = '';
   try {
     const response = await getPaymentHistory();
     payments.value = response.data.payments || [];
   } catch (err) {
-    errorMessage.value = err.response?.data?.error || 'Error del servidor de pagos';
+    console.error("Error cargando el historial de pagos:", err);
   } finally {
     isLoadingHistory.value = false;
   }
@@ -277,12 +251,11 @@ async function loadPaymentHistory() {
 
 async function loadCredits() {
   isLoadingCredits.value = true;
-  errorMessage.value = '';
   try {
     const response = await getMyCredits();
     credits.value = response.data.credits || [];
   } catch (err) {
-    errorMessage.value = err.response?.data?.error || 'Error cargando créditos';
+    console.error("Error cargando créditos:", err);
   } finally {
     isLoadingCredits.value = false;
   }
@@ -290,25 +263,13 @@ async function loadCredits() {
 
 async function loadNotifications() {
   isLoadingNotifications.value = true;
-  errorMessage.value = '';
   try {
     const response = await getMyNotifications();
     notifications.value = response.data.notifications || [];
   } catch (err) {
-    errorMessage.value = err.response?.data?.error || 'Error cargando notificaciones';
+    console.error("Error cargando notificaciones:", err);
   } finally {
     isLoadingNotifications.value = false;
-  }
-}
-
-async function loadDiscountRules() {
-  if (!isDiscountTestVisible) return;
-
-  try {
-    const response = await getPaymentDiscountRules();
-    discountRules.value = response.data || { periods: [] };
-  } catch {
-    discountRules.value = { periods: [] };
   }
 }
 
@@ -330,15 +291,10 @@ async function payNow(enrollment) {
 }
 
 onMounted(() => {
-  loadDiscountRules();
   loadPendingEnrollments();
   loadPaymentHistory();
   loadCredits();
   loadNotifications();
-});
-
-watch(discountTestDay, () => {
-  loadPendingEnrollments();
 });
 
 watch(
@@ -440,33 +396,6 @@ watch(
 .return-message.failure,
 .error-message {
   color: #b42318 !important;
-}
-
-.discount-test-mode {
-  display: block;
-  padding: 1.5rem 2rem 1.5rem;
-}
-
-.discount-test-mode legend {
-  background: #fff;
-  color: #572c57;
-  font-weight: 700;
-  line-height: 1.2;
-  margin-left: 0.5rem;
-  padding: 0 0.5rem;
-}
-
-.discount-test-mode label {
-  align-items: center;
-  cursor: pointer;
-  display: inline-flex;
-  gap: 8px;
-  margin: 0.75rem 1.25rem 0 0;
-}
-
-.discount-test-mode input {
-  margin: 0;
-  width: auto;
 }
 
 .pending-section {

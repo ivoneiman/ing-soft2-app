@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { login, register, logout, getCurrentUser } from './api'
+import { login, register, logout, getCurrentUser, adminLoginRequest, adminLoginVerify } from './api'
 
 // Estado global de autenticación (composable simple sin Pinia)
 // Si el proyecto crece, conviene usar Pinia como store
@@ -30,6 +30,36 @@ export const authStore = reactive({
       return true
     } catch (err) {
       this.error = err.response?.data?.error || 'Error al iniciar sesión'
+      return false
+    } finally {
+      this.loading = false
+    }
+  },
+
+  async adminLoginRequest(email) {
+    this.loading = true
+    this.error = null
+    try {
+      await adminLoginRequest({ email })
+      return true
+    } catch (err) {
+      this.error = err.response?.data?.error || 'Error al solicitar el código'
+      return false
+    } finally {
+      this.loading = false
+    }
+  },
+
+  async adminLoginVerify(email, code) {
+    this.loading = true
+    this.error = null
+    try {
+      const res = await adminLoginVerify({ email, code })
+      this.user = res.data.user
+      this.isLoggedIn = true
+      return true
+    } catch (err) {
+      this.error = err.response?.data?.error || 'Error al verificar el código'
       return false
     } finally {
       this.loading = false

@@ -1,6 +1,7 @@
 import os
 import logging
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 from calendar import monthrange
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv
@@ -12,7 +13,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 try:
-    from email_service import send_class_cancelled_email, send_credit_generated_email
+    from email_service import send_admin_login_code, send_class_cancelled_email, send_credit_generated_email
     from mercadopago_config import get_mercadopago_client
     from models import db, User
     # Importar todos los modelos requeridos
@@ -21,6 +22,7 @@ try:
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
+        ENROLLMENT_TYPE_MONTHLY,
         MERCADO_PAGO_STATUS_APPROVED,
         MERCADO_PAGO_STATUS_IN_PROCESS,
         MERCADO_PAGO_STATUS_PENDING,
@@ -31,7 +33,7 @@ try:
     from services import cancellation_service, class_service, credit_service, enrollment_service, notification_service, payment_service
     from services.api_response import api_error, api_success
 except ModuleNotFoundError:
-    from .email_service import send_class_cancelled_email, send_credit_generated_email
+    from .email_service import send_admin_login_code, send_class_cancelled_email, send_credit_generated_email
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
     # Importar todos los modelos requeridos
@@ -40,6 +42,7 @@ except ModuleNotFoundError:
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
+        ENROLLMENT_TYPE_MONTHLY,
         MERCADO_PAGO_STATUS_APPROVED,
         MERCADO_PAGO_STATUS_IN_PROCESS,
         MERCADO_PAGO_STATUS_PENDING,
@@ -183,8 +186,35 @@ with app.app_context():
 
 # ─── Helpers para el Catálogo ──────────────────────────────────────────────────
 
+def _get_monthly_base_price(class_obj):
+    y = class_obj.fecha_hora.year
+    m = class_obj.fecha_hora.month
+    wd = class_obj.fecha_hora.weekday()
+    total_classes = 0
+    for day in range(1, monthrange(y, m)[1] + 1):
+        if datetime(y, m, day).weekday() == wd:
+            total_classes += 1
+    return 3000.0 * total_classes
+
 def _enrollment_counts():
-    return class_service.enrollment_counts()
+    base_counts = class_service.enrollment_counts()
+    
+    monthly_enrollments = Enrollment.query.filter(
+        Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+    ).all()
+    
+    for enr in monthly_enrollments:
+        base_class = enr.class_
+        y = base_class.fecha_hora.year
+        m = base_class.fecha_hora.month
+        end = datetime(y, m, monthrange(y, m)[1], 23, 59, 59)
+        
+        subsequent_classes = Class.query.filter(Class.id_actividad == base_class.id_actividad, Class.fecha_hora > base_class.fecha_hora, Class.fecha_hora <= end, Class.estado == Class.STATUS_ACTIVE).all()
+        for c in subsequent_classes:
+            if c.fecha_hora.weekday() == base_class.fecha_hora.weekday() and c.fecha_hora.strftime("%H:%M") == base_class.fecha_hora.strftime("%H:%M"):
+                base_counts[c.id] = base_counts.get(c.id, 0) + 1
+    return base_counts
 
 
 def _class_slot_payload(class_obj, enrolled_count):
@@ -290,7 +320,11 @@ def _calculate_final_amount(amount, discount_percentage):
 
 
 def _payment_quote(payment_type, payment_option, current_datetime=None):
-    return payment_service.payment_quote(payment_type, payment_option, current_datetime)
+    quote = payment_service.payment_quote(payment_type, payment_option, current_datetime)
+    if payment_type == "single_class":
+        quote["discount_percentage"] = 0
+        quote["final_amount"] = quote.get("amount", 0)
+    return quote
 
 
 def _payment_type_for_enrollment(enrollment):
@@ -361,11 +395,33 @@ def _enrollment_has_other_approved_payment(payment):
 
 
 def _enrollment_payment_quote(enrollment, current_datetime=None):
-    return payment_service.enrollment_payment_quote(enrollment, current_datetime)
+    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
+    discount = int(enrollment.class_.descuento or 0)
+    
+    if enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
+        amount = float(quote.get("amount", 0))
+    else:
+        amount = _get_monthly_base_price(enrollment.class_)
+        
+    quote["amount"] = amount
+    quote["discount_percentage"] = discount
+    quote["final_amount"] = amount - (amount * discount / 100)
+    return quote
 
 
 def _enrollment_payload(enrollment, current_datetime=None):
-    return enrollment_service.enrollment_payload(enrollment, current_datetime)
+    payload = enrollment_service.enrollment_payload(enrollment, current_datetime)
+    discount = int(enrollment.class_.descuento or 0)
+    
+    if enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
+        amount = 3000.0
+    else:
+        amount = _get_monthly_base_price(enrollment.class_)
+        
+    payload["amount"] = amount
+    payload["discount_percentage"] = discount
+    payload["final_amount"] = amount - (amount * discount / 100)
+    return payload
 
 
 def _credit_enrollment_response(enrollment, credit, current_datetime=None, status_code=201):
@@ -457,6 +513,66 @@ def login():
     }), 200
 
 
+@app.route("/api/admin-login/request", methods=["POST"])
+def admin_login_request():
+    data = request.get_json()
+    email = data.get("email", "").strip()
+    if not email:
+        return jsonify({"error": "Debe ingresar un email"}), 400
+
+    user = User.query.filter_by(email=email, role="admin").first()
+    if not user:
+        return jsonify({"error": "Email no corresponde a un administrador"}), 401
+
+    code = f"{random.randint(0, 999999):06d}"
+    session["admin_login_email"] = email
+    session["admin_login_code"] = code
+    session["admin_login_code_expires_at"] = (datetime.utcnow() + timedelta(minutes=5)).timestamp()
+
+    send_admin_login_code(user, code)
+    return jsonify({"message": "Se envió un código de verificación al email"}), 200
+
+
+@app.route("/api/admin-login/verify", methods=["POST"])
+def admin_login_verify():
+    data = request.get_json()
+    email = data.get("email", "").strip()
+    code = data.get("code", "").strip()
+
+    if not email or not code:
+        return jsonify({"error": "Email y código son obligatorios"}), 400
+
+    pending_email = session.get("admin_login_email")
+    pending_code = session.get("admin_login_code")
+    expires_at = session.get("admin_login_code_expires_at")
+
+    if not pending_email or not pending_code or not expires_at:
+        return jsonify({"error": "No hay un código pendiente. Solicitá uno primero."}), 400
+
+    if email != pending_email or code != pending_code:
+        return jsonify({"error": "Código incorrecto o email no coincide"}), 401
+
+    if datetime.utcnow().timestamp() > expires_at:
+        session.pop("admin_login_email", None)
+        session.pop("admin_login_code", None)
+        session.pop("admin_login_code_expires_at", None)
+        return jsonify({"error": "El código expiró. Solicitá uno nuevo."}), 401
+
+    user = User.query.filter_by(email=email, role="admin").first()
+    if not user:
+        return jsonify({"error": "Administrador no encontrado"}), 401
+
+    session["user_id"] = user.id
+    session.pop("admin_login_email", None)
+    session.pop("admin_login_code", None)
+    session.pop("admin_login_code_expires_at", None)
+
+    return jsonify({
+        "message": "Login exitoso",
+        "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
+    }), 200
+
+
 @app.route("/api/logout", methods=["POST"])
 def logout():
     session.clear()
@@ -502,6 +618,7 @@ def create_user():
     dni = data.get("dni", "").strip()
     telefono = data.get("telefono", "").strip()
     password = data.get("password", "").strip()
+    role = data.get("role", "client").strip()
 
     if not all([username, apellido, email, dni, telefono, password]):
         return jsonify({"error": "Todos los campos son obligatorios"}), 400
@@ -513,7 +630,14 @@ def create_user():
     if existing_email:
         return jsonify({"error": "El email ya está registrado"}), 400
 
-    new_user = User(username=username, apellido=apellido, email=email, dni=dni, telefono=telefono, role="client")
+    # Validación de seguridad:
+    if current_user.role == "employee" and role != "client":
+        return jsonify({"error": "Los empleados solo pueden crear usuarios cliente"}), 403
+        
+    if current_user.role == "admin" and role not in ["client", "employee", "admin"]:
+        role = "client"
+
+    new_user = User(username=username, apellido=apellido, email=email, dni=dni, telefono=telefono, role=role)
     new_user.set_password(password)
     db.session.add(new_user)
     db.session.commit()
@@ -579,7 +703,12 @@ def get_catalog_availability():
     # 🌟 Traemos solo las clases activas para que no bloqueen horarios en el catálogo
     classes = Class.query.filter_by(id_actividad=actividad_id, estado=Class.STATUS_ACTIVE).filter(db.func.date(Class.fecha_hora) == day).order_by(Class.fecha_hora).all()
 
+    now = datetime.now()
+
     for class_obj in classes:
+        if class_obj.fecha_hora and class_obj.fecha_hora <= now:
+            continue
+            
         enrolled_count = enrollment_map.get(class_obj.id, 0)
         slot = _class_slot_payload(class_obj, enrolled_count)
         if slot["available_spots"] > 0:
@@ -615,7 +744,12 @@ def get_catalog_days():
     # 🌟 Consideramos solo las clases activas para marcar los días con disponibilidad
     classes = Class.query.filter_by(id_actividad=actividad_id, estado=Class.STATUS_ACTIVE).filter(Class.fecha_hora >= start, Class.fecha_hora <= end).all()
 
+    now = datetime.now()
+
     for class_obj in classes:
+        if class_obj.fecha_hora and class_obj.fecha_hora <= now:
+            continue
+
         enrolled_count = enrollment_map.get(class_obj.id, 0)
         cupo_max = class_obj.cupoMaximo if class_obj.cupoMaximo is not None else 20
         if enrolled_count < cupo_max:
@@ -824,6 +958,52 @@ def create_class():
         }
     }), 201
 
+@app.route("/api/classes/<int:class_id>/discount", methods=["PUT"])
+def apply_class_discount(class_id):
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para aplicar descuentos"}), 403
+
+    class_obj = Class.query.get(class_id)
+    if not class_obj:
+        return jsonify({"error": "Clase inexistente"}), 404
+        
+    
+    # Aplicar a esta clase y a todas las futuras de la misma actividad, día de la semana y hora
+    today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    related_classes = Class.query.filter(
+        Class.id_actividad == class_obj.id_actividad,
+        Class.fecha_hora >= today
+    ).all()
+
+    modified_count = 0
+    for c in related_classes:
+        if c.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and c.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+            day = c.fecha_hora.day
+            if 15 <= day <= 21:
+                new_discount = 40
+            elif day >= 22:
+                new_discount = 70
+            else:
+                new_discount = 0
+                
+            if c.descuento != new_discount:
+                c.descuento = new_discount
+                modified_count += 1
+            
+    day = class_obj.fecha_hora.day
+    obj_discount = 40 if 15 <= day <= 21 else (70 if day >= 22 else 0)
+    
+    if class_obj.descuento != obj_discount:
+        class_obj.descuento = obj_discount
+        if class_obj.fecha_hora < today:
+            modified_count += 1
+
+    db.session.commit()
+    
+    return jsonify({"message": "Descuento aplicado con éxito", "class": {"id": class_obj.id, "name": class_obj.name, "descuento": class_obj.descuento}}), 200
+
 # ─── Rutas API: Asistencia QR (Compañero) ───────────────────────────────────
 
 @app.route("/api/attendance/register", methods=["POST"])
@@ -846,7 +1026,23 @@ def register_attendance():
 
     enrollment = Enrollment.query.filter_by(user_id=user_id, class_id=class_id).first()
     if not enrollment:
-        return jsonify({"error": "Usuario no está inscrito a la clase"}), 403
+        month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+        implicit_enr = Enrollment.query.join(Class).filter(
+            Enrollment.user_id == user_id, Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
+            Class.id_actividad == class_obj.id_actividad, Class.fecha_hora >= month_start, Class.fecha_hora <= class_obj.fecha_hora
+        ).all()
+        
+        valid_implicit = None
+        for enr in implicit_enr:
+            if enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                valid_implicit = enr
+                break
+                
+        if valid_implicit:
+            enrollment = valid_implicit
+        else:
+            return jsonify({"error": "Usuario no está inscrito a la clase"}), 403
+
     if enrollment.estado != Enrollment.STATUS_PAID:
         return jsonify({"error": "La inscripción no está pagada"}), 403
 
@@ -890,18 +1086,33 @@ def get_class_attendance(class_id):
     )
     attended_by_user_id = {attendance.user_id: attendance for attendance in attendances}
 
-    paid_enrollments = (
+    paid_enrollments_direct = (
         Enrollment.query
         .filter_by(class_id=class_id, estado=Enrollment.STATUS_PAID)
-        .join(User, Enrollment.user_id == User.id)
-        .order_by(User.apellido.asc(), User.username.asc())
         .all()
     )
+    
+    month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+    implicit_enrs = Enrollment.query.join(Class).filter(
+        Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
+        Enrollment.estado == Enrollment.STATUS_PAID,
+        Class.id_actividad == class_obj.id_actividad,
+        Class.fecha_hora >= month_start,
+        Class.fecha_hora < class_obj.fecha_hora
+    ).all()
+    
+    paid_enrollments_map = {enr.user_id: enr for enr in paid_enrollments_direct}
+    for enr in implicit_enrs:
+        if enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+            if enr.user_id not in paid_enrollments_map:
+                paid_enrollments_map[enr.user_id] = enr
+                
+    users = [User.query.get(uid) for uid in paid_enrollments_map.keys()]
+    users.sort(key=lambda u: (u.apellido or "", u.username or ""))
 
     roster = []
-    for enrollment in paid_enrollments:
-        attendance = attended_by_user_id.get(enrollment.user_id)
-        user = enrollment.user
+    for user in users:
+        attendance = attended_by_user_id.get(user.id)
         roster.append({
             "user_id": user.id,
             "username": user.username,
@@ -912,12 +1123,14 @@ def get_class_attendance(class_id):
             "attendance_created_at": attendance.created_at.isoformat() if attendance and attendance.created_at else None,
         })
 
+    total_paid = len(users)
+
     return jsonify({
-        "class": _class_slot_payload(class_obj, len(paid_enrollments)),
+        "class": _class_slot_payload(class_obj, total_paid),
         "summary": {
             "present": len(attendances),
-            "paid_enrollments": len(paid_enrollments),
-            "pending": max(len(paid_enrollments) - len(attendances), 0),
+            "paid_enrollments": total_paid,
+            "pending": max(total_paid - len(attendances), 0),
         },
         "attendances": [
             {
@@ -1012,9 +1225,15 @@ def create_payment():
     class_obj = enrollment.class_
     payment_type = _payment_type_for_enrollment(enrollment)
     quote = _payment_quote(payment_type, payment_option, current_datetime)
-    amount = quote["amount"]
-    discount_percentage = quote["discount_percentage"]
-    final_amount = quote["final_amount"]
+
+    if payment_type == "single_class" or enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
+        amount = 3000.0
+    else:
+        amount = _get_monthly_base_price(class_obj)
+
+    discount_percentage = int(class_obj.descuento or 0)
+    final_amount = amount - (amount * discount_percentage / 100)
+
     _log_discount_quote(current_datetime, class_obj, discount_percentage, amount, final_amount)
 
     payment = Payment(
@@ -1113,167 +1332,8 @@ def create_payment():
     payment.mercado_pago_preference_id = preference_id
     db.session.commit()
 
-    return jsonify({
-        "payment_id": payment.id,
-        "enrollment_id": enrollment.id,
-        "init_point": init_point,
-        "amount": amount,
-        "discount_percentage": discount_percentage,
-        "final_amount": final_amount,
-    }), 201
+    return jsonify({"init_point": init_point, "preference_id": preference_id}), 200
 
-
-@app.route("/api/payments/return/<result>", methods=["GET"])
-def mercado_pago_return(result):
-    logger.info("[MercadoPago Callback] result=%s query=%s", result, request.args.to_dict())
-    current_datetime = _current_discount_datetime()
-    payment_reference = request.args.get("external_reference")
-    preference_id = request.args.get("preference_id")
-    mercado_pago_payment_id = request.args.get("payment_id") or request.args.get("collection_id")
-    mercado_pago_status = request.args.get("status") or request.args.get("collection_status")
-    status_detail = request.args.get("status_detail")
-    logger.info(
-        "[MercadoPago Callback] external_reference=%s preference_id=%s payment_id=%s status=%s detail=%s",
-        payment_reference,
-        preference_id,
-        mercado_pago_payment_id,
-        mercado_pago_status,
-        status_detail,
-    )
-
-    payment = None
-    if payment_reference:
-        payment = Payment.query.get(payment_reference)
-    if not payment and preference_id:
-        payment = Payment.query.filter_by(mercado_pago_preference_id=preference_id).first()
-
-    if not payment:
-        logger.error("[MercadoPago Callback] payment_no_encontrado")
-        return redirect(_frontend_payments_url("failure", "Error del servidor de pagos"))
-
-    if mercado_pago_payment_id:
-        payment.mercado_pago_payment_id = str(mercado_pago_payment_id)
-
-    if (
-        payment.status != Payment.STATUS_APPROVED
-        and payment.enrollment
-        and _class_has_finished(payment.enrollment.class_, current_datetime)
-    ):
-        payment.status = Payment.STATUS_EXPIRED
-        if payment.enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
-            payment.enrollment.estado = Enrollment.STATUS_EXPIRED
-        redirect_status = PAYMENT_RETURN_STATUS_FAILURE
-        message = "El período de pago de la inscripción venció"
-    elif (
-        result == PAYMENT_RETURN_STATUS_SUCCESS or mercado_pago_status == MERCADO_PAGO_STATUS_APPROVED
-    ) and _enrollment_has_other_approved_payment(payment):
-        payment.status = Payment.STATUS_REJECTED
-        redirect_status = PAYMENT_RETURN_STATUS_FAILURE
-        message = "La inscripción ya tiene un pago aprobado"
-    elif result == PAYMENT_RETURN_STATUS_SUCCESS or mercado_pago_status == MERCADO_PAGO_STATUS_APPROVED:
-        payment.status = Payment.STATUS_APPROVED
-        if payment.enrollment:
-            payment.enrollment.estado = Enrollment.STATUS_PAID
-        redirect_status = PAYMENT_RETURN_STATUS_SUCCESS
-        message = None
-    elif result == PAYMENT_RETURN_STATUS_PENDING or mercado_pago_status in [
-        MERCADO_PAGO_STATUS_PENDING,
-        MERCADO_PAGO_STATUS_IN_PROCESS,
-    ]:
-        payment.status = Payment.STATUS_PENDING
-        redirect_status = PAYMENT_RETURN_STATUS_PENDING
-        message = None
-    else:
-        payment.status = Payment.STATUS_REJECTED
-        redirect_status = PAYMENT_RETURN_STATUS_FAILURE
-        message = _payment_error_message(status_detail)
-
-    db.session.commit()
-    logger.info(
-        "[MercadoPago Callback] payment_id=%s status=%s redirect_status=%s",
-        payment.id,
-        payment.status,
-        redirect_status,
-    )
-    return redirect(_frontend_payments_url(redirect_status, message))
-
-
-@app.route("/api/payments/history", methods=["GET"])
-def payment_history():
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-
-    current_datetime = _current_discount_datetime()
-    enrollments = Enrollment.query.filter_by(user_id=current_user.id).all()
-    changed = False
-    for enrollment in enrollments:
-        changed = _restore_future_expired_enrollment_if_needed(enrollment, current_datetime) or changed
-        changed = _expire_enrollment_if_needed(enrollment, current_datetime) or changed
-        if enrollment.estado == Enrollment.STATUS_EXPIRED and _class_has_finished(enrollment.class_, current_datetime):
-            changed = _expire_payment_for_enrollment(enrollment, current_datetime) or changed
-
-    if changed:
-        db.session.commit()
-
-    payments = (
-        Payment.query
-        .filter_by(user_id=current_user.id)
-        .order_by(Payment.created_at.desc())
-        .all()
-    )
-
-    return jsonify({"payments": [payment.to_dict() for payment in payments]}), 200
-
-
-@app.route("/api/payments/discount-rules", methods=["GET"])
-def payment_discount_rules():
-    current_datetime = _discount_datetime_from_request()
-    return jsonify(_discount_rules_payload(current_datetime)), 200
-
-
-# ─── Rutas API: Descuentos y Promociones ──────────────────────────────────────
-
-@app.route("/api/classes/<int:class_id>/discount", methods=["PUT"])
-def apply_discount(class_id):
-    """Permite al administrador aplicar un descuento a una clase validando el día del mes."""
-    user_id = session.get("user_id")
-    if not user_id:
-        return jsonify({"error": "No autenticado"}), 401
-
-    current_user = User.query.get(user_id)
-    if not current_user or current_user.role != "admin":
-        return jsonify({"error": "No tienes permisos para realizar esta acción"}), 403
-
-    data = request.get_json() or {}
-    descuento = data.get("descuento")
-
-    if descuento is None:
-        return jsonify({"error": "Debe especificar un porcentaje de descuento"}), 400
-
-    try:
-        descuento = int(descuento)
-    except ValueError:
-        return jsonify({"error": "El descuento debe ser un número entero"}), 400
-
-    class_obj = Class.query.get(class_id)
-    if not class_obj:
-        return jsonify({"error": "Clase no encontrada"}), 404
-
-    if descuento not in DISCOUNT_PERCENTAGES:
-        return jsonify({"error": "Porcentaje de descuento no válido"}), 400
-
-    if class_obj.descuento == descuento:
-        return jsonify({"error": "Este descuento ya está aplicado a la clase"}), 400
-
-    class_obj.descuento = descuento
-
-    db.session.commit()
-
-    return jsonify({
-        "message": "Descuento aplicado con éxito",
-        "class": class_obj.to_dict()
-    }), 200
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0", port=5000)

@@ -11,14 +11,30 @@ export function register({ username, apellido, email, dni, telefono, password })
   return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
 }
 
-export function crearUsuario({ username, apellido, email, dni, telefono, password }) {
-  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
+export function crearUsuario({ username, apellido, email, dni, telefono, password, role }) {
+  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password, role }, REQUEST_CONFIG);
 }
 
 export function login({ email, password, remember }) {
   return axios.post(
     `${API_URL}/login`,
     { email, password, remember },
+    REQUEST_CONFIG
+  );
+}
+
+export function adminLoginRequest({ email }) {
+  return axios.post(
+    `${API_URL}/admin-login/request`,
+    { email },
+    REQUEST_CONFIG
+  );
+}
+
+export function adminLoginVerify({ email, code }) {
+  return axios.post(
+    `${API_URL}/admin-login/verify`,
+    { email, code },
     REQUEST_CONFIG
   );
 }

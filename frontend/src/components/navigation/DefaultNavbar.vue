@@ -50,7 +50,7 @@
             aria-haspopup="true"
             @click="togglePaymentsDropdown"
           >
-            Mi cuenta
+            Pagos
             <span class="arrow">
               {{ isPaymentsDropdownOpen ? '▲' : '▼' }}
             </span>
@@ -62,12 +62,6 @@
             </router-link>
             <router-link to="/pagos?tab=history" @click="handlePaymentsDropdownClick">
               Historial de pagos
-            </router-link>
-            <router-link to="/pagos?tab=credits" @click="handlePaymentsDropdownClick">
-              Créditos
-            </router-link>
-            <router-link to="/pagos?tab=notifications" @click="handlePaymentsDropdownClick">
-              Notificaciones
             </router-link>
           </div>
         </div>

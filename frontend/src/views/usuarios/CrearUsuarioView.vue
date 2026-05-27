@@ -33,6 +33,15 @@
       </div>
 
       <div class="field">
+        <label for="role">Tipo de Usuario</label>
+        <select id="role" v-model="form.role">
+          <option value="client">Cliente</option>
+          <option v-if="isAdmin" value="employee">Empleado</option>
+          <option v-if="isAdmin" value="admin">Administrador</option>
+        </select>
+      </div>
+
+      <div class="field">
         <label for="password">Contraseña</label>
         <input id="password" v-model="form.password" type="password" placeholder="Mínimo 6 caracteres" />
         <small class="hint">Debe tener al menos 6 caracteres</small>
@@ -55,8 +64,9 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { crearUsuario } from '../../services/api'
+import { roleHelpers } from '../../utils/roleHelpers'
 
 const form = reactive({
   username: '',
@@ -64,12 +74,19 @@ const form = reactive({
   dni: '',
   telefono: '',
   email: '',
-  password: ''
+  password: '',
+  role: 'client'
 })
 
 const error   = ref('')
 const success = ref('')
 const loading = ref(false)
+
+const isAdmin = ref(false)
+
+onMounted(() => {
+  isAdmin.value = roleHelpers.isAdmin()
+})
 
 function validarPassword(password) {
   if (password.length < 6)
@@ -78,7 +95,10 @@ function validarPassword(password) {
 }
 
 function limpiarFormulario() {
-  Object.keys(form).forEach(k => form[k] = '')
+  Object.keys(form).forEach(k => {
+    if (k === 'role') form[k] = 'client'
+    else form[k] = ''
+  })
   error.value   = ''
   success.value = ''
 }
@@ -87,7 +107,7 @@ async function onSubmit() {
   error.value   = ''
   success.value = ''
 
-  const { username, apellido, dni, telefono, email, password } = form
+  const { username, apellido, dni, telefono, email, password, role } = form
 
   if (!username.trim() || !apellido.trim() || !dni.trim() ||
       !telefono.trim() || !email.trim() || !password) {
@@ -103,7 +123,7 @@ async function onSubmit() {
 
   loading.value = true
   try {
-    await crearUsuario({ username, apellido, email, dni, telefono, password })
+    await crearUsuario({ username, apellido, email, dni, telefono, password, role })
     success.value = 'Usuario creado exitosamente'
     limpiarFormulario()
     success.value = 'Usuario creado exitosamente'
@@ -176,7 +196,8 @@ form {
   margin-bottom: 0.25rem;
 }
 
-.field input {
+.field input,
+.field select {
   padding: 0.6rem 0.75rem;
   border: 1px solid rgba(255,255,255,0.2);
   border-radius: 6px;
@@ -187,7 +208,8 @@ form {
 }
 
 .field input::placeholder { color: #bbb; }
-.field input:focus {
+.field input:focus,
+.field select:focus {
   outline: none;
   border-color: #e26972;
 }
