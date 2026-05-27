@@ -1611,5 +1611,99 @@ def payment_history():
     return jsonify({"payments": [payment.to_dict() for payment in payments]}), 200
 
 
+@app.route("/api/admin/enrollments/payments", methods=["GET"])
+def admin_payment_enrollments():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+    if current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para consultar pagos"}), 403
+
+    current_datetime = _current_discount_datetime()
+    enrollments = (
+        Enrollment.query
+        .join(User, Enrollment.user_id == User.id)
+        .order_by(Enrollment.id.desc())
+        .all()
+    )
+
+    payload = []
+    changed = False
+    for enrollment in enrollments:
+        changed = payment_service.recompute_enrollment_payment_state(enrollment, current_datetime) or changed
+        if float(enrollment.remaining_amount or 0) <= 0:
+            continue
+        item = _enrollment_payload(enrollment, current_datetime)
+        item["user"] = enrollment.user.to_dict() if enrollment.user else None
+        payload.append(item)
+
+    if changed:
+        db.session.commit()
+
+    return jsonify({"enrollments": payload}), 200
+
+
+@app.route("/api/enrollments/<int:enrollment_id>/manual-payment", methods=["POST"])
+def register_manual_payment(enrollment_id):
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+    if current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para registrar pagos"}), 403
+
+    enrollment = Enrollment.query.get(enrollment_id)
+    if not enrollment:
+        return jsonify({"error": "Inscripción no encontrada"}), 404
+    if enrollment.estado in [Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED]:
+        return jsonify({"error": "No se puede registrar un pago sobre una inscripción cerrada"}), 400
+
+    data = request.get_json() or {}
+    payment_method = data.get("payment_method", Payment.METHOD_CASH)
+    payment_type = data.get("payment_type", PAYMENT_TYPE_BALANCE)
+    notes = data.get("notes")
+
+    if payment_method not in [Payment.METHOD_CASH, Payment.METHOD_TRANSFER, Payment.METHOD_CARD]:
+        return jsonify({"error": "Método presencial inválido"}), 400
+    if payment_type not in [PAYMENT_TYPE_FULL, PAYMENT_TYPE_BALANCE]:
+        return jsonify({"error": "Tipo de pago presencial inválido"}), 400
+
+    try:
+        amount = round(float(data.get("amount", 0)), 2)
+    except (TypeError, ValueError):
+        return jsonify({"error": "El monto debe ser numérico"}), 400
+
+    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    remaining_amount = round(float(enrollment.remaining_amount or 0), 2)
+    if amount <= 0:
+        return jsonify({"error": "El monto debe ser mayor a cero"}), 400
+    if amount > remaining_amount + 0.01:
+        return jsonify({"error": "El pago supera el saldo pendiente"}), 400
+
+    payment = Payment(
+        user_id=enrollment.user_id,
+        enrollment_id=enrollment.id,
+        class_id=enrollment.class_id,
+        product_type=_payment_type_for_enrollment(enrollment),
+        payment_type=payment_type,
+        payment_method=payment_method,
+        amount=amount,
+        discount_percentage=0,
+        final_amount=amount,
+        registered_by_user_id=current_user.id,
+        notes=notes,
+        status=Payment.STATUS_APPROVED,
+    )
+    db.session.add(payment)
+    db.session.flush()
+    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    db.session.commit()
+
+    return jsonify({
+        "message": "Pago presencial registrado",
+        "payment": payment.to_dict(),
+        "enrollment": _enrollment_payload(enrollment, _current_discount_datetime()),
+    }), 201
+
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
