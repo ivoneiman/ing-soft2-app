@@ -52,7 +52,7 @@ def _send_email(to_email, subject, html):
     try:
         response = resend.Emails.send({
             "from": _email_from(),
-            "to": "facundocasco2@gmail.com",
+            "to": [to_email],
             "subject": subject,
             "html": html,
         })
