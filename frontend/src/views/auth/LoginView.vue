@@ -7,21 +7,39 @@
 <template>
   <div class="login-container">
     <h2>Iniciar sesión</h2>
-    <!-- El modificador .prevent evita que el formulario recargue la página al enviarse -->
+    <div class="mode-buttons">
+      <button type="button" class="mode-button" :class="{ active: mode === 'password' }" @click="setMode('password')">
+        Login normal
+      </button>
+      <button type="button" class="mode-button" :class="{ active: mode === 'admin-code' }" @click="setMode('admin-code')">
+        Administrador por código
+      </button>
+    </div>
+
     <form @submit.prevent="onSubmit">
       <div>
         <label for="email">Email:</label>
         <input id="email" v-model="email" type="email" required />
       </div>
-      <div>
+
+      <div v-if="mode === 'password'">
         <label for="password">Contraseña:</label>
         <input id="password" v-model="password" type="password" required />
       </div>
-      <button type="submit" :disabled="loading">Ingresar</button>
+
+      <div v-if="mode === 'admin-code' && codeSent">
+        <label for="code">Código de verificación:</label>
+        <input id="code" v-model="code" type="text" maxlength="6" required />
+      </div>
+
+      <button type="submit" :disabled="loading">
+        {{ mode === 'admin-code' ? (codeSent ? 'Verificar código' : 'Solicitar código') : 'Ingresar' }}
+      </button>
       <div v-if="error" class="error">{{ error }}</div>
+      <div v-if="info" class="info">{{ info }}</div>
     </form>
-    <!-- Enlace a la vista de registro. RouterLink permite navegar sin recargar la página. -->
-    <p class="link-text">
+    <!-- Enlace a la vista de registro.-->
+    <p class="link-text" v-if="mode === 'password'">
       ¿No tienes cuenta?
       <RouterLink to="/register">Crear cuenta</RouterLink>
     </p>
@@ -29,47 +47,76 @@
 </template>
 
 <script setup>
-// Importamos `ref` para crear variables reactivas (similar a state en React)
+
 import { ref } from 'vue'
-import { login } from '../../services/api'
+import { authStore } from '../../services/authStore'
 import { RouterLink } from 'vue-router'
+// Variables reactivas para manejar el estado del formulario y el estado UI.
+const mode = ref('password')
+const email = ref('') //email ingresado por el usuario
+const password = ref('')// contraseña ingresada por el usuario
+const code = ref('')
+const error = ref('')// mensaje de error a mostrar al usuario
+const info = ref('')
+const loading = ref(false)//indica si peticion está en curso
+const codeSent = ref(false)
 
-// Variables reactivas que almacenan los valores del formulario y el estado UI
-const email = ref('')      // email ingresado por el usuario
-const password = ref('')   // contraseña ingresada
-const error = ref('')      // mensaje de error a mostrar
-const loading = ref(false) // indica si la petición está en curso
+function setMode(newMode) {
+  mode.value = newMode
+  error.value = ''
+  info.value = ''
+  password.value = ''
+  code.value = ''
+  codeSent.value = false
+}
 
-/**
- * Maneja el envío del formulario de login.
- * Se añaden validaciones simples para mejorar la claridad de los mensajes de error.
- */
 async function onSubmit() {
   // Reiniciamos el mensaje de error y marcamos carga
   error.value = ''
-  // Validación de campos obligatorios
-  if (!email.value.trim() || !password.value.trim()) {
-    error.value = 'Debe completar todos los campos'
+  info.value = ''
+  //validación de campos obligatorios
+  if (!email.value.trim()) {
+    error.value = 'Debe completar el email'
     return
   }
+
   loading.value = true
   try {
-    await login({ email: email.value, password: password.value })
-    // Redirigir al home después del login exitoso
-    window.location.href = '/' // O usa router.push si tienes rutas protegidas
-  } catch (err) {
-    // Si el backend devuelve un mensaje específico, lo reutilizamos
-    if (err.response?.data?.error) {
-      error.value = err.response.data.error
-    } else if (!err.response) {
-      // No hay respuesta, probablemente problema de red
-      error.value = 'No se pudo conectar con el servidor'
+    if (mode.value === 'admin-code') {
+      if (!codeSent.value) {
+        const ok = await authStore.adminLoginRequest(email.value)
+        if (ok) {
+          info.value = 'Se envió un código al email. Ingresalo a continuación.'
+          codeSent.value = true
+        } else {
+          error.value = authStore.error || 'No se pudo solicitar el código'
+        }
+      } else {
+        if (!code.value.trim()) {
+          error.value = 'Debe completar el código'
+          return
+        }
+        const ok = await authStore.adminLoginVerify(email.value, code.value.trim())
+        if (ok) {
+          window.location.href = '/'
+        } else {
+          error.value = authStore.error || 'Código incorrecto'
+        }
+      }
     } else {
-      // Mensaje genérico por credenciales incorrectas u otro error
-      error.value = 'Email o contraseña incorrectos'
+      if (!password.value.trim()) {
+        error.value = 'Debe completar la contraseña'
+        return
+      }
+      const ok = await authStore.login(email.value, password.value)
+      if (ok) {
+        window.location.href = '/'
+      } else {
+        error.value = authStore.error || 'Email o contraseña incorrectos'
+      }
     }
   } finally {
-    loading.value = false // vuelve a habilitar el botón
+    loading.value = false
   }
 }
 </script>
@@ -88,10 +135,31 @@ async function onSubmit() {
   margin-top: 1rem;
 }
 
-.link-text {
-  margin-top: 1rem;
-  text-align: center;
-}
+  .info {
+    color: #0a6e10;
+    margin-top: 1rem;
+  }
+
+  .mode-buttons {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .mode-button {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    border: 1px solid #ccc;
+    background: white;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+
+  .mode-button.active {
+    border-color: #2f8fe2;
+    background: #eff6ff;
+  }
 
 /* ==========================================
    MEDIA QUERIES - TABLET (1024px)

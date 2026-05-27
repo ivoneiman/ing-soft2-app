@@ -16,15 +16,21 @@
     </p>
 
     <nav class="payments-tabs" aria-label="Secciones de pagos">
-      <button type="button" :class="{ active: activeTab === 'pending' }" @click="activeTab = 'pending'">
+      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.PENDING }" @click="activeTab = PAYMENT_TAB.PENDING">
         Inscripciones pendientes
       </button>
-      <button type="button" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
+      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.HISTORY }" @click="activeTab = PAYMENT_TAB.HISTORY">
         Historial de pagos
+      </button>
+      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.CREDITS }" @click="activeTab = PAYMENT_TAB.CREDITS">
+        Créditos
+      </button>
+      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.NOTIFICATIONS }" @click="activeTab = PAYMENT_TAB.NOTIFICATIONS">
+        Notificaciones
       </button>
     </nav>
 
-    <fieldset v-if="isDiscountTestVisible && activeTab === 'pending'" class="discount-test-mode">
+    <fieldset v-if="isDiscountTestVisible && activeTab === PAYMENT_TAB.PENDING" class="discount-test-mode">
       <p>Modo testing descuentos</p>
       <label v-for="option in discountTestOptions" :key="option.value">
         <input v-model="discountTestDay" type="radio" name="discount-test-day" :value="option.value" />
@@ -32,7 +38,7 @@
       </label>
     </fieldset>
 
-    <section v-if="activeTab === 'pending'" class="pending-section">
+    <section v-if="activeTab === PAYMENT_TAB.PENDING" class="pending-section">
       <div v-if="isLoadingEnrollments" class="empty-state">Cargando inscripciones...</div>
       <div v-else-if="pendingEnrollments.length === 0" class="empty-state">
         No tenés inscripciones pendientes de pago.
@@ -97,7 +103,7 @@
       </template>
     </section>
 
-    <section v-else class="history-section">
+    <section v-else-if="activeTab === PAYMENT_TAB.HISTORY" class="history-section">
       <h2>Historial de pagos</h2>
 
       <div v-if="isLoadingHistory" class="empty-state">Cargando pagos...</div>
@@ -129,6 +135,49 @@
       </table>
     </section>
 
+    <section v-else-if="activeTab === PAYMENT_TAB.CREDITS" class="history-section">
+      <h2>Créditos disponibles</h2>
+
+      <div v-if="isLoadingCredits" class="empty-state">Cargando créditos...</div>
+      <div v-else-if="credits.length === 0" class="empty-state">Todavía no tenés créditos registrados.</div>
+
+      <table v-else class="payments-table">
+        <thead>
+          <tr>
+            <th>Actividad</th>
+            <th>Vencimiento</th>
+            <th>Origen</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="credit in credits" :key="credit.id">
+            <td>{{ credit.actividad_name || '-' }}</td>
+            <td>{{ formatDateTime(credit.expires_at || credit.fecha_expiracion) }}</td>
+            <td>{{ credit.origin_class_name || '-' }}</td>
+            <td>{{ creditStatusLabel(credit.status) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section v-else class="history-section">
+      <h2>Notificaciones</h2>
+
+      <div v-if="isLoadingNotifications" class="empty-state">Cargando notificaciones...</div>
+      <div v-else-if="notifications.length === 0" class="empty-state">No tenés notificaciones.</div>
+
+      <div v-else class="notifications-list">
+        <article v-for="notification in notifications" :key="notification.id" class="notification-item">
+          <div>
+            <h3>{{ notification.title }}</h3>
+            <p>{{ notification.message }}</p>
+          </div>
+          <time>{{ formatDateTime(notification.created_at) }}</time>
+        </article>
+      </div>
+    </section>
+
     <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
   </main>
 </template>
@@ -137,19 +186,31 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { RouterLink, useRoute } from 'vue-router';
 import { PAYMENT_METHOD, statusLabel } from '../../constants/statuses';
-import { createPayment, getPaymentDiscountRules, getPaymentHistory, getPendingEnrollments } from '../../services/api';
+import { PAYMENT_RETURN_MESSAGES, PAYMENT_RETURN_STATUS, PAYMENT_TAB, PAYMENT_TABS } from '../../constants/payments';
+import {
+  createPayment,
+  getMyCredits,
+  getMyNotifications,
+  getPaymentDiscountRules,
+  getPaymentHistory,
+  getPendingEnrollments,
+} from '../../services/api';
 import { formatDateTime, formatMoney } from '../../utils/formatters';
 import { roleHelpers } from '../../utils/roleHelpers';
 
 const route = useRoute();
 const isAdmin = ref(roleHelpers.isAdmin());
-const activeTab = ref(route.query.tab === 'history' ? 'history' : 'pending');
+const activeTab = ref(PAYMENT_TABS.includes(route.query.tab) ? route.query.tab : PAYMENT_TAB.PENDING);
 const isSubmittingId = ref(null);
 const isLoadingEnrollments = ref(false);
 const isLoadingHistory = ref(false);
+const isLoadingCredits = ref(false);
+const isLoadingNotifications = ref(false);
 const errorMessage = ref('');
 const pendingEnrollments = ref([]);
 const payments = ref([]);
+const credits = ref([]);
+const notifications = ref([]);
 const discountTestDay = ref('');
 const discountRules = ref({ periods: [] });
 const isDiscountTestVisible = import.meta.env.DEV || import.meta.env.MODE === 'test';
@@ -167,9 +228,8 @@ const discountTestOptions = computed(() => {
 });
 
 const returnMessage = computed(() => {
-  if (route.query.status === 'success') return { type: 'success', text: 'Pago aprobado' };
-  if (route.query.status === 'pending') return { type: 'pending', text: 'Pago pendiente' };
-  if (route.query.status === 'failure') return { type: 'failure', text: route.query.message || 'Pago rechazado' };
+  if (PAYMENT_RETURN_MESSAGES[route.query.status]) return PAYMENT_RETURN_MESSAGES[route.query.status];
+  if (route.query.status === PAYMENT_RETURN_STATUS.FAILURE) return { type: 'failure', text: route.query.message || 'Pago rechazado' };
   return null;
 });
 
@@ -183,6 +243,10 @@ function paymentMethodLabel(paymentMethod) {
 
 function paymentStatusLabel(status) {
   return statusLabel('payment', status);
+}
+
+function creditStatusLabel(status) {
+  return statusLabel('credit', status);
 }
 
 async function loadPendingEnrollments() {
@@ -208,6 +272,32 @@ async function loadPaymentHistory() {
     errorMessage.value = err.response?.data?.error || 'Error del servidor de pagos';
   } finally {
     isLoadingHistory.value = false;
+  }
+}
+
+async function loadCredits() {
+  isLoadingCredits.value = true;
+  errorMessage.value = '';
+  try {
+    const response = await getMyCredits();
+    credits.value = response.data.credits || [];
+  } catch (err) {
+    errorMessage.value = err.response?.data?.error || 'Error cargando créditos';
+  } finally {
+    isLoadingCredits.value = false;
+  }
+}
+
+async function loadNotifications() {
+  isLoadingNotifications.value = true;
+  errorMessage.value = '';
+  try {
+    const response = await getMyNotifications();
+    notifications.value = response.data.notifications || [];
+  } catch (err) {
+    errorMessage.value = err.response?.data?.error || 'Error cargando notificaciones';
+  } finally {
+    isLoadingNotifications.value = false;
   }
 }
 
@@ -243,6 +333,8 @@ onMounted(() => {
   loadDiscountRules();
   loadPendingEnrollments();
   loadPaymentHistory();
+  loadCredits();
+  loadNotifications();
 });
 
 watch(discountTestDay, () => {
@@ -252,7 +344,7 @@ watch(discountTestDay, () => {
 watch(
   () => route.query.tab,
   (tab) => {
-    activeTab.value = tab === 'history' ? 'history' : 'pending';
+    activeTab.value = PAYMENT_TABS.includes(tab) ? tab : PAYMENT_TAB.PENDING;
   }
 );
 </script>
@@ -470,6 +562,42 @@ dd {
   color: #572c57;
 }
 
+.notifications-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.notification-item {
+  align-items: flex-start;
+  border: 1px solid #e8dce8;
+  border-radius: 8px;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 1rem;
+}
+
+.notification-item h3,
+.notification-item p {
+  margin: 0;
+}
+
+.notification-item h3 {
+  color: #572c57;
+  font-size: 1rem;
+}
+
+.notification-item p {
+  margin-top: 0.35rem;
+}
+
+.notification-item time {
+  color: #8a6a8a;
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .empty-state {
   background: #fff;
   border: 2px solid #d0c0d0;
@@ -482,7 +610,8 @@ dd {
 @media (max-width: 760px) {
   .payments-header,
   .enrollment-main,
-  .payments-tabs {
+  .payments-tabs,
+  .notification-item {
     display: block;
   }
 

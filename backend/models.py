@@ -2,6 +2,59 @@ from flask_sqlalchemy import SQLAlchemy # SQLAlchemy es un Object-Relational Map
 from flask_login import UserMixin # Permite heredar funcionalidades de gestión de usuarios (como autenticación y sesiones) en la clase User.
 from werkzeug.security import generate_password_hash, check_password_hash # Ofrece funciones seguras para hash de contraseñas
 
+try:
+    from constants import (
+        CLASS_STATUS_ACTIVE,
+        CLASS_STATUS_CANCELLED,
+        CLASS_STATUSES,
+        CREDIT_STATUS_AVAILABLE,
+        CREDIT_STATUS_USED,
+        ENROLLMENT_CAPACITY_STATUSES,
+        ENROLLMENT_PAYABLE_STATUSES,
+        ENROLLMENT_STATUS_CANCELLED,
+        ENROLLMENT_STATUS_EXPIRED,
+        ENROLLMENT_STATUS_PAID,
+        ENROLLMENT_STATUS_PENDING_PAYMENT,
+        ENROLLMENT_STATUSES,
+        ENROLLMENT_TYPE_SINGLE,
+        PAYMENT_METHOD_CARD,
+        PAYMENT_METHOD_CREDIT,
+        PAYMENT_METHOD_MERCADO_PAGO,
+        PAYMENT_METHODS,
+        PAYMENT_STATUS_APPROVED,
+        PAYMENT_STATUS_EXPIRED,
+        PAYMENT_STATUS_PENDING,
+        PAYMENT_STATUS_REJECTED,
+        PAYMENT_STATUSES,
+        PAYMENT_TYPES,
+    )
+except ModuleNotFoundError:
+    from .constants import (
+        CLASS_STATUS_ACTIVE,
+        CLASS_STATUS_CANCELLED,
+        CLASS_STATUSES,
+        CREDIT_STATUS_AVAILABLE,
+        CREDIT_STATUS_USED,
+        ENROLLMENT_CAPACITY_STATUSES,
+        ENROLLMENT_PAYABLE_STATUSES,
+        ENROLLMENT_STATUS_CANCELLED,
+        ENROLLMENT_STATUS_EXPIRED,
+        ENROLLMENT_STATUS_PAID,
+        ENROLLMENT_STATUS_PENDING_PAYMENT,
+        ENROLLMENT_STATUSES,
+        ENROLLMENT_TYPE_SINGLE,
+        PAYMENT_METHOD_CARD,
+        PAYMENT_METHOD_CREDIT,
+        PAYMENT_METHOD_MERCADO_PAGO,
+        PAYMENT_METHODS,
+        PAYMENT_STATUS_APPROVED,
+        PAYMENT_STATUS_EXPIRED,
+        PAYMENT_STATUS_PENDING,
+        PAYMENT_STATUS_REJECTED,
+        PAYMENT_STATUSES,
+        PAYMENT_TYPES,
+    )
+
 # Creación del Objeto: se crea la instancia global que será usada por todos los modelos. 
 db = SQLAlchemy()
 
@@ -50,9 +103,9 @@ class Actividades(db.Model):
 class Class(db.Model):
     """Representa una clase a la que los usuarios pueden inscribirse."""
     __tablename__ = "classes"
-    STATUS_ACTIVE = "Activa"
-    STATUS_CANCELLED = "Cancelada"
-    VALID_STATUSES = (STATUS_ACTIVE, STATUS_CANCELLED)
+    STATUS_ACTIVE = CLASS_STATUS_ACTIVE
+    STATUS_CANCELLED = CLASS_STATUS_CANCELLED
+    VALID_STATUSES = CLASS_STATUSES
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(120), nullable=False)
@@ -96,8 +149,8 @@ class Enrollment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
-    tipo = db.Column(db.String(20), default="Suelta", nullable=False)  # 'Mensual' o 'Suelta'
-    estado = db.Column(db.String(20), default="pending_payment", nullable=False)
+    tipo = db.Column(db.String(20), default=ENROLLMENT_TYPE_SINGLE, nullable=False)  # 'Mensual' o 'Suelta'
+    estado = db.Column(db.String(20), default=ENROLLMENT_STATUS_PENDING_PAYMENT, nullable=False)
     requiere_reembolso = db.Column(db.Boolean, default=False, nullable=False)  # Para reservas tipo 'Suelta'
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 
@@ -105,13 +158,13 @@ class Enrollment(db.Model):
     class_ = db.relationship("Class", back_populates="enrollments")
     payments = db.relationship("Payment", back_populates="enrollment")
 
-    STATUS_PENDING_PAYMENT = "pending_payment"
-    STATUS_PAID = "paid"
-    STATUS_EXPIRED = "expired"
-    STATUS_CANCELLED = "cancelled"
-    VALID_STATUSES = (STATUS_PENDING_PAYMENT, STATUS_PAID, STATUS_EXPIRED, STATUS_CANCELLED)
-    PAYABLE_STATUSES = (STATUS_PENDING_PAYMENT,)
-    CAPACITY_STATUSES = (STATUS_PENDING_PAYMENT, STATUS_PAID)
+    STATUS_PENDING_PAYMENT = ENROLLMENT_STATUS_PENDING_PAYMENT
+    STATUS_PAID = ENROLLMENT_STATUS_PAID
+    STATUS_EXPIRED = ENROLLMENT_STATUS_EXPIRED
+    STATUS_CANCELLED = ENROLLMENT_STATUS_CANCELLED
+    VALID_STATUSES = ENROLLMENT_STATUSES
+    PAYABLE_STATUSES = ENROLLMENT_PAYABLE_STATUSES
+    CAPACITY_STATUSES = ENROLLMENT_CAPACITY_STATUSES
 
     # Garantizar que un usuario no se inscriba dos veces a la misma clase
     __table_args__ = (db.UniqueConstraint("user_id", "class_id", name="uq_user_class"),)
@@ -131,31 +184,75 @@ class Attendance(db.Model):
     __table_args__ = (db.UniqueConstraint("user_id", "class_id", name="uq_attendance_user_class"),)
 
 # ==============================================================================
-# Módulo de Cancelaciones y Sistema de Créditos (US #19)
+# Módulo de Cancelaciones, Créditos y Notificaciones
 # ==============================================================================
 
-class Credito(db.Model):
-    """Representa los créditos/puntos otorgados a usuarios por clases canceladas."""
+class Credit(db.Model):
+    """Crédito reutilizable generado por una clase cancelada."""
     __tablename__ = "creditos"
 
     id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False) 
-    actividad_id = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
-    fecha_expiracion = db.Column(db.DateTime, nullable=False)
-    estado = db.Column(db.String(20), default="Disponible", nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    activity_id = db.Column("actividad_id", db.Integer, db.ForeignKey("actividades.id"), nullable=False)
+    origin_class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=True)
+    enrollment_id = db.Column(db.Integer, db.ForeignKey("enrollments.id"), nullable=True)
+    expires_at = db.Column("fecha_expiracion", db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False, nullable=False)
+    used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
+    estado = db.Column(db.String(20), default=CREDIT_STATUS_AVAILABLE, nullable=False)
 
-    # Relaciones válidas basadas estrictamente en las claves foráneas de arriba
     user = db.relationship("User", backref=db.backref("creditos", cascade="all, delete-orphan"))
-    actividad = db.relationship("Actividades") 
-    # 🌟 NOTA: Si acá abajo tenías una línea que decía algo con "Class", borrala por completo.
+    actividad = db.relationship("Actividades")
+    origin_class = db.relationship("Class", foreign_keys=[origin_class_id])
+    enrollment = db.relationship("Enrollment", foreign_keys=[enrollment_id])
+
+    STATUS_AVAILABLE = CREDIT_STATUS_AVAILABLE
+    STATUS_USED = CREDIT_STATUS_USED
+
+    def to_dict(self):
+        estado = self.STATUS_USED if self.used else self.estado
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "activity_id": self.activity_id,
+            "actividad_name": self.actividad.name if self.actividad else None,
+            "origin_class_id": self.origin_class_id,
+            "origin_class_name": self.origin_class.name if self.origin_class else None,
+            "enrollment_id": self.enrollment_id,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "fecha_expiracion": self.expires_at.isoformat() if self.expires_at else None,
+            "used": self.used,
+            "used_at": self.used_at.isoformat() if self.used_at else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "estado": estado,
+        }
+
+
+Credito = Credit
+
+
+class Notification(db.Model):
+    """Notificación simple para avisos visibles en la cuenta del usuario."""
+    __tablename__ = "notifications"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    title = db.Column(db.String(160), nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    read = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
+
+    user = db.relationship("User", backref=db.backref("notifications", cascade="all, delete-orphan"))
 
     def to_dict(self):
         return {
             "id": self.id,
             "user_id": self.user_id,
-            "actividad_name": self.actividad.name if self.actividad else None,
-            "fecha_expiracion": self.fecha_expiracion.isoformat(),
-            "estado": self.estado
+            "title": self.title,
+            "message": self.message,
+            "read": self.read,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -176,21 +273,23 @@ class Payment(db.Model):
     final_amount = db.Column(db.Float, nullable=False)
     mercado_pago_preference_id = db.Column(db.String(120), nullable=True)
     mercado_pago_payment_id = db.Column(db.String(120), nullable=True)
-    status = db.Column(db.String(20), nullable=False, default="pending")
+    status = db.Column(db.String(20), nullable=False, default=PAYMENT_STATUS_PENDING)
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 
     user = db.relationship("User", back_populates="payments")
     enrollment = db.relationship("Enrollment", back_populates="payments")
     class_ = db.relationship("Class", back_populates="payments")
 
-    METHOD_MERCADO_PAGO = "mercado_pago"
-    METHOD_CARD = "card"
-    VALID_PAYMENT_TYPES = ("monthly_subscription", "individual_class")
-    VALID_PAYMENT_METHODS = (METHOD_MERCADO_PAGO, METHOD_CARD)
-    STATUS_PENDING = "pending"
-    STATUS_APPROVED = "approved"
-    STATUS_REJECTED = "rejected"
-    VALID_STATUSES = (STATUS_PENDING, STATUS_APPROVED, STATUS_REJECTED)
+    METHOD_MERCADO_PAGO = PAYMENT_METHOD_MERCADO_PAGO
+    METHOD_CARD = PAYMENT_METHOD_CARD
+    METHOD_CREDIT = PAYMENT_METHOD_CREDIT
+    VALID_PAYMENT_TYPES = PAYMENT_TYPES
+    VALID_PAYMENT_METHODS = PAYMENT_METHODS
+    STATUS_PENDING = PAYMENT_STATUS_PENDING
+    STATUS_APPROVED = PAYMENT_STATUS_APPROVED
+    STATUS_REJECTED = PAYMENT_STATUS_REJECTED
+    STATUS_EXPIRED = PAYMENT_STATUS_EXPIRED
+    VALID_STATUSES = PAYMENT_STATUSES
 
     def to_dict(self):
         class_obj = self.enrollment.class_ if self.enrollment else self.class_

@@ -11,14 +11,30 @@ export function register({ username, apellido, email, dni, telefono, password })
   return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
 }
 
-export function crearUsuario({ username, apellido, email, dni, telefono, password }) {
-  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
+export function crearUsuario({ username, apellido, email, dni, telefono, password, role }) {
+  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password, role }, REQUEST_CONFIG);
 }
 
 export function login({ email, password, remember }) {
   return axios.post(
     `${API_URL}/login`,
     { email, password, remember },
+    REQUEST_CONFIG
+  );
+}
+
+export function adminLoginRequest({ email }) {
+  return axios.post(
+    `${API_URL}/admin-login/request`,
+    { email },
+    REQUEST_CONFIG
+  );
+}
+
+export function adminLoginVerify({ email, code }) {
+  return axios.post(
+    `${API_URL}/admin-login/verify`,
+    { email, code },
     REQUEST_CONFIG
   );
 }
@@ -95,7 +111,8 @@ export function createClass({
   activity_id,
   date,
   time,
-  cupoMaximo
+  cupoMaximo,
+  tipo = "individual",
 }) {
   return axios.post(
     `${API_URL}/classes`,
@@ -103,7 +120,8 @@ export function createClass({
       activity_id,
       date,
       time,
-      cupoMaximo
+      cupoMaximo,
+      tipo,
     },
     REQUEST_CONFIG
   );
@@ -120,6 +138,13 @@ export function registerAttendance({
   return axios.post(
     `${API_URL}/attendance/register`,
     { user_id, class_id },
+    REQUEST_CONFIG
+  );
+}
+
+export function getClassAttendance(classId) {
+  return axios.get(
+    `${API_URL}/classes/${classId}/attendance`,
     REQUEST_CONFIG
   );
 }
@@ -204,6 +229,20 @@ export function getPaymentDiscountRules(testDay) {
       params: testDay ? { test_day: testDay } : {},
       ...REQUEST_CONFIG,
     }
+  );
+}
+
+export function getMyCredits() {
+  return axios.get(
+    `${API_URL}/credits/my`,
+    REQUEST_CONFIG
+  );
+}
+
+export function getMyNotifications() {
+  return axios.get(
+    `${API_URL}/notifications/my`,
+    REQUEST_CONFIG
   );
 }
 

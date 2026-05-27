@@ -9,9 +9,11 @@ from app import (
     _class_has_finished,
     _current_discount_datetime,
     _payment_discount_percentage,
+    _payment_quote,
+    _payment_type_for_enrollment,
     app,
 )
-from models import db, User, Class, Enrollment, Attendance, Actividades
+from models import db, User, Class, Enrollment, Attendance, Actividades, Payment
 
 
 def user_exists(email):
@@ -91,9 +93,27 @@ def next_available_datetime(actividad_id, fecha_hora, ignore_class_id=None):
         candidate = candidate + timedelta(days=1)
 
 
-def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=None):
+def previous_available_datetime(actividad_id, fecha_hora, ignore_class_id=None):
+    """Evita chocar con la restriccion unica buscando fechas anteriores."""
+    candidate = fecha_hora
+    while True:
+        query = Class.query.filter_by(
+            fecha_hora=candidate,
+            id_actividad=actividad_id,
+        )
+        if ignore_class_id is not None:
+            query = query.filter(Class.id != ignore_class_id)
+
+        if query.first() is None:
+            return candidate
+
+        candidate = candidate - timedelta(days=1)
+
+
+def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=None, search_direction="forward"):
     """Crea o actualiza una clase semilla sin duplicarla."""
     fecha_hora = as_naive_datetime(fecha_hora)
+    find_available_datetime = previous_available_datetime if search_direction == "backward" else next_available_datetime
     existing_by_name = find_class_by_name_and_activity(name, actividad.id)
     found_legacy_name = False
     if not existing_by_name:
@@ -104,7 +124,7 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
                 break
 
     if existing_by_name:
-        fecha_hora = next_available_datetime(
+        fecha_hora = find_available_datetime(
             actividad.id,
             fecha_hora,
             ignore_class_id=existing_by_name.id,
@@ -124,7 +144,7 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
         print_class_log(existing_by_name, action)
         return existing_by_name
 
-    fecha_hora = next_available_datetime(actividad.id, fecha_hora)
+    fecha_hora = find_available_datetime(actividad.id, fecha_hora)
 
     class_obj = Class(
         name=name,
@@ -161,6 +181,186 @@ def create_enrollment(user, class_obj):
     enrollment = Enrollment(user_id=user.id, class_id=class_obj.id)
     db.session.add(enrollment)
     print(f"   [OK] Enrollment creado: {user.email} -> {class_obj.name}")
+
+
+def ensure_enrollment(user, class_obj, estado=Enrollment.STATUS_PENDING_PAYMENT, tipo="Suelta"):
+    """Crea o actualiza una inscripcion de ejemplo para un usuario y clase."""
+    enrollment = Enrollment.query.filter_by(user_id=user.id, class_id=class_obj.id).first()
+    if enrollment:
+        changed = False
+        if enrollment.estado != estado:
+            enrollment.estado = estado
+            changed = True
+        if enrollment.tipo != tipo:
+            enrollment.tipo = tipo
+            changed = True
+        action = "actualizado" if changed else "ya existe"
+        print(f"   [OK] Enrollment {action}: {user.email} -> {class_obj.name} ({estado})")
+        return enrollment
+
+    enrollment = Enrollment(
+        user_id=user.id,
+        class_id=class_obj.id,
+        estado=estado,
+        tipo=tipo,
+    )
+    db.session.add(enrollment)
+    db.session.flush()
+    print(f"   [OK] Enrollment creado: {user.email} -> {class_obj.name} ({estado})")
+    return enrollment
+
+
+def ensure_payment(enrollment, status, created_at=None):
+    """Crea o actualiza el pago de ejemplo asociado a una inscripcion."""
+    payment = Payment.query.filter_by(enrollment_id=enrollment.id).first()
+    quote = _payment_quote(_payment_type_for_enrollment(enrollment), "full", app_now())
+    created_at = as_naive_datetime(created_at or app_now())
+
+    if payment:
+        payment.user_id = enrollment.user_id
+        payment.class_id = enrollment.class_id
+        payment.payment_type = _payment_type_for_enrollment(enrollment)
+        payment.payment_method = Payment.METHOD_MERCADO_PAGO
+        payment.amount = quote["amount"]
+        payment.discount_percentage = quote["discount_percentage"]
+        payment.final_amount = quote["final_amount"]
+        payment.status = status
+        payment.created_at = created_at
+        print(
+            f"   [OK] Pago actualizado: enrollment {enrollment.id} "
+            f"-> {status}"
+        )
+        return payment
+
+    payment = Payment(
+        user_id=enrollment.user_id,
+        enrollment_id=enrollment.id,
+        class_id=enrollment.class_id,
+        payment_type=_payment_type_for_enrollment(enrollment),
+        payment_method=Payment.METHOD_MERCADO_PAGO,
+        amount=quote["amount"],
+        discount_percentage=quote["discount_percentage"],
+        final_amount=quote["final_amount"],
+        status=status,
+        created_at=created_at,
+    )
+    db.session.add(payment)
+    print(f"   [OK] Pago creado: enrollment {enrollment.id} -> {status}")
+    return payment
+
+
+def ensure_class_active(class_obj):
+    """Deja una clase semilla disponible para repetir pruebas luego de cancelarla."""
+    if class_obj.estado != Class.STATUS_ACTIVE:
+        class_obj.estado = Class.STATUS_ACTIVE
+        print(f"   [OK] Clase reactivada para pruebas: {class_obj.name}")
+
+
+def create_client_payment_examples(client, actividad_yoga, actividad_funcional, actividad_pilates, today):
+    """Crea casos de ejemplo para historial de pagos de client@test.com."""
+    print("Creando casos de pagos para client@test.com...")
+
+    expired_class = create_test_class(
+        "Yoga Mediodia",
+        today - timedelta(days=1),
+        actividad_yoga,
+        legacy_names=["Seed Pago Vencido - Yoga"],
+        search_direction="backward",
+    )
+    expired_enrollment = ensure_enrollment(
+        client,
+        expired_class,
+        estado=Enrollment.STATUS_EXPIRED,
+    )
+    ensure_payment(
+        expired_enrollment,
+        Payment.STATUS_EXPIRED,
+        created_at=expired_class.fecha_hora - timedelta(minutes=1),
+    )
+
+    pending_class = create_test_class(
+        "Funcional Intensivo",
+        at_app_time(today + timedelta(days=1), 18),
+        actividad_funcional,
+        legacy_names=["Seed Pago Pendiente - Funcional"],
+    )
+    pending_enrollment = ensure_enrollment(
+        client,
+        pending_class,
+        estado=Enrollment.STATUS_PENDING_PAYMENT,
+    )
+    ensure_payment(
+        pending_enrollment,
+        Payment.STATUS_PENDING,
+        created_at=today - timedelta(minutes=30),
+    )
+
+    paid_class = create_test_class(
+        "Pilates Suave",
+        at_app_time(today + timedelta(days=2), 16),
+        actividad_pilates,
+        legacy_names=["Seed Pago Aprobado - Pilates"],
+    )
+    paid_enrollment = ensure_enrollment(
+        client,
+        paid_class,
+        estado=Enrollment.STATUS_PAID,
+    )
+    ensure_payment(
+        paid_enrollment,
+        Payment.STATUS_APPROVED,
+        created_at=today - timedelta(hours=2),
+    )
+
+    rejected_class = create_test_class(
+        "Yoga Restaurativo",
+        at_app_time(today + timedelta(days=3), 11),
+        actividad_yoga,
+        legacy_names=["Seed Pago Rechazado - Yoga"],
+    )
+    rejected_enrollment = ensure_enrollment(
+        client,
+        rejected_class,
+        estado=Enrollment.STATUS_PENDING_PAYMENT,
+    )
+    ensure_payment(
+        rejected_enrollment,
+        Payment.STATUS_REJECTED,
+        created_at=today - timedelta(hours=1),
+    )
+
+
+def create_client_credit_examples(client, actividad_pilates, today):
+    """Crea un flujo claro para probar créditos por cancelación con client@test.com."""
+    print("Creando casos de créditos para client@test.com...")
+
+    cancellable_class = create_test_class(
+        "Credito Test - Pilates Cancelable",
+        at_app_time(today + timedelta(days=7), 15),
+        actividad_pilates,
+    )
+    ensure_class_active(cancellable_class)
+    paid_enrollment = ensure_enrollment(
+        client,
+        cancellable_class,
+        estado=Enrollment.STATUS_PAID,
+    )
+    ensure_payment(
+        paid_enrollment,
+        Payment.STATUS_APPROVED,
+        created_at=today - timedelta(hours=3),
+    )
+
+    target_class = create_test_class(
+        "Credito Test - Pilates Destino",
+        at_app_time(today + timedelta(days=8), 15),
+        actividad_pilates,
+    )
+    ensure_class_active(target_class)
+    print(
+        "   [INFO] Para probar: cancelar 'Credito Test - Pilates Cancelable' "
+        "y luego inscribir client@test.com en 'Credito Test - Pilates Destino'."
+    )
 
 
 def main():
@@ -277,6 +477,18 @@ def main():
         
         # Client inscrito a una clase
         create_enrollment(client, class1)
+        db.session.commit()
+        print()
+
+        # ─── Casos de historial de pagos para client@test.com ───────────────
+
+        create_client_payment_examples(client, actividad1, actividad2, actividad3, today)
+        db.session.commit()
+        print()
+
+        # ─── Casos para probar créditos por cancelación ─────────────────────
+
+        create_client_credit_examples(client, actividad3, today)
         db.session.commit()
         print()
 
