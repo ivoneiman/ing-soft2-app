@@ -55,7 +55,7 @@
                   type="button"
                   class="slot-btn"
                   :class="{ active: selectedClassId === slot.id }"
-                  @click="selectedClassId = slot.id">
+                  @click="onSlotSelected(slot)">
                   <div class="slot-time">{{ slot.time }}</div>
                   <div class="slot-cupo">
                     {{ slot.available_spots }} {{ slot.available_spots === 1 ? 'cupo' : 'cupos' }}
@@ -84,7 +84,22 @@
           <li><strong>Horario:</strong> {{ selectedClass.time }} ({{ selectedClass.duration_minutes }} min)</li>
           <li><strong>Cupos libres:</strong> {{ selectedClass.available_spots }}</li>
         </ul>
-        <button type="button" class="btn-inscribe" :disabled="isSubmittingEnrollment" @click="handleEnrollment">
+        
+        <div class="enrollment-options">
+          <h4>Tipo de inscripción</h4>
+          <label class="radio-label">
+            <input type="radio" :value="TIPO_SUELTA" v-model="enrollmentType" />
+            <span class="radio-text">Clase Individual (Solo {{ selectedDateLabel }})</span>
+          </label>
+          <label class="radio-label" :class="{ disabled: !isMensualAvailable }">
+            <input type="radio" :value="TIPO_MENSUAL" v-model="enrollmentType" :disabled="!isMensualAvailable" />
+            <span class="radio-text">Clase Mensual (Todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes en este horario)</span>
+            <span v-if="checkingMensual" class="status-note">Comprobando...</span>
+            <span v-else-if="!isMensualAvailable" class="status-note error-text">(Sin cupo en todos los días)</span>
+          </label>
+        </div>
+
+        <button type="button" class="btn-inscribe" :disabled="isSubmittingEnrollment || checkingMensual" @click="handleEnrollment">
           {{ isSubmittingEnrollment ? 'Creando inscripción...' : 'Inscribirse' }}
         </button>
       </section>
@@ -123,6 +138,19 @@ const isSubmittingEnrollment = ref(false);
 const error = ref("");
 const successMessage = ref("");
 const router = useRouter();
+
+const TIPO_SUELTA = ENROLLMENT_TYPE?.SINGLE || 'Suelta';
+const TIPO_MENSUAL = ENROLLMENT_TYPE?.MONTHLY || 'Mensual';
+
+const enrollmentType = ref(TIPO_SUELTA);
+const checkingMensual = ref(false);
+const isMensualAvailable = ref(false);
+
+const getWeekdayName = (date) => {
+  if (!date) return "";
+  const days = ["Domingos", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábados"];
+  return days[date.getDay()];
+};
 
 const selectedActivityName = computed(() => {
   const act = activities.value.find((a) => a.id === selectedActivityId.value);
@@ -164,6 +192,9 @@ function selectActivity(id) {
   selectedActivityId.value = id;
   selectedDate.value = null;
   selectedClassId.value = "";
+  enrollmentType.value = TIPO_SUELTA;
+  checkingMensual.value = false;
+  isMensualAvailable.value = false;
   availableSlots.value = [];
   fullCount.value = 0;
   enabledDateKeys.value = [];
@@ -196,6 +227,7 @@ function onMonthChange({ year, month }) {
 async function onDateSelected(date) {
   selectedDate.value = date;
   selectedClassId.value = "";
+  enrollmentType.value = TIPO_SUELTA;
   availableSlots.value = [];
   fullCount.value = 0;
   if (!date || !selectedActivityId.value) return;
@@ -203,13 +235,75 @@ async function onDateSelected(date) {
   loadingSlots.value = true;
   error.value = "";
   try {
-    const res = await getCatalogAvailability(selectedActivityId.value, toDateKey(date));
-    availableSlots.value = res.data?.available || [];
+    const dateKey = toDateKey(date);
+    const res = await getCatalogAvailability(selectedActivityId.value, dateKey);
+    
+    let slots = res.data?.available || [];
+    
+    // Filtrar horarios que ya pasaron si el día seleccionado es hoy
+    const todayKey = toDateKey(new Date());
+    if (dateKey === todayKey) {
+      const now = new Date();
+      const currentHours = now.getHours();
+      const currentMinutes = now.getMinutes();
+      
+      slots = slots.filter(slot => {
+        const [slotHours, slotMinutes] = slot.time.split(':').map(Number);
+        return slotHours > currentHours || (slotHours === currentHours && slotMinutes > currentMinutes);
+      });
+    }
+
+    availableSlots.value = slots;
     fullCount.value = res.data?.full_count || 0;
   } catch (err) {
     error.value = err.response?.data?.error || "No se pudieron cargar los horarios.";
   } finally {
     loadingSlots.value = false;
+  }
+}
+
+async function onSlotSelected(slot) {
+  selectedClassId.value = slot.id;
+  enrollmentType.value = TIPO_SUELTA;
+  
+  if (!selectedDate.value) return;
+  
+  const selected = new Date(selectedDate.value);
+  const month = selected.getMonth();
+  const year = selected.getFullYear();
+  
+  const dates = [];
+  let iterDate = new Date(year, month, selected.getDate());
+  while (iterDate.getMonth() === month) {
+    const y = iterDate.getFullYear();
+    const m = String(iterDate.getMonth() + 1).padStart(2, '0');
+    const d = String(iterDate.getDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${d}`);
+    iterDate.setDate(iterDate.getDate() + 7);
+  }
+  
+  checkingMensual.value = true;
+  isMensualAvailable.value = false;
+  
+  try {
+    let allAvailable = true;
+    for (const dStr of dates) {
+      if (dStr === toDateKey(selectedDate.value)) continue;
+      
+      const res = await getCatalogAvailability(selectedActivityId.value, dStr);
+      const slots = res.data?.available || [];
+      const match = slots.find(s => s.time === slot.time && s.available_spots > 0);
+      if (!match) {
+        allAvailable = false;
+        break;
+      }
+    }
+    isMensualAvailable.value = allAvailable;
+  } catch (err) {
+    console.error("Error comprobando disponibilidad mensual:", err);
+    isMensualAvailable.value = false;
+  } finally {
+    checkingMensual.value = false;
   }
 }
 
@@ -220,7 +314,7 @@ async function handleEnrollment() {
   error.value = "";
   successMessage.value = "";
   try {
-    const res = await createEnrollment({ class_id: selectedClass.value.id, tipo: ENROLLMENT_TYPE.SINGLE });
+    const res = await createEnrollment({ class_id: selectedClass.value.id, tipo: enrollmentType.value });
     if (res.data?.credit_used) {
       successMessage.value = res.data?.message || "Inscripción realizada utilizando crédito";
       selectedClassId.value = "";
@@ -421,6 +515,69 @@ onActivated(() => {
 .summary-list strong {
   color: #572c57;
   font-weight: 700;
+}
+
+.enrollment-options {
+  margin: 1.5rem 0;
+  padding: 1.25rem;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 2px solid #e8dce8;
+}
+
+.enrollment-options h4 {
+  margin-bottom: 1rem;
+  color: #572c57;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.radio-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 8px;
+  transition: background-color 0.2s ease;
+}
+
+.radio-label:hover:not(.disabled) {
+  background-color: #fcf8fc;
+}
+
+.radio-label input[type="radio"] {
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-top: 0.15rem;
+  cursor: pointer;
+  accent-color: #9f5f91;
+  flex-shrink: 0;
+}
+
+.radio-label.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.radio-text {
+  font-size: 1.05rem;
+  color: #332b33;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.status-note {
+  display: block;
+  font-size: 0.9rem;
+  color: #8a6a8a;
+  margin-top: 0.25rem;
+  font-weight: 400;
+}
+
+.error-text {
+  color: #b91c1c;
 }
 
 .btn-inscribe {

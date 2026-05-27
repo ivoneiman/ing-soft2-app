@@ -404,6 +404,10 @@ def main():
         print()
 
         # ─── Crear clases de prueba ───────────────────────────────────────
+        
+        # IMPORTANTE: Descomentar el siguiente bloque de código (quitar las comillas triples)
+        # para volver a generar clases de prueba, inscripciones, pagos y créditos de ejemplo.
+        '''
 
         print("Creando clases de prueba dinamicas...")
         today = app_now()
@@ -461,6 +465,7 @@ def main():
 
         db.session.commit()
         print()
+        '''
 
         # ─── Crear enrollments (inscripciones) de prueba ────────────────────
 

@@ -66,8 +66,8 @@ NOTIFICATION_STATUS_READ = "read"
 DISCOUNT_PERCENTAGES = (0, 40, 70)
 DISCOUNT_PERIODS = (
     {"percentage": 0, "start_day": 1, "end_day": 14},
-    {"percentage": 40, "start_day": 15, "end_day": 20},
-    {"percentage": 70, "start_day": 21, "end_day": None},
+    {"percentage": 40, "start_day": 15, "end_day": 21},
+    {"percentage": 70, "start_day": 22, "end_day": None},
 )
 
 PAYMENT_OPTION_FULL = "full"
