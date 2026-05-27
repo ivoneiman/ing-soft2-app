@@ -93,7 +93,8 @@ def validate_enrollment_payable(enrollment, current_user, current_dt):
         return "No se puede pagar una clase ya finalizada", 400
     if enrollment.estado != Enrollment.STATUS_PENDING_PAYMENT:
         return "La inscripción no está pendiente de pago", 400
-    if has_approved_payment(enrollment):
+    recompute_enrollment_payment_state(enrollment, current_dt)
+    if has_approved_payment(enrollment) and getattr(enrollment, "remaining_amount", 0) <= 0:
         enrollment.estado = Enrollment.STATUS_PAID
         return "La inscripción ya tiene un pago aprobado", 409
     return None, None

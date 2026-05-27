@@ -28,6 +28,8 @@ try:
         ENROLLMENT_PAYMENT_STATUS_PENDING,
         PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
         PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION,
+        PAYMENT_TYPE_BALANCE,
+        PAYMENT_TYPE_DEPOSIT,
         PAYMENT_TYPE_FULL,
         MERCADO_PAGO_STATUS_APPROVED,
         MERCADO_PAGO_STATUS_IN_PROCESS,
@@ -54,6 +56,8 @@ except ModuleNotFoundError:
         ENROLLMENT_PAYMENT_STATUS_PENDING,
         PAYMENT_PRODUCT_TYPE_INDIVIDUAL_CLASS,
         PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION,
+        PAYMENT_TYPE_BALANCE,
+        PAYMENT_TYPE_DEPOSIT,
         PAYMENT_TYPE_FULL,
         MERCADO_PAGO_STATUS_APPROVED,
         MERCADO_PAGO_STATUS_IN_PROCESS,
@@ -470,6 +474,10 @@ def _enrollment_has_other_approved_payment(payment):
     return payment_service.enrollment_has_other_approved_payment(payment)
 
 
+def _payment_would_overpay(payment):
+    return payment_service.payment_would_overpay(payment)
+
+
 def _enrollment_payment_quote(enrollment, current_datetime=None):
     quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
     discount = int(enrollment.class_.descuento or 0)
@@ -497,6 +505,18 @@ def _enrollment_payload(enrollment, current_datetime=None):
     payload["amount"] = amount
     payload["discount_percentage"] = discount
     payload["final_amount"] = amount - (amount * discount / 100)
+    if not float(payload.get("total_amount") or 0):
+        payload["total_amount"] = payload["final_amount"]
+    deposit_amount, deposit_final_amount = payment_service.payment_amounts_for_type(
+        enrollment,
+        PAYMENT_TYPE_DEPOSIT,
+        amount,
+        payload["final_amount"],
+    )
+    payload["full_payment_amount"] = payload["remaining_amount"] or payload["final_amount"]
+    payload["deposit_amount"] = deposit_final_amount
+    payload["deposit_percentage"] = payment_service.deposit_percentage()
+    payload["balance_amount"] = max((payload.get("total_amount") or 0) - (payload.get("paid_amount") or 0), 0)
     return payload
 
 
@@ -914,7 +934,8 @@ def pending_enrollments():
     pending = []
     for enrollment in enrollments:
         changed = _expire_enrollment_if_needed(enrollment, current_datetime) or changed
-        if enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT and not _has_approved_payment(enrollment):
+        changed = payment_service.recompute_enrollment_payment_state(enrollment, current_datetime) or changed
+        if enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT and float(enrollment.remaining_amount or 0) > 0:
             pending.append(_enrollment_payload(enrollment, current_datetime))
 
     if changed:
@@ -1323,10 +1344,13 @@ def create_payment():
     data = request.get_json() or {}
     payment_method = data.get("payment_method", Payment.METHOD_MERCADO_PAGO)
     enrollment_id = data.get("enrollment_id")
-    payment_option = "full"
+    requested_payment_type = data.get("payment_type", PAYMENT_TYPE_FULL)
 
     if payment_method not in Payment.VALID_PAYMENT_METHODS:
         return jsonify({"error": "Método de pago inválido"}), 400
+
+    if requested_payment_type not in Payment.VALID_PAYMENT_TYPES:
+        return jsonify({"error": "Tipo de pago inválido"}), 400
 
     if payment_method != Payment.METHOD_MERCADO_PAGO:
         return jsonify({"error": "Por ahora solo está disponible Mercado Pago Checkout Pro"}), 400
@@ -1341,24 +1365,46 @@ def create_payment():
         return jsonify({"error": error}), status_code
 
     class_obj = enrollment.class_
-    payment_type = _payment_type_for_enrollment(enrollment)
-    quote = _payment_quote(payment_type, payment_option, current_datetime)
+    product_type = _payment_type_for_enrollment(enrollment)
 
-    if payment_type == "single_class" or enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
+    if product_type == "single_class" or enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
         amount = 3000.0
     else:
         amount = _get_monthly_base_price(class_obj)
 
     discount_percentage = int(class_obj.descuento or 0)
-    final_amount = amount - (amount * discount_percentage / 100)
+    full_final_amount = amount - (amount * discount_percentage / 100)
+    enrollment.total_amount = float(enrollment.total_amount or 0) or round(full_final_amount, 2)
+    payment_service.recompute_enrollment_payment_state(enrollment, current_datetime)
+    remaining_amount = float(enrollment.remaining_amount or 0)
+    if requested_payment_type == PAYMENT_TYPE_FULL and float(enrollment.paid_amount or 0) > 0:
+        requested_payment_type = PAYMENT_TYPE_BALANCE
+
+    if remaining_amount <= 0:
+        enrollment.estado = Enrollment.STATUS_PAID
+        payment_service.recompute_enrollment_payment_state(enrollment, current_datetime)
+        db.session.commit()
+        return jsonify({"error": "La inscripción ya está pagada"}), 409
+
+    amount, final_amount = payment_service.payment_amounts_for_type(
+        enrollment,
+        requested_payment_type,
+        amount,
+        full_final_amount,
+    )
+
+    if final_amount <= 0:
+        return jsonify({"error": "No hay saldo pendiente para este tipo de pago"}), 400
+    if final_amount > remaining_amount + 0.01:
+        return jsonify({"error": "El pago supera el saldo pendiente"}), 400
 
     _log_discount_quote(current_datetime, class_obj, discount_percentage, amount, final_amount)
 
     payment = Payment(
         user_id=current_user.id,
         enrollment_id=enrollment.id,
-        product_type=payment_type,
-        payment_type=Payment.TYPE_FULL,
+        product_type=product_type,
+        payment_type=requested_payment_type,
         payment_method=payment_method,
         amount=amount,
         discount_percentage=discount_percentage,
@@ -1369,7 +1415,11 @@ def create_payment():
     db.session.flush()
 
     activity_name = class_obj.actividad.name if class_obj.actividad else class_obj.name
-    title = f"Suscripción mensual - {activity_name}" if payment_type == "monthly_subscription" else f"Clase individual - {activity_name}"
+    title = f"Suscripción mensual - {activity_name}" if product_type == "monthly_subscription" else f"Clase individual - {activity_name}"
+    if requested_payment_type == PAYMENT_TYPE_DEPOSIT:
+        title = f"Seña - {title}"
+    elif requested_payment_type == PAYMENT_TYPE_BALANCE:
+        title = f"Saldo - {title}"
     preference_data = {
         "items": [
             {
@@ -1451,7 +1501,114 @@ def create_payment():
     payment.mercado_pago_preference_id = preference_id
     db.session.commit()
 
-    return jsonify({"init_point": init_point, "preference_id": preference_id}), 200
+    return jsonify({
+        "payment_id": payment.id,
+        "enrollment_id": enrollment.id,
+        "init_point": init_point,
+        "preference_id": preference_id,
+        "amount": amount,
+        "discount_percentage": discount_percentage,
+        "final_amount": final_amount,
+        "payment_type": payment.payment_type,
+        "product_type": payment.product_type,
+        "remaining_amount": enrollment.remaining_amount,
+    }), 200
+
+
+@app.route("/api/payments/return/<result>", methods=["GET"])
+def mercado_pago_return(result):
+    logger.info("[MercadoPago Callback] result=%s query=%s", result, request.args.to_dict())
+    current_datetime = _current_discount_datetime()
+    payment_reference = request.args.get("external_reference")
+    preference_id = request.args.get("preference_id")
+    mercado_pago_payment_id = request.args.get("payment_id") or request.args.get("collection_id")
+    mercado_pago_status = request.args.get("status") or request.args.get("collection_status")
+    status_detail = request.args.get("status_detail")
+
+    payment = None
+    if payment_reference:
+        payment = Payment.query.get(payment_reference)
+    if not payment and preference_id:
+        payment = Payment.query.filter_by(mercado_pago_preference_id=preference_id).first()
+
+    if not payment:
+        logger.error("[MercadoPago Callback] payment_no_encontrado")
+        return redirect(_frontend_payments_url(PAYMENT_RETURN_STATUS_FAILURE, "Error del servidor de pagos"))
+
+    if mercado_pago_payment_id:
+        payment.mercado_pago_payment_id = str(mercado_pago_payment_id)
+
+    if payment.status == Payment.STATUS_APPROVED:
+        redirect_status = PAYMENT_RETURN_STATUS_SUCCESS
+        message = None
+    elif (
+        payment.enrollment
+        and _class_has_finished(payment.enrollment.class_, current_datetime)
+    ):
+        payment.status = Payment.STATUS_EXPIRED
+        if payment.enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
+            payment.enrollment.estado = Enrollment.STATUS_EXPIRED
+        payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
+        redirect_status = PAYMENT_RETURN_STATUS_FAILURE
+        message = "El período de pago de la inscripción venció"
+    elif result == PAYMENT_RETURN_STATUS_SUCCESS or mercado_pago_status == MERCADO_PAGO_STATUS_APPROVED:
+        if _payment_would_overpay(payment):
+            payment.status = Payment.STATUS_REJECTED
+            redirect_status = PAYMENT_RETURN_STATUS_FAILURE
+            message = "El pago supera el saldo pendiente"
+        else:
+            payment.status = Payment.STATUS_APPROVED
+            if payment.enrollment:
+                payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
+            redirect_status = PAYMENT_RETURN_STATUS_SUCCESS
+            message = None
+    elif result == PAYMENT_RETURN_STATUS_PENDING or mercado_pago_status in [
+        MERCADO_PAGO_STATUS_PENDING,
+        MERCADO_PAGO_STATUS_IN_PROCESS,
+    ]:
+        payment.status = Payment.STATUS_PENDING
+        redirect_status = PAYMENT_RETURN_STATUS_PENDING
+        message = None
+    else:
+        payment.status = Payment.STATUS_REJECTED
+        redirect_status = PAYMENT_RETURN_STATUS_FAILURE
+        message = _payment_error_message(status_detail)
+
+    db.session.commit()
+    logger.info(
+        "[MercadoPago Callback] payment_id=%s status=%s redirect_status=%s",
+        payment.id,
+        payment.status,
+        redirect_status,
+    )
+    return redirect(_frontend_payments_url(redirect_status, message))
+
+
+@app.route("/api/payments/history", methods=["GET"])
+def payment_history():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    current_datetime = _current_discount_datetime()
+    enrollments = Enrollment.query.filter_by(user_id=current_user.id).all()
+    changed = False
+    for enrollment in enrollments:
+        changed = _restore_future_expired_enrollment_if_needed(enrollment, current_datetime) or changed
+        changed = _expire_enrollment_if_needed(enrollment, current_datetime) or changed
+        changed = payment_service.recompute_enrollment_payment_state(enrollment, current_datetime) or changed
+
+    if changed:
+        db.session.commit()
+
+    payments = (
+        Payment.query
+        .filter_by(user_id=current_user.id)
+        .order_by(Payment.created_at.desc())
+        .all()
+    )
+
+    return jsonify({"payments": [payment.to_dict() for payment in payments]}), 200
 
 
 if __name__ == "__main__":

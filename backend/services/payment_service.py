@@ -27,6 +27,8 @@ try:
         PAYMENT_STATUS_EXPIRED,
         PAYMENT_STATUS_PENDING,
         PAYMENT_TYPE_FULL,
+        PAYMENT_TYPE_BALANCE,
+        PAYMENT_TYPE_DEPOSIT,
         PAYMENT_TYPE_INDIVIDUAL_CLASS,
         PAYMENT_TYPE_MONTHLY_SUBSCRIPTION,
     )
@@ -54,6 +56,8 @@ except ModuleNotFoundError:
         PAYMENT_STATUS_EXPIRED,
         PAYMENT_STATUS_PENDING,
         PAYMENT_TYPE_FULL,
+        PAYMENT_TYPE_BALANCE,
+        PAYMENT_TYPE_DEPOSIT,
         PAYMENT_TYPE_INDIVIDUAL_CLASS,
         PAYMENT_TYPE_MONTHLY_SUBSCRIPTION,
     )
@@ -215,6 +219,40 @@ def approved_payment_amount(enrollment, total_amount=None):
         else:
             paid += final_amount
     return paid
+
+
+def deposit_percentage():
+    return configured_amount("PAYMENT_DEPOSIT_PERCENTAGE", 50)
+
+
+def payment_amounts_for_type(enrollment, payment_type, full_amount, full_final_amount):
+    total_amount = float(getattr(enrollment, "total_amount", 0) or 0) or float(full_final_amount or 0)
+    paid_amount = float(getattr(enrollment, "paid_amount", 0) or 0)
+    remaining_amount = max(total_amount - paid_amount, 0)
+
+    if payment_type == PAYMENT_TYPE_DEPOSIT:
+        if paid_amount > 0:
+            return 0, 0
+        percentage = deposit_percentage() / 100
+        return round(float(full_amount) * percentage, 2), round(float(full_final_amount) * percentage, 2)
+
+    if payment_type == PAYMENT_TYPE_BALANCE or paid_amount > 0:
+        return round(remaining_amount, 2), round(remaining_amount, 2)
+
+    return round(float(full_amount), 2), round(float(full_final_amount), 2)
+
+
+def payment_would_overpay(payment):
+    if not payment or not getattr(payment, "enrollment", None):
+        return False
+    enrollment = payment.enrollment
+    total_amount = enrollment_total_amount(enrollment)
+    other_paid = 0
+    for existing in approved_payments(enrollment):
+        if existing.id == payment.id:
+            continue
+        other_paid += float(getattr(existing, "final_amount", 0) or 0)
+    return other_paid + float(getattr(payment, "final_amount", 0) or 0) > total_amount + 0.01
 
 
 def recompute_enrollment_payment_state(enrollment, current_dt=None):
