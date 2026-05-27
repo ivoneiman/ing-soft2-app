@@ -505,7 +505,14 @@ def _enrollment_payload(enrollment, current_datetime=None):
     payload["amount"] = amount
     payload["discount_percentage"] = discount
     payload["final_amount"] = amount - (amount * discount / 100)
-    if not float(payload.get("total_amount") or 0):
+    if not float(payload.get("paid_amount") or 0):
+        enrollment.total_amount = round(payload["final_amount"], 2)
+        enrollment.paid_amount = 0
+        enrollment.remaining_amount = enrollment.total_amount
+        payload["total_amount"] = enrollment.total_amount
+        payload["paid_amount"] = enrollment.paid_amount
+        payload["remaining_amount"] = enrollment.remaining_amount
+    elif not float(payload.get("total_amount") or 0):
         payload["total_amount"] = payload["final_amount"]
     deposit_amount, deposit_final_amount = payment_service.payment_amounts_for_type(
         enrollment,
@@ -1374,7 +1381,10 @@ def create_payment():
 
     discount_percentage = int(class_obj.descuento or 0)
     full_final_amount = amount - (amount * discount_percentage / 100)
-    enrollment.total_amount = float(enrollment.total_amount or 0) or round(full_final_amount, 2)
+    if not float(enrollment.paid_amount or 0):
+        enrollment.total_amount = round(full_final_amount, 2)
+    else:
+        enrollment.total_amount = float(enrollment.total_amount or 0) or round(full_final_amount, 2)
     payment_service.recompute_enrollment_payment_state(enrollment, current_datetime)
     remaining_amount = float(enrollment.remaining_amount or 0)
     if requested_payment_type == PAYMENT_TYPE_FULL and float(enrollment.paid_amount or 0) > 0:
@@ -1695,6 +1705,7 @@ def register_manual_payment(enrollment_id):
     )
     db.session.add(payment)
     db.session.flush()
+    db.session.expire(enrollment, ["payments"])
     payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     db.session.commit()
 

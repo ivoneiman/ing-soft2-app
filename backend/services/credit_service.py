@@ -91,6 +91,7 @@ def consume_credit_for_enrollment(credit, enrollment, current_dt=None):
     )
     db.session.add(payment)
     db.session.flush()
+    db.session.expire(enrollment, ["payments"])
     recompute_enrollment_payment_state(enrollment, current_dt)
     logger.info(
         "[Credits] consumido credit_id=%s user_id=%s enrollment_id=%s",
