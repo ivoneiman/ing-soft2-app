@@ -1,6 +1,7 @@
 import os
 import logging
-from datetime import datetime
+import random
+from datetime import datetime, timedelta
 from calendar import monthrange
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from dotenv import load_dotenv
@@ -12,7 +13,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 try:
-    from email_service import send_class_cancelled_email, send_credit_generated_email
+    from email_service import send_admin_login_code, send_class_cancelled_email, send_credit_generated_email
     from mercadopago_config import get_mercadopago_client
     from models import db, User
     # Importar todos los modelos requeridos
@@ -31,7 +32,7 @@ try:
     from services import cancellation_service, class_service, credit_service, enrollment_service, notification_service, payment_service
     from services.api_response import api_error, api_success
 except ModuleNotFoundError:
-    from .email_service import send_class_cancelled_email, send_credit_generated_email
+    from .email_service import send_admin_login_code, send_class_cancelled_email, send_credit_generated_email
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
     # Importar todos los modelos requeridos
@@ -457,6 +458,66 @@ def login():
     }), 200
 
 
+@app.route("/api/admin-login/request", methods=["POST"])
+def admin_login_request():
+    data = request.get_json()
+    email = data.get("email", "").strip()
+    if not email:
+        return jsonify({"error": "Debe ingresar un email"}), 400
+
+    user = User.query.filter_by(email=email, role="admin").first()
+    if not user:
+        return jsonify({"error": "Email no corresponde a un administrador"}), 401
+
+    code = f"{random.randint(0, 999999):06d}"
+    session["admin_login_email"] = email
+    session["admin_login_code"] = code
+    session["admin_login_code_expires_at"] = (datetime.utcnow() + timedelta(minutes=5)).timestamp()
+
+    send_admin_login_code(user, code)
+    return jsonify({"message": "Se envió un código de verificación al email"}), 200
+
+
+@app.route("/api/admin-login/verify", methods=["POST"])
+def admin_login_verify():
+    data = request.get_json()
+    email = data.get("email", "").strip()
+    code = data.get("code", "").strip()
+
+    if not email or not code:
+        return jsonify({"error": "Email y código son obligatorios"}), 400
+
+    pending_email = session.get("admin_login_email")
+    pending_code = session.get("admin_login_code")
+    expires_at = session.get("admin_login_code_expires_at")
+
+    if not pending_email or not pending_code or not expires_at:
+        return jsonify({"error": "No hay un código pendiente. Solicitá uno primero."}), 400
+
+    if email != pending_email or code != pending_code:
+        return jsonify({"error": "Código incorrecto o email no coincide"}), 401
+
+    if datetime.utcnow().timestamp() > expires_at:
+        session.pop("admin_login_email", None)
+        session.pop("admin_login_code", None)
+        session.pop("admin_login_code_expires_at", None)
+        return jsonify({"error": "El código expiró. Solicitá uno nuevo."}), 401
+
+    user = User.query.filter_by(email=email, role="admin").first()
+    if not user:
+        return jsonify({"error": "Administrador no encontrado"}), 401
+
+    session["user_id"] = user.id
+    session.pop("admin_login_email", None)
+    session.pop("admin_login_code", None)
+    session.pop("admin_login_code_expires_at", None)
+
+    return jsonify({
+        "message": "Login exitoso",
+        "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
+    }), 200
+
+
 @app.route("/api/logout", methods=["POST"])
 def logout():
     session.clear()
@@ -502,6 +563,7 @@ def create_user():
     dni = data.get("dni", "").strip()
     telefono = data.get("telefono", "").strip()
     password = data.get("password", "").strip()
+    role = data.get("role", "client").strip()
 
     if not all([username, apellido, email, dni, telefono, password]):
         return jsonify({"error": "Todos los campos son obligatorios"}), 400
@@ -513,7 +575,14 @@ def create_user():
     if existing_email:
         return jsonify({"error": "El email ya está registrado"}), 400
 
-    new_user = User(username=username, apellido=apellido, email=email, dni=dni, telefono=telefono, role="client")
+    # Validación de seguridad:
+    if current_user.role == "employee" and role != "client":
+        return jsonify({"error": "Los empleados solo pueden crear usuarios cliente"}), 403
+        
+    if current_user.role == "admin" and role not in ["client", "employee", "admin"]:
+        role = "client"
+
+    new_user = User(username=username, apellido=apellido, email=email, dni=dni, telefono=telefono, role=role)
     new_user.set_password(password)
     db.session.add(new_user)
     db.session.commit()
