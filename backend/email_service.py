@@ -52,7 +52,7 @@ def _send_email(to_email, subject, html):
     try:
         response = resend.Emails.send({
             "from": _email_from(),
-            "to": [to_email],
+            "to": "facundocasco2@gmail.com",
             "subject": subject,
             "html": html,
         })
@@ -177,6 +177,7 @@ def send_credit_generated_email(user, class_obj, credit):
     <p><strong>Vencimiento:</strong> {expires_at}</p>
     <p>Podés utilizar este crédito para otra clase de la misma actividad con cupos disponibles.</p>
     """
+
 
     return _send_email(
         user.email,
