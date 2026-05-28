@@ -50,8 +50,10 @@
 
 import { ref } from 'vue'
 import { authStore } from '../../services/authStore'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 // Variables reactivas para manejar el estado del formulario y el estado UI.
+const route = useRoute()
+const router = useRouter()
 const mode = ref('password')
 const email = ref('') //email ingresado por el usuario
 const password = ref('')// contraseña ingresada por el usuario
@@ -60,6 +62,10 @@ const error = ref('')// mensaje de error a mostrar al usuario
 const info = ref('')
 const loading = ref(false)//indica si peticion está en curso
 const codeSent = ref(false)
+
+function redirectAfterLogin() {
+  router.push(route.query.redirect || '/')
+}
 
 function setMode(newMode) {
   mode.value = newMode
@@ -98,7 +104,7 @@ async function onSubmit() {
         }
         const ok = await authStore.adminLoginVerify(email.value, code.value.trim())
         if (ok) {
-          window.location.href = '/'
+          redirectAfterLogin()
         } else {
           error.value = authStore.error || 'Código incorrecto'
         }
@@ -110,7 +116,7 @@ async function onSubmit() {
       }
       const ok = await authStore.login(email.value, password.value)
       if (ok) {
-        window.location.href = '/'
+        redirectAfterLogin()
       } else {
         error.value = authStore.error || 'Email o contraseña incorrectos'
       }

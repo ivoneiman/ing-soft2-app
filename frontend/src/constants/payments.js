@@ -3,6 +3,7 @@ export const PAYMENT_TAB = {
   HISTORY: 'history',
   CREDITS: 'credits',
   NOTIFICATIONS: 'notifications',
+  ADMIN: 'admin',
 };
 
 export const PAYMENT_TABS = Object.values(PAYMENT_TAB);

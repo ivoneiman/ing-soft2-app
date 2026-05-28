@@ -28,6 +28,9 @@
       <button type="button" :class="{ active: activeTab === PAYMENT_TAB.NOTIFICATIONS }" @click="activeTab = PAYMENT_TAB.NOTIFICATIONS">
         Notificaciones
       </button>
+      <button v-if="canManagePayments" type="button" :class="{ active: activeTab === PAYMENT_TAB.ADMIN }" @click="activeTab = PAYMENT_TAB.ADMIN">
+        Cobros presenciales
+      </button>
     </nav>
 
     <section v-if="activeTab === PAYMENT_TAB.PENDING" class="pending-section">
@@ -80,8 +83,42 @@
                 <dt>Total a pagar</dt>
                 <dd>{{ formatMoney(enrollment.final_amount) }}</dd>
               </div>
+              <div>
+                <dt>Pagado</dt>
+                <dd>{{ formatMoney(enrollment.paid_amount) }}</dd>
+              </div>
+              <div>
+                <dt>Saldo</dt>
+                <dd>{{ formatMoney(enrollment.remaining_amount) }}</dd>
+              </div>
             </dl>
           </section>
+
+          <div class="payment-options">
+            <label>
+              <input v-model="selectedPaymentTypes[enrollment.id]" type="radio" :name="`payment-type-${enrollment.id}`" value="full" />
+              <span>Pagar completo</span>
+            </label>
+            <label v-if="Number(enrollment.paid_amount || 0) === 0">
+              <input v-model="selectedPaymentTypes[enrollment.id]" type="radio" :name="`payment-type-${enrollment.id}`" value="deposit" />
+              <span>Reservar con seña</span>
+            </label>
+          </div>
+
+          <dl v-if="selectedPaymentType(enrollment) === 'deposit'" class="deposit-details">
+            <div>
+              <dt>Seña</dt>
+              <dd>{{ Number(enrollment.deposit_percentage || 0) }}%</dd>
+            </div>
+            <div>
+              <dt>Pagás ahora</dt>
+              <dd>{{ formatMoney(enrollment.deposit_amount) }}</dd>
+            </div>
+            <div>
+              <dt>Saldo restante</dt>
+              <dd>{{ formatMoney((enrollment.total_amount || enrollment.final_amount) - (enrollment.deposit_amount || 0)) }}</dd>
+            </div>
+          </dl>
 
           <button
             class="pay-button"
@@ -121,7 +158,7 @@
             <td>{{ formatMoney(payment.amount) }}</td>
             <td>{{ Number(payment.discount_percentage || 0) }}%</td>
             <td>{{ formatMoney(payment.final_amount) }}</td>
-            <td>{{ paymentStatusLabel(payment.status) }}</td>
+            <td>{{ paymentStatusLabel(payment) }}</td>
           </tr>
         </tbody>
       </table>
@@ -153,7 +190,7 @@
       </table>
     </section>
 
-    <section v-else class="history-section">
+    <section v-else-if="activeTab === PAYMENT_TAB.NOTIFICATIONS" class="history-section">
       <h2>Notificaciones</h2>
 
       <div v-if="isLoadingNotifications" class="empty-state">Cargando notificaciones...</div>
@@ -170,6 +207,65 @@
       </div>
     </section>
 
+    <section v-else class="history-section">
+      <h2>Cobros presenciales</h2>
+
+      <div v-if="isLoadingAdminEnrollments" class="empty-state">Cargando saldos...</div>
+      <div v-else-if="adminEnrollments.length === 0" class="empty-state">No hay saldos pendientes.</div>
+
+      <table v-else class="payments-table">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>Actividad</th>
+            <th>Estado</th>
+            <th>Pagado</th>
+            <th>Saldo</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="enrollment in adminEnrollments" :key="enrollment.id">
+            <td>{{ enrollment.user?.apellido }} {{ enrollment.user?.username }}</td>
+            <td>{{ enrollment.actividad || enrollment.class_name || '-' }}</td>
+            <td><span class="status-pill compact">{{ enrollment.payment_status === 'PARTIALLY_PAID' ? 'Señado' : enrollmentStatusLabel(enrollment.estado) }}</span></td>
+            <td>{{ formatMoney(enrollment.paid_amount) }}</td>
+            <td>{{ formatMoney(enrollment.remaining_amount) }}</td>
+            <td><button type="button" class="table-action" @click="openManualPayment(enrollment)">Registrar pago</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <div v-if="manualPaymentEnrollment" class="modal-backdrop" role="dialog" aria-modal="true">
+      <section class="manual-payment-modal">
+        <h2>Registrar pago presencial</h2>
+        <p>{{ manualPaymentEnrollment.user?.apellido }} {{ manualPaymentEnrollment.user?.username }} · {{ manualPaymentEnrollment.actividad || manualPaymentEnrollment.class_name }}</p>
+        <label>
+          <span>Monto</span>
+          <input v-model="manualPaymentForm.amount" type="number" min="1" step="0.01" />
+        </label>
+        <label>
+          <span>Método</span>
+          <select v-model="manualPaymentForm.payment_method">
+            <option value="cash">Efectivo</option>
+            <option value="transfer">Transferencia</option>
+            <option value="card">Tarjeta</option>
+          </select>
+        </label>
+        <label>
+          <span>Notas</span>
+          <textarea v-model="manualPaymentForm.notes" rows="3" />
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" @click="closeManualPayment">Cancelar</button>
+          <button type="button" :disabled="isRegisteringManualPayment" @click="submitManualPayment">
+            {{ isRegisteringManualPayment ? 'Registrando...' : 'Registrar' }}
+          </button>
+        </div>
+      </section>
+    </div>
+
     <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
   </main>
 </template>
@@ -181,27 +277,45 @@ import { PAYMENT_METHOD, statusLabel } from '../../constants/statuses';
 import { PAYMENT_RETURN_MESSAGES, PAYMENT_RETURN_STATUS, PAYMENT_TAB, PAYMENT_TABS } from '../../constants/payments';
 import {
   createPayment,
+  getAdminPaymentEnrollments,
   getMyCredits,
   getMyNotifications,
   getPaymentHistory,
   getPendingEnrollments,
+  registerManualPayment,
 } from '../../services/api';
 import { formatDateTime, formatMoney } from '../../utils/formatters';
 import { roleHelpers } from '../../utils/roleHelpers';
 
 const route = useRoute();
 const isAdmin = ref(roleHelpers.isAdmin());
-const activeTab = ref(PAYMENT_TABS.includes(route.query.tab) ? route.query.tab : PAYMENT_TAB.PENDING);
+const canManagePayments = ref(roleHelpers.hasAnyRole(['admin', 'employee']));
+function normalizedTab(tab) {
+  if (tab === PAYMENT_TAB.ADMIN && !canManagePayments.value) return PAYMENT_TAB.PENDING;
+  return PAYMENT_TABS.includes(tab) ? tab : PAYMENT_TAB.PENDING;
+}
+
+const activeTab = ref(normalizedTab(route.query.tab));
 const isSubmittingId = ref(null);
 const isLoadingEnrollments = ref(false);
 const isLoadingHistory = ref(false);
 const isLoadingCredits = ref(false);
 const isLoadingNotifications = ref(false);
+const isLoadingAdminEnrollments = ref(false);
+const isRegisteringManualPayment = ref(false);
 const errorMessage = ref('');
 const pendingEnrollments = ref([]);
 const payments = ref([]);
 const credits = ref([]);
 const notifications = ref([]);
+const adminEnrollments = ref([]);
+const selectedPaymentTypes = ref({});
+const manualPaymentEnrollment = ref(null);
+const manualPaymentForm = ref({
+  amount: '',
+  payment_method: PAYMENT_METHOD.CASH,
+  notes: '',
+});
 
 const returnMessage = computed(() => {
   if (PAYMENT_RETURN_MESSAGES[route.query.status]) return PAYMENT_RETURN_MESSAGES[route.query.status];
@@ -217,12 +331,22 @@ function paymentMethodLabel(paymentMethod) {
   return statusLabel('paymentMethod', paymentMethod);
 }
 
-function paymentStatusLabel(status) {
-  return statusLabel('payment', status);
+function paymentStatusLabel(payment) {
+  if (payment?.status === 'approved') {
+    if (payment.payment_type === 'deposit') return 'Señado';
+    if (payment.payment_type === 'balance') return 'Saldo abonado';
+    if (payment.payment_type === 'full') return 'Pagado';
+  }
+  return statusLabel('payment', payment?.status);
 }
 
 function creditStatusLabel(status) {
   return statusLabel('credit', status);
+}
+
+function selectedPaymentType(enrollment) {
+  if (Number(enrollment.paid_amount || 0) > 0) return 'balance';
+  return selectedPaymentTypes.value[enrollment.id] || 'full';
 }
 
 async function loadPendingEnrollments() {
@@ -230,10 +354,28 @@ async function loadPendingEnrollments() {
   try {
     const response = await getPendingEnrollments();
     pendingEnrollments.value = response.data.enrollments || [];
+    for (const enrollment of pendingEnrollments.value) {
+      if (!selectedPaymentTypes.value[enrollment.id]) {
+        selectedPaymentTypes.value[enrollment.id] = 'full';
+      }
+    }
   } catch (err) {
     console.error("Error cargando inscripciones:", err);
   } finally {
     isLoadingEnrollments.value = false;
+  }
+}
+
+async function loadAdminEnrollments() {
+  if (!canManagePayments.value) return;
+  isLoadingAdminEnrollments.value = true;
+  try {
+    const response = await getAdminPaymentEnrollments();
+    adminEnrollments.value = response.data.enrollments || [];
+  } catch (err) {
+    console.error("Error cargando saldos pendientes:", err);
+  } finally {
+    isLoadingAdminEnrollments.value = false;
   }
 }
 
@@ -276,17 +418,62 @@ async function loadNotifications() {
 async function payNow(enrollment) {
   errorMessage.value = '';
   isSubmittingId.value = enrollment.id;
+  const clickStart = performance.now();
   try {
     const response = await createPayment({
       enrollment_id: enrollment.id,
       payment_method: PAYMENT_METHOD.MERCADO_PAGO,
+      payment_type: selectedPaymentType(enrollment),
     });
+    const responseMs = Math.round(performance.now() - clickStart);
+    console.info(
+      '[PAYMENT_TIMING]',
+      `frontend_click_to_response=${responseMs}ms`,
+      `payment_id=${response.data?.payment_id || '-'}`,
+      `preference_id=${response.data?.preference_id || '-'}`
+    );
+    const redirectStart = performance.now();
     window.location.href = response.data.init_point;
+    console.info('[PAYMENT_TIMING]', `frontend_redirect_assignment=${Math.round(performance.now() - redirectStart)}ms`);
   } catch (err) {
+    console.info('[PAYMENT_TIMING]', `frontend_click_to_error=${Math.round(performance.now() - clickStart)}ms`);
     errorMessage.value = err.response?.data?.error || 'Error del servidor de pagos';
     loadPendingEnrollments();
   } finally {
     isSubmittingId.value = null;
+  }
+}
+
+function openManualPayment(enrollment) {
+  manualPaymentEnrollment.value = enrollment;
+  manualPaymentForm.value = {
+    amount: enrollment.remaining_amount || '',
+    payment_method: PAYMENT_METHOD.CASH,
+    notes: '',
+  };
+}
+
+function closeManualPayment() {
+  manualPaymentEnrollment.value = null;
+}
+
+async function submitManualPayment() {
+  if (!manualPaymentEnrollment.value) return;
+  errorMessage.value = '';
+  isRegisteringManualPayment.value = true;
+  try {
+    await registerManualPayment(manualPaymentEnrollment.value.id, {
+      amount: manualPaymentForm.value.amount,
+      payment_method: manualPaymentForm.value.payment_method,
+      payment_type: 'balance',
+      notes: manualPaymentForm.value.notes,
+    });
+    closeManualPayment();
+    await Promise.all([loadAdminEnrollments(), loadPaymentHistory(), loadPendingEnrollments()]);
+  } catch (err) {
+    errorMessage.value = err.response?.data?.error || 'No se pudo registrar el pago presencial';
+  } finally {
+    isRegisteringManualPayment.value = false;
   }
 }
 
@@ -295,12 +482,13 @@ onMounted(() => {
   loadPaymentHistory();
   loadCredits();
   loadNotifications();
+  loadAdminEnrollments();
 });
 
 watch(
   () => route.query.tab,
   (tab) => {
-    activeTab.value = PAYMENT_TABS.includes(tab) ? tab : PAYMENT_TAB.PENDING;
+    activeTab.value = normalizedTab(tab);
   }
 );
 </script>
@@ -435,6 +623,12 @@ watch(
   padding: 0.5rem 0.75rem;
 }
 
+.status-pill.compact {
+  display: inline-block;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.55rem;
+}
+
 .enrollment-details,
 .payment-summary dl {
   display: grid;
@@ -444,7 +638,7 @@ watch(
 }
 
 .payment-summary dl {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-bottom: 0;
 }
 
@@ -474,6 +668,39 @@ dd {
   margin-top: 1rem;
 }
 
+.payment-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.payment-options label {
+  align-items: center;
+  background: #fff9d6;
+  border: 1px solid #e8d36f;
+  border-radius: 8px;
+  color: #572c57;
+  display: inline-flex;
+  font-weight: 700;
+  gap: 0.5rem;
+  padding: 0.7rem 0.85rem;
+}
+
+.deposit-details {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 1rem 0 0;
+}
+
+.deposit-details div {
+  background: #eef8f1;
+  border: 1px solid #b7e2c4;
+  border-radius: 8px;
+  padding: 0.9rem;
+}
+
 .payments-table {
   border-collapse: collapse;
   color: #4a3a4a;
@@ -488,6 +715,71 @@ dd {
 }
 
 .payments-table th {
+  color: #572c57;
+}
+
+.table-action {
+  font-size: 0.85rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.modal-backdrop {
+  align-items: center;
+  background: rgba(20, 10, 20, 0.72);
+  display: flex;
+  inset: 0;
+  justify-content: center;
+  padding: 1rem;
+  position: fixed;
+  z-index: 50;
+}
+
+.manual-payment-modal {
+  background: #fff;
+  border: 2px solid #d0c0d0;
+  border-radius: 8px;
+  color: #4a3a4a;
+  display: grid;
+  gap: 1rem;
+  max-width: 460px;
+  padding: 1.5rem;
+  width: min(100%, 460px);
+}
+
+.manual-payment-modal h2,
+.manual-payment-modal p {
+  margin: 0;
+}
+
+.manual-payment-modal label,
+.manual-payment-modal label span {
+  display: block;
+}
+
+.manual-payment-modal label span {
+  color: #572c57;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.manual-payment-modal input,
+.manual-payment-modal select,
+.manual-payment-modal textarea {
+  border: 1px solid #d0c0d0;
+  border-radius: 8px;
+  font: inherit;
+  padding: 0.7rem;
+  width: 100%;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.secondary-button {
+  background: #f5e6f5;
   color: #572c57;
 }
 
@@ -552,7 +844,8 @@ dd {
   }
 
   .enrollment-details,
-  .payment-summary dl {
+  .payment-summary dl,
+  .deposit-details {
     grid-template-columns: 1fr;
   }
 
