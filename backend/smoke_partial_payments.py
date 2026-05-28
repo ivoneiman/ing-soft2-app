@@ -125,6 +125,27 @@ def main():
         payment_id = create_body["payment_id"]
         deposit_amount = create_body["final_amount"]
 
+        duplicate_create_res = http.post(
+            "/api/payments/create",
+            json={
+                "enrollment_id": enrollment_id,
+                "payment_method": Payment.METHOD_MERCADO_PAGO,
+                "payment_type": PAYMENT_TYPE_DEPOSIT,
+            },
+        )
+        assert_equal("duplicate deposit create status", duplicate_create_res.status_code, 200)
+        duplicate_create_body = duplicate_create_res.get_json()
+        assert_equal("duplicate deposit reuses payment", duplicate_create_body["payment_id"], payment_id)
+        assert_equal("duplicate deposit refreshes preference", duplicate_create_body["preference_id"], "pref-smoke-2")
+
+        with app.app_context():
+            deposit_attempts = Payment.query.filter_by(
+                enrollment_id=enrollment_id,
+                payment_type=PAYMENT_TYPE_DEPOSIT,
+                payment_method=Payment.METHOD_MERCADO_PAGO,
+            ).all()
+            assert_equal("duplicate deposit keeps one logical payment", len(deposit_attempts), 1)
+
         callback_res = http.get(
             f"/api/payments/return/success?external_reference={payment_id}"
             f"&status={MERCADO_PAGO_STATUS_APPROVED}&payment_id=mp-smoke-deposit",
@@ -154,6 +175,11 @@ def main():
         deposit_history = [item for item in history if item["id"] == payment_id][0]
         assert_equal("history deposit type", deposit_history["payment_type"], PAYMENT_TYPE_DEPOSIT)
         assert_close("history deposit amount", deposit_history["final_amount"], deposit_amount)
+        assert_equal(
+            "history has one deposit row",
+            len([item for item in history if item["enrollment_id"] == enrollment_id and item["payment_type"] == PAYMENT_TYPE_DEPOSIT]),
+            1,
+        )
 
         pending_balance_res = http.post(
             "/api/payments/create",

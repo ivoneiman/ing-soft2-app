@@ -255,6 +255,93 @@ def payment_would_overpay(payment):
     return other_paid + float(getattr(payment, "final_amount", 0) or 0) > total_amount + 0.01
 
 
+def reusable_pending_payment(enrollment_id, user_id, payment_method, payment_type):
+    return (
+        Payment.query
+        .filter_by(
+            enrollment_id=enrollment_id,
+            user_id=user_id,
+            payment_method=payment_method,
+            payment_type=payment_type,
+            status=PAYMENT_STATUS_PENDING,
+        )
+        .order_by(Payment.id.desc())
+        .first()
+    )
+
+
+def prepare_payment_for_checkout(
+    payment,
+    product_type,
+    payment_type,
+    payment_method,
+    amount,
+    discount_percentage,
+    final_amount,
+    current_dt=None,
+):
+    payment.product_type = product_type
+    payment.payment_type = payment_type
+    payment.payment_method = payment_method
+    payment.amount = amount
+    payment.discount_percentage = discount_percentage
+    payment.final_amount = final_amount
+    payment.status = PAYMENT_STATUS_PENDING
+    payment.mercado_pago_payment_id = None
+    if current_dt:
+        payment.created_at = current_dt.replace(tzinfo=None) if getattr(current_dt, "tzinfo", None) else current_dt
+    return payment
+
+
+def expire_equivalent_pending_payments(payment):
+    if not payment or not payment.id:
+        return 0
+
+    updated = 0
+    pending_payments = (
+        Payment.query
+        .filter(
+            Payment.id != payment.id,
+            Payment.enrollment_id == payment.enrollment_id,
+            Payment.user_id == payment.user_id,
+            Payment.payment_method == payment.payment_method,
+            Payment.payment_type == payment.payment_type,
+            Payment.status == PAYMENT_STATUS_PENDING,
+        )
+        .all()
+    )
+    for pending_payment in pending_payments:
+        pending_payment.status = PAYMENT_STATUS_EXPIRED
+        updated += 1
+    return updated
+
+
+def visible_payment_history(payments):
+    approved_keys = {
+        (payment.enrollment_id, payment.payment_method, payment.payment_type)
+        for payment in payments
+        if payment.status == PAYMENT_STATUS_APPROVED
+    }
+    latest_pending_by_key = {}
+    for payment in payments:
+        if payment.status != PAYMENT_STATUS_PENDING:
+            continue
+        key = (payment.enrollment_id, payment.payment_method, payment.payment_type)
+        latest_pending_by_key[key] = max(latest_pending_by_key.get(key, 0), payment.id or 0)
+
+    visible = []
+    for payment in payments:
+        key = (payment.enrollment_id, payment.payment_method, payment.payment_type)
+        if payment.status == PAYMENT_STATUS_PENDING and key in approved_keys:
+            continue
+        if payment.status == PAYMENT_STATUS_PENDING and latest_pending_by_key.get(key) != payment.id:
+            continue
+        if payment.status == PAYMENT_STATUS_EXPIRED and (key in approved_keys or key in latest_pending_by_key):
+            continue
+        visible.append(payment)
+    return visible
+
+
 def recompute_enrollment_payment_state(enrollment, current_dt=None):
     if not enrollment:
         return False

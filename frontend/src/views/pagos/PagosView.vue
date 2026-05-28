@@ -158,7 +158,7 @@
             <td>{{ formatMoney(payment.amount) }}</td>
             <td>{{ Number(payment.discount_percentage || 0) }}%</td>
             <td>{{ formatMoney(payment.final_amount) }}</td>
-            <td>{{ paymentStatusLabel(payment.status) }}</td>
+            <td>{{ paymentStatusLabel(payment) }}</td>
           </tr>
         </tbody>
       </table>
@@ -331,8 +331,13 @@ function paymentMethodLabel(paymentMethod) {
   return statusLabel('paymentMethod', paymentMethod);
 }
 
-function paymentStatusLabel(status) {
-  return statusLabel('payment', status);
+function paymentStatusLabel(payment) {
+  if (payment?.status === 'approved') {
+    if (payment.payment_type === 'deposit') return 'Señado';
+    if (payment.payment_type === 'balance') return 'Saldo abonado';
+    if (payment.payment_type === 'full') return 'Pagado';
+  }
+  return statusLabel('payment', payment?.status);
 }
 
 function creditStatusLabel(status) {

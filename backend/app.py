@@ -1485,20 +1485,40 @@ def create_payment():
     timings["log_discount"] = _elapsed_ms(log_discount_start)
 
     create_record_start = time.perf_counter()
-    payment = Payment(
-        user_id=current_user.id,
-        enrollment_id=enrollment.id,
-        product_type=product_type,
-        payment_type=requested_payment_type,
-        payment_method=payment_method,
-        amount=amount,
-        discount_percentage=discount_percentage,
-        final_amount=final_amount,
-        status=Payment.STATUS_PENDING,
+    payment = payment_service.reusable_pending_payment(
+        enrollment.id,
+        current_user.id,
+        payment_method,
+        requested_payment_type,
     )
-    db.session.add(payment)
-    db.session.flush()
-    timings["create_payment_record"] = _elapsed_ms(create_record_start)
+    reused_payment = payment is not None
+    if payment:
+        payment_service.prepare_payment_for_checkout(
+            payment,
+            product_type,
+            requested_payment_type,
+            payment_method,
+            amount,
+            discount_percentage,
+            final_amount,
+            current_datetime,
+        )
+    else:
+        payment = Payment(
+            user_id=current_user.id,
+            enrollment_id=enrollment.id,
+            product_type=product_type,
+            payment_type=requested_payment_type,
+            payment_method=payment_method,
+            amount=amount,
+            discount_percentage=discount_percentage,
+            final_amount=final_amount,
+            status=Payment.STATUS_PENDING,
+        )
+        db.session.add(payment)
+        db.session.flush()
+    payment_service.expire_equivalent_pending_payments(payment)
+    timings["reuse_payment_record" if reused_payment else "create_payment_record"] = _elapsed_ms(create_record_start)
 
     preference_payload_start = time.perf_counter()
     activity_name = class_obj.actividad.name if class_obj.actividad else class_obj.name
@@ -1648,6 +1668,7 @@ def mercado_pago_return(result):
         payment.mercado_pago_payment_id = str(mercado_pago_payment_id)
 
     if payment.status == Payment.STATUS_APPROVED:
+        payment_service.expire_equivalent_pending_payments(payment)
         redirect_status = PAYMENT_RETURN_STATUS_SUCCESS
         message = None
     elif (
@@ -1667,6 +1688,7 @@ def mercado_pago_return(result):
             message = "El pago supera el saldo pendiente"
         else:
             payment.status = Payment.STATUS_APPROVED
+            payment_service.expire_equivalent_pending_payments(payment)
             if payment.enrollment:
                 payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
             redirect_status = PAYMENT_RETURN_STATUS_SUCCESS
@@ -1716,6 +1738,7 @@ def payment_history():
         .order_by(Payment.created_at.desc())
         .all()
     )
+    payments = payment_service.visible_payment_history(payments)
 
     return jsonify({"payments": [payment.to_dict() for payment in payments]}), 200
 
