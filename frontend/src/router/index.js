@@ -160,7 +160,11 @@ router.beforeEach(async (to, from, next) => {
   const requiresClient = to.matched.some(record => record.meta.requiresClient);
 
   if (requiresAuth && !roleHelpers.isAuthenticated()) {
-    return next('/login');
+    await authStore.fetchCurrentUser();
+  }
+
+  if (requiresAuth && !roleHelpers.isAuthenticated()) {
+    return next({ path: '/login', query: { redirect: to.fullPath } });
   }
 
   if (requiresAdminOrEmployee && !roleHelpers.hasAnyRole(['admin', 'employee'])) {
