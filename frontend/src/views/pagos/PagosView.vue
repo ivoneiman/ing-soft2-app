@@ -413,14 +413,25 @@ async function loadNotifications() {
 async function payNow(enrollment) {
   errorMessage.value = '';
   isSubmittingId.value = enrollment.id;
+  const clickStart = performance.now();
   try {
     const response = await createPayment({
       enrollment_id: enrollment.id,
       payment_method: PAYMENT_METHOD.MERCADO_PAGO,
       payment_type: selectedPaymentType(enrollment),
     });
+    const responseMs = Math.round(performance.now() - clickStart);
+    console.info(
+      '[PAYMENT_TIMING]',
+      `frontend_click_to_response=${responseMs}ms`,
+      `payment_id=${response.data?.payment_id || '-'}`,
+      `preference_id=${response.data?.preference_id || '-'}`
+    );
+    const redirectStart = performance.now();
     window.location.href = response.data.init_point;
+    console.info('[PAYMENT_TIMING]', `frontend_redirect_assignment=${Math.round(performance.now() - redirectStart)}ms`);
   } catch (err) {
+    console.info('[PAYMENT_TIMING]', `frontend_click_to_error=${Math.round(performance.now() - clickStart)}ms`);
     errorMessage.value = err.response?.data?.error || 'Error del servidor de pagos';
     loadPendingEnrollments();
   } finally {
