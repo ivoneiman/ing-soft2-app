@@ -440,6 +440,20 @@ def log_mercado_pago_response(preference_result):
 
 def mercado_pago_checkout_url(preference_response):
     checkout_mode = os.getenv("MERCADOPAGO_CHECKOUT_MODE", os.getenv("ENVIRONMENT", "")).lower()
-    if checkout_mode in ["sandbox", "development", "dev"]:
+    access_token = os.getenv("MERCADOPAGO_ACCESS_TOKEN", "")
+    if checkout_mode in ["sandbox", "development", "dev"] and access_token.startswith("TEST-"):
         return preference_response.get("sandbox_init_point") or preference_response.get("init_point")
     return preference_response.get("init_point") or preference_response.get("sandbox_init_point")
+
+
+def mercado_pago_payer_email(default_email):
+    test_payer_email = os.getenv("MERCADOPAGO_TEST_PAYER_EMAIL", "").strip()
+    if test_payer_email:
+        return test_payer_email
+
+    checkout_mode = os.getenv("MERCADOPAGO_CHECKOUT_MODE", os.getenv("ENVIRONMENT", "")).lower()
+    if checkout_mode in ["sandbox", "development", "dev"]:
+        email = (default_email or "").strip()
+        return email if email.endswith("@testuser.com") else None
+
+    return default_email

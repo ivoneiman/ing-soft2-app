@@ -592,6 +592,18 @@ def _log_mercado_pago_response(preference_result):
 def _mercado_pago_checkout_url(preference_response):
     return payment_service.mercado_pago_checkout_url(preference_response)
 
+
+def _mercado_pago_payer_email(default_email):
+    return payment_service.mercado_pago_payer_email(default_email)
+
+
+def _mercado_pago_payer_payload(user):
+    payer = {"name": user.username}
+    payer_email = _mercado_pago_payer_email(user.email)
+    if payer_email:
+        payer["email"] = payer_email
+    return payer
+
 # ─── Rutas API: Autenticación ─────────────────────────────────────────────────
 
 @app.route("/api/register", methods=["POST"])
@@ -1504,10 +1516,7 @@ def create_payment():
                 "currency_id": "ARS",
             }
         ],
-        "payer": {
-            "name": current_user.username,
-            "email": current_user.email,
-        },
+        "payer": _mercado_pago_payer_payload(current_user),
         "external_reference": str(payment.id),
         "back_urls": {
             "success": _configured_url("PAYMENT_SUCCESS_URL", "http://localhost:5000/api/payments/return/success"),
