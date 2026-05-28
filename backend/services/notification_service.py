@@ -1,23 +1,43 @@
 try:
-    from models import Notification, db
+    from models import Notification, db, SystemSetting
 except ModuleNotFoundError:
-    from ..models import Notification, db
+    from ..models import Notification, db, SystemSetting
 
 
-def create_cancellation_notification(enrollment, class_obj, credited):
+def _get_cancellation_notification_text(class_obj, credited):
+    try:
+        setting = SystemSetting.query.filter_by(key="cancellation_notification_message").first()
+        if setting and isinstance(setting.value, str) and setting.value.strip():
+            template = setting.value.strip()
+            class_datetime = (
+                class_obj.fecha_hora.strftime("%d/%m/%Y %H:%M")
+                if class_obj.fecha_hora
+                else "fecha a confirmar"
+            )
+            message = template.replace("{class_name}", class_obj.name or "Clase")
+            message = message.replace("{activity_name}", getattr(class_obj.actividad, "name", class_obj.name or "Actividad"))
+            message = message.replace("{class_datetime}", class_datetime)
+            if credited:
+                message += " Se acreditó un crédito reutilizable en tu cuenta."
+            return message
+    except Exception:
+        pass
+
     class_datetime = (
         class_obj.fecha_hora.strftime("%d/%m/%Y %H:%M")
         if class_obj.fecha_hora
         else "fecha a confirmar"
     )
     if credited:
-        message = (
+        return (
             f"La clase {class_obj.name} del día {class_datetime} fue cancelada. "
             "Se acreditó un crédito reutilizable en tu cuenta."
         )
-    else:
-        message = f"La clase {class_obj.name} del día {class_datetime} fue cancelada."
+    return f"La clase {class_obj.name} del día {class_datetime} fue cancelada."
 
+
+def create_cancellation_notification(enrollment, class_obj, credited):
+    message = _get_cancellation_notification_text(class_obj, credited)
     notification = Notification(
         user_id=enrollment.user_id,
         title="Clase cancelada",

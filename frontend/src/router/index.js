@@ -16,6 +16,7 @@ import LogoutView from "../views/auth/LogoutView.vue";
 const ActividadesView = () => import("../views/actividades/ActividadesView.vue");
 const SobreNosotrosView = () => import("../views/sobre-nosotros/SobreNosotrosView.vue");
 const ConfiguracionView = () => import("../views/configuracion/ConfiguracionView.vue");
+const ConfiguracionNotificacionView = () => import("../views/configuracion/NotificationConfigurationView.vue");
 const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
@@ -54,6 +55,12 @@ const routes = [
         path: "configuracion",
         name: "Configuracion",
         component: ConfiguracionView,
+        meta: { requiresAuth: true, requiresAdmin: true }
+      },
+      {
+        path: "configuracion/notificacion",
+        name: "ConfiguracionNotificacion",
+        component: ConfiguracionNotificacionView,
         meta: { requiresAuth: true, requiresAdmin: true }
       },
       {
@@ -153,7 +160,11 @@ router.beforeEach(async (to, from, next) => {
   const requiresClient = to.matched.some(record => record.meta.requiresClient);
 
   if (requiresAuth && !roleHelpers.isAuthenticated()) {
-    return next('/login');
+    await authStore.fetchCurrentUser();
+  }
+
+  if (requiresAuth && !roleHelpers.isAuthenticated()) {
+    return next({ path: '/login', query: { redirect: to.fullPath } });
   }
 
   if (requiresAdminOrEmployee && !roleHelpers.hasAnyRole(['admin', 'employee'])) {
