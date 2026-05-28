@@ -10,6 +10,8 @@ try:
         CREDIT_STATUS_AVAILABLE,
         CREDIT_STATUS_USED,
         ENROLLMENT_CAPACITY_STATUSES,
+        ENROLLMENT_PAYMENT_STATUS_PENDING,
+        ENROLLMENT_PAYMENT_STATUSES,
         ENROLLMENT_PAYABLE_STATUSES,
         ENROLLMENT_STATUS_CANCELLED,
         ENROLLMENT_STATUS_EXPIRED,
@@ -18,14 +20,18 @@ try:
         ENROLLMENT_STATUSES,
         ENROLLMENT_TYPE_SINGLE,
         PAYMENT_METHOD_CARD,
+        PAYMENT_METHOD_CASH,
         PAYMENT_METHOD_CREDIT,
         PAYMENT_METHOD_MERCADO_PAGO,
+        PAYMENT_METHOD_TRANSFER,
         PAYMENT_METHODS,
+        PAYMENT_PRODUCT_TYPES,
         PAYMENT_STATUS_APPROVED,
         PAYMENT_STATUS_EXPIRED,
         PAYMENT_STATUS_PENDING,
         PAYMENT_STATUS_REJECTED,
         PAYMENT_STATUSES,
+        PAYMENT_TYPE_FULL,
         PAYMENT_TYPES,
     )
 except ModuleNotFoundError:
@@ -36,6 +42,8 @@ except ModuleNotFoundError:
         CREDIT_STATUS_AVAILABLE,
         CREDIT_STATUS_USED,
         ENROLLMENT_CAPACITY_STATUSES,
+        ENROLLMENT_PAYMENT_STATUS_PENDING,
+        ENROLLMENT_PAYMENT_STATUSES,
         ENROLLMENT_PAYABLE_STATUSES,
         ENROLLMENT_STATUS_CANCELLED,
         ENROLLMENT_STATUS_EXPIRED,
@@ -44,14 +52,18 @@ except ModuleNotFoundError:
         ENROLLMENT_STATUSES,
         ENROLLMENT_TYPE_SINGLE,
         PAYMENT_METHOD_CARD,
+        PAYMENT_METHOD_CASH,
         PAYMENT_METHOD_CREDIT,
         PAYMENT_METHOD_MERCADO_PAGO,
+        PAYMENT_METHOD_TRANSFER,
         PAYMENT_METHODS,
+        PAYMENT_PRODUCT_TYPES,
         PAYMENT_STATUS_APPROVED,
         PAYMENT_STATUS_EXPIRED,
         PAYMENT_STATUS_PENDING,
         PAYMENT_STATUS_REJECTED,
         PAYMENT_STATUSES,
+        PAYMENT_TYPE_FULL,
         PAYMENT_TYPES,
     )
 
@@ -70,7 +82,12 @@ class User(UserMixin, db.Model):
     telefono = db.Column(db.String(20), nullable=True) # Teléfono del usuario
     password_hash = db.Column(db.String(256), nullable=False)#columna password_hash que es una cadena de texto de hasta 256 caracteres, no puede ser nula, y se usará para almacenar el hash seguro de la contraseña del usuario en lugar de la contraseña en texto plano
     role = db.Column(db.String(20), default="client") # Rol del usuario: client, employee, admin
-    payments = db.relationship("Payment", back_populates="user", cascade="all, delete-orphan")
+    payments = db.relationship(
+        "Payment",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="Payment.user_id",
+    )
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -152,6 +169,10 @@ class Enrollment(db.Model):
     tipo = db.Column(db.String(20), default=ENROLLMENT_TYPE_SINGLE, nullable=False)  # 'Mensual' o 'Suelta'
     estado = db.Column(db.String(20), default=ENROLLMENT_STATUS_PENDING_PAYMENT, nullable=False)
     requiere_reembolso = db.Column(db.Boolean, default=False, nullable=False)  # Para reservas tipo 'Suelta'
+    total_amount = db.Column(db.Float, nullable=False, default=0)
+    paid_amount = db.Column(db.Float, nullable=False, default=0)
+    remaining_amount = db.Column(db.Float, nullable=False, default=0)
+    payment_status = db.Column(db.String(20), default=ENROLLMENT_PAYMENT_STATUS_PENDING, nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 
     user = db.relationship("User", backref=db.backref("enrollments", cascade="all, delete-orphan"))
@@ -162,6 +183,8 @@ class Enrollment(db.Model):
     STATUS_PAID = ENROLLMENT_STATUS_PAID
     STATUS_EXPIRED = ENROLLMENT_STATUS_EXPIRED
     STATUS_CANCELLED = ENROLLMENT_STATUS_CANCELLED
+    PAYMENT_STATUS_PENDING = ENROLLMENT_PAYMENT_STATUS_PENDING
+    VALID_PAYMENT_STATUSES = ENROLLMENT_PAYMENT_STATUSES
     VALID_STATUSES = ENROLLMENT_STATUSES
     PAYABLE_STATUSES = ENROLLMENT_PAYABLE_STATUSES
     CAPACITY_STATUSES = ENROLLMENT_CAPACITY_STATUSES
@@ -266,25 +289,33 @@ class Payment(db.Model):
     # Campo legacy: se conserva por compatibilidad con SQLite/datos anteriores.
     # Los pagos nuevos se relacionan por enrollment_id.
     class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=True)
-    payment_type = db.Column(db.String(30), nullable=False)
+    product_type = db.Column(db.String(30), nullable=True)
+    payment_type = db.Column(db.String(30), nullable=False, default=PAYMENT_TYPE_FULL)
     payment_method = db.Column(db.String(30), nullable=False)
     amount = db.Column(db.Float, nullable=False)
     discount_percentage = db.Column(db.Integer, nullable=False, default=0)
     final_amount = db.Column(db.Float, nullable=False)
     mercado_pago_preference_id = db.Column(db.String(120), nullable=True)
     mercado_pago_payment_id = db.Column(db.String(120), nullable=True)
+    registered_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
     status = db.Column(db.String(20), nullable=False, default=PAYMENT_STATUS_PENDING)
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
 
-    user = db.relationship("User", back_populates="payments")
+    user = db.relationship("User", back_populates="payments", foreign_keys=[user_id])
+    registered_by = db.relationship("User", foreign_keys=[registered_by_user_id])
     enrollment = db.relationship("Enrollment", back_populates="payments")
     class_ = db.relationship("Class", back_populates="payments")
 
     METHOD_MERCADO_PAGO = PAYMENT_METHOD_MERCADO_PAGO
     METHOD_CARD = PAYMENT_METHOD_CARD
     METHOD_CREDIT = PAYMENT_METHOD_CREDIT
+    METHOD_CASH = PAYMENT_METHOD_CASH
+    METHOD_TRANSFER = PAYMENT_METHOD_TRANSFER
     VALID_PAYMENT_TYPES = PAYMENT_TYPES
+    VALID_PRODUCT_TYPES = PAYMENT_PRODUCT_TYPES
     VALID_PAYMENT_METHODS = PAYMENT_METHODS
+    TYPE_FULL = PAYMENT_TYPE_FULL
     STATUS_PENDING = PAYMENT_STATUS_PENDING
     STATUS_APPROVED = PAYMENT_STATUS_APPROVED
     STATUS_REJECTED = PAYMENT_STATUS_REJECTED
@@ -300,6 +331,7 @@ class Payment(db.Model):
             "class_id": class_obj.id if class_obj else self.class_id,
             "class_name": class_obj.name if class_obj else None,
             "actividad": class_obj.actividad.name if class_obj and class_obj.actividad else None,
+            "product_type": self.product_type,
             "payment_type": self.payment_type,
             "payment_method": self.payment_method,
             "amount": self.amount,
@@ -307,6 +339,24 @@ class Payment(db.Model):
             "final_amount": self.final_amount,
             "mercado_pago_preference_id": self.mercado_pago_preference_id,
             "mercado_pago_payment_id": self.mercado_pago_payment_id,
+            "registered_by_user_id": self.registered_by_user_id,
+            "notes": self.notes,
             "status": self.status,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SystemSetting(db.Model):
+    """Configuraciones globales del sistema."""
+    __tablename__ = "system_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(120), unique=True, nullable=False)
+    value = db.Column(db.Text, nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "key": self.key,
+            "value": self.value,
         }

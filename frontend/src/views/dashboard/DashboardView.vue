@@ -5,7 +5,7 @@
 
     <div class="tarjeta-oscura-tabla">
       <div class="tabla-encabezado">
-        <h2 class="subtitulo-seccion" style="margin: 0; border: none; padding: 0;">Clases Programadas en el Catálogo</h2>
+        <h2 class="subtitulo-seccion" style="margin: 0; border: none; padding: 0;">Buscar Clase a Cancelar</h2>
         <button @click="cargarClases" class="btn-refrescar">Actualizar lista</button>
       </div>
 
@@ -15,11 +15,41 @@
 
       <p v-if="cargando" class="loading-text">Cargando clases desde el servidor...</p>
 
-      <p v-else-if="clases.length === 0" class="empty-state">
+      <p v-else-if="allClasses.length === 0" class="empty-state">
         No hay clases registradas en el catálogo actual.
       </p>
 
-      <div v-else class="tabla-responsiva-contenedor">
+      <div v-else class="filtros-contenedor">
+        <!-- 1. Mes -->
+        <div class="form-group">
+          <label for="mes">1. Seleccionar Mes:</label>
+          <select id="mes" v-model="selectedMonth">
+            <option value="" disabled>-- Seleccione un mes --</option>
+            <option v-for="month in availableMonths" :key="month.value" :value="month.value">{{ month.label }}</option>
+          </select>
+        </div>
+
+        <!-- 2. Día exacto -->
+        <div class="form-group" v-if="selectedMonth">
+          <label for="dia">2. Seleccionar Día:</label>
+          <select id="dia" v-model="selectedDate">
+            <option value="" disabled>-- Seleccione un día --</option>
+            <option v-for="date in availableDates" :key="date.value" :value="date.value">{{ date.label }}</option>
+          </select>
+        </div>
+
+        <!-- 3. Actividad -->
+        <div class="form-group" v-if="selectedDate">
+          <label for="actividad">3. Seleccionar Actividad:</label>
+          <select id="actividad" v-model="selectedActivity">
+            <option value="" disabled>-- Seleccione una actividad --</option>
+            <option v-for="act in availableActivities" :key="act" :value="act">{{ act }}</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Resultado filtrado (Tabla) -->
+      <div v-if="filteredClasses.length > 0" class="tabla-responsiva-contenedor mt-4">
         <table class="tabla-gestion-gym">
           <thead>
             <tr>
@@ -33,11 +63,11 @@
           </thead>
           <tbody>
             <tr 
-              v-for="clase in clases" 
+              v-for="clase in filteredClasses" 
               :key="clase.id" 
               :class="{ 'fila-cancelada': isCancelled(clase) }"
             >
-              <td class="col-actividad">{{ clase.name }}</td>
+              <td class="col-actividad">{{ clase.actividad || clase.name }}</td>
               <td class="texto-celda">{{ formatFecha(clase.fecha_hora) }}</td>
               <td class="col-resaltada texto-celda">{{ clase.time || 'No definido' }} hs</td>
               <td class="texto-celda">{{ clase.enrolled }} / {{ clase.cupoMaximo }}</td>
@@ -127,6 +157,49 @@
 /* 🌟 Botón Actualizar: Sin borde amarillo, ahora relleno con el violeta de la barra (#9f5f91) */
 .btn-refrescar {
   font-size: 14px;
+}
+
+/* Filtros en cascada */
+.filtros-contenedor {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-group label {
+  color: #f6ea98;
+  font-weight: bold;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.form-group select {
+  background-color: rgba(245, 245, 245, 0.1);
+  border: 1px solid #9f5f91;
+  border-radius: 8px;
+  color: #f5f5f5;
+  padding: 12px;
+  font-size: 15px;
+  outline: none;
+}
+
+.form-group select option {
+  background-color: #572c57;
+  color: #f5f5f5;
+}
+
+.form-group select:focus {
+  border-color: #f6ea98;
+}
+
+.mt-4 {
+  margin-top: 24px;
 }
 
 .tabla-responsiva-contenedor {
@@ -278,12 +351,16 @@
 </style>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
 import { CLASS_STATUS, statusLabel } from "../../constants/statuses";
 import { getAllClasses, cancelarClaseCompleta } from "../../services/api";
 import { formatShortDate } from "../../utils/formatters";
 
-const clases = ref([]);
+const allClasses = ref([]);
+const selectedMonth = ref("");
+const selectedDate = ref("");
+const selectedActivity = ref("");
+
 const cargando = ref(false);
 const cancelando = ref(false);
 const claseSeleccionada = ref(null);
@@ -302,12 +379,115 @@ function ordenarClasesPorEstado(todasLasClases) {
   return [...todasLasClases].sort((a, b) => Number(isCancelled(a)) - Number(isCancelled(b)));
 }
 
+function classTimeLabel(value) {
+  if (!value) return '-';
+  return new Intl.DateTimeFormat('es-AR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value));
+}
+
+const availableMonths = computed(() => {
+  const months = new Map();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  allClasses.value.forEach(c => {
+    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return;
+    const d = new Date(c.fecha_hora);
+    
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const yearMonth = `${y}-${m}`;
+
+    if (!months.has(yearMonth)) {
+      const monthName = d.toLocaleString('es-AR', { month: 'long', year: 'numeric' });
+      const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
+      months.set(yearMonth, { value: yearMonth, label });
+    }
+  });
+  return Array.from(months.values()).sort((a, b) => a.value.localeCompare(b.value));
+});
+
+const availableDates = computed(() => {
+  if (!selectedMonth.value) return [];
+  const dates = new Map();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  allClasses.value.forEach(c => {
+    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return;
+    const d = new Date(c.fecha_hora);
+
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const yearMonth = `${y}-${m}`;
+
+    if (yearMonth === selectedMonth.value) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const dateOnly = `${y}-${m}-${day}`;
+
+      if (!dates.has(dateOnly)) {
+        const label = d.toLocaleString('es-AR', { weekday: 'long', day: 'numeric' });
+        const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
+        dates.set(dateOnly, { value: dateOnly, label: capitalizedLabel });
+      }
+    }
+  });
+  return Array.from(dates.values()).sort((a, b) => a.value.localeCompare(b.value));
+});
+
+const availableActivities = computed(() => {
+  if (!selectedDate.value) return [];
+  const acts = new Set();
+
+  allClasses.value.forEach(c => {
+    if (!c.fecha_hora) return;
+    const d = new Date(c.fecha_hora);
+    
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const dateOnly = `${y}-${m}-${day}`;
+
+    if (dateOnly === selectedDate.value) {
+      const actName = c.actividad || c.name;
+      if (actName) acts.add(actName);
+    }
+  });
+  return Array.from(acts).sort();
+});
+
+const filteredClasses = computed(() => {
+  if (!selectedActivity.value) return [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return allClasses.value.filter(c => {
+    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return false;
+    const d = new Date(c.fecha_hora);
+
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    const dateOnly = `${y}-${m}-${day}`;
+
+    if (dateOnly !== selectedDate.value) return false;
+    
+    const actName = c.actividad || c.name;
+    return actName === selectedActivity.value;
+  }).sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora)); // Las ordena de la más cercana a la más lejana
+});
+
+watch(selectedMonth, () => { selectedDate.value = ''; selectedActivity.value = ''; });
+watch(selectedDate, () => { selectedActivity.value = ''; });
+
 async function cargarClases() {
   cargando.value = true;
   feedbackMessage.value = "";
   try {
     const response = await getAllClasses();
-    clases.value = ordenarClasesPorEstado(response.data.classes || []);
+    allClasses.value = ordenarClasesPorEstado(response.data.classes || []);
   } catch (error) {
     feedbackType.value = "error";
     feedbackMessage.value = error.response?.data?.error || "No se pudieron cargar las clases.";
@@ -331,11 +511,11 @@ async function ejecutarCancelacion() {
   cancelando.value = true;
   try {
     const response = await cancelarClaseCompleta(claseSeleccionada.value.id);
-    const claseAfectada = clases.value.find(c => c.id === claseSeleccionada.value.id);
+    const claseAfectada = allClasses.value.find(c => c.id === claseSeleccionada.value.id);
     if (claseAfectada) {
       claseAfectada.estado = CLASS_STATUS.CANCELLED;
     }
-    clases.value = ordenarClasesPorEstado(clases.value);
+    allClasses.value = ordenarClasesPorEstado(allClasses.value);
     feedbackType.value = "success";
     feedbackMessage.value = response.data.message;
     cerrarConfirmacionCancelacion();

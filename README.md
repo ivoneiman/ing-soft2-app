@@ -1,376 +1,363 @@
-# INGE2-APP — Flask + Vue.js + SQLite (QR Attendance System)
+# SiempreGym
 
-Sistema de gestión de asistencia mediante códigos QR con autenticación de usuarios.
+Trabajo integrador realizado para la materia **Ingeniería de Software 2**.
 
-## Stack
-- **Backend:** Python + Flask + SQLAlchemy (SQLite)
-- **Frontend:** Vue 3 + Vue Router + Axios
-- **QR:** qrcode.vue + html5-qrcode
-- **Autenticación:** Flask-Login + SessionHTTP
+**Grupo 9**
 
----
+## Integrantes
 
-## Setup Rápido
+- Ivo Joaquín Neiman
+- Facundo Casco
+- Carlos Cristian Berruti
+- Tobías Gonzales
+- Franco Martín
 
-### Opción 1: Script Automático (Recomendado para Windows)
+## Descripción general
+
+SiempreGym es un sistema web pensado para administrar el funcionamiento básico de un gimnasio. El proyecto permite organizar actividades, crear clases, gestionar usuarios con distintos roles, registrar inscripciones, controlar pagos y marcar asistencia mediante códigos QR.
+
+La aplicación también incluye funcionalidades administrativas como cancelación de clases, generación de créditos reutilizables, historial de pagos, notificaciones internas, envío de emails y pagos online mediante Mercado Pago Checkout Pro.
+
+El objetivo del sistema es centralizar tareas que normalmente se hacen de forma manual: anotar alumnos, revisar cupos, controlar pagos pendientes, confirmar asistencias y avisar cambios importantes a los usuarios.
+
+## Tecnologías utilizadas
+
+### Backend
+
+- **Python 3**: lenguaje principal utilizado para desarrollar la API del sistema.
+- **Flask**: framework web usado para definir rutas, recibir requests y responder al frontend.
+- **Flask-SQLAlchemy**: librería que permite trabajar con la base de datos usando modelos de Python.
+- **SQLite**: base de datos local utilizada para desarrollo y pruebas.
+- **Flask-Login**: dependencia utilizada como apoyo para el modelo de usuario y manejo de autenticación.
+- **Flask-CORS**: permite que el frontend Vue pueda comunicarse con el backend Flask durante el desarrollo local.
+- **Werkzeug**: se utiliza para generar y verificar hashes de contraseñas.
+- **python-dotenv**: carga variables de entorno desde archivos `.env`.
+- **Mercado Pago SDK**: integración con Mercado Pago Checkout Pro para crear preferencias de pago.
+- **Resend**: servicio usado para enviar emails transaccionales, por ejemplo códigos de login admin o avisos de clases canceladas.
+- **tzdata**: soporte de zonas horarias para cálculos relacionados con fechas, descuentos y vencimientos.
+
+### Frontend
+
+- **Vue 3**: framework utilizado para construir la interfaz de usuario como una SPA.
+- **Vue Router**: manejo de rutas y navegación dentro del frontend.
+- **Vite**: herramienta de desarrollo y build del frontend.
+- **Axios**: cliente HTTP utilizado para consumir la API del backend.
+- **qrcode.vue**: componente usado para generar códigos QR desde Vue.
+- **html5-qrcode**: librería utilizada para escanear códigos QR desde la cámara.
+- **JavaScript, HTML y CSS**: base del desarrollo del frontend.
+
+### Herramientas
+
+- **Git y GitHub**: control de versiones y colaboración del grupo.
+- **npm**: instalación y ejecución de dependencias del frontend.
+- **pip**: instalación de dependencias del backend.
+
+## Arquitectura general
+
+El proyecto está separado en dos partes principales:
+
+- `backend/`: API desarrollada con Flask. Contiene rutas, modelos, configuración de base de datos, integración con Mercado Pago, envío de emails y servicios de dominio.
+- `frontend/`: aplicación SPA desarrollada con Vue. Contiene vistas, layouts, componentes, router y servicios para consumir la API.
+
+La comunicación entre ambas partes se realiza mediante una **REST API**. El frontend envía requests HTTP al backend usando Axios, y el backend responde con datos en formato JSON.
+
+Dentro del backend se incorporó una separación por servicios en `backend/services/`. Estos archivos agrupan lógica relacionada con clases, inscripciones, pagos, créditos, cancelaciones, notificaciones y fechas. Esta organización ayuda a que `app.py` no concentre toda la lógica del sistema y permite que algunas reglas importantes queden mejor separadas.
+
+## Seguridad y validaciones
+
+El sistema incluye varias medidas básicas de seguridad acordes al alcance del proyecto:
+
+- Autenticación de usuarios mediante login y sesiones.
+- Hash de contraseñas con Werkzeug, evitando guardar contraseñas en texto plano.
+- Roles de usuario: `client`, `employee` y `admin`.
+- Restricciones de acceso en endpoints administrativos.
+- Validaciones de datos desde el backend antes de crear usuarios, clases, inscripciones o pagos.
+- Uso de SQLAlchemy para evitar construir consultas SQL manuales en las operaciones principales.
+- Configuración CORS para permitir la comunicación con el frontend local.
+- Escape de contenido dinámico en emails generados desde el backend.
+- Variables sensibles fuera del código fuente mediante archivos `.env`.
+
+Como mejora futura, se podría reforzar la protección CSRF para endpoints que usan cookies de sesión, especialmente si el sistema se despliega fuera de un entorno académico o de pruebas.
+
+## Funcionalidades principales
+
+### Usuarios y roles
+
+- Registro e inicio de sesión.
+- Cierre de sesión.
+- Consulta del usuario actual.
+- Creación de usuarios desde perfiles administrativos.
+- Login especial para administradores con código enviado por email.
+- Roles diferenciados para clientes, empleados y administradores.
+
+### Actividades y clases
+
+- Listado de actividades disponibles.
+- Consulta de clases por actividad.
+- Catálogo de clases.
+- Disponibilidad por día y actividad.
+- Creación de clases.
+- Control de cupos.
+- Aplicación de descuentos sobre clases.
+- Cancelación de clases por parte de staff.
+
+### Inscripciones
+
+- Inscripción de usuarios a clases.
+- Estados de inscripción según pago y vencimiento.
+- Inscripciones sueltas o mensuales.
+- Consulta de inscripciones pendientes.
+- Reapertura o control de inscripciones vencidas/canceladas según reglas del sistema.
+
+### Pagos
+
+- Creación de pagos con Mercado Pago Checkout Pro.
+- Registro de pagos manuales por parte de administración.
+- Pago completo.
+- Pago con seña y saldo restante.
+- Historial de pagos.
+- Estados de pago: pendiente, aprobado, rechazado y vencido.
+- Validaciones para evitar sobrepagos.
+- Redirección de retorno desde Mercado Pago.
+
+### Asistencia por QR
+
+- Generación de QR para asistencia.
+- Escaneo de QR desde el frontend.
+- Registro de asistencia.
+- Consulta de asistencia por clase.
+- Validación de inscripción y estado de pago antes de permitir asistencia.
+
+### Cancelaciones, créditos y notificaciones
+
+- Cancelación de clases.
+- Generación de créditos reutilizables cuando corresponde.
+- Consulta de créditos disponibles del usuario.
+- Notificaciones internas para usuarios.
+- Configuración del mensaje de notificación.
+- Emails por cancelación de clase y generación de crédito.
+
+## Instalación y ejecución
+
+### Requisitos previos
+
+- Python 3 instalado.
+- Node.js y npm instalados.
+- Git instalado.
+
+### Backend
+
+Desde la raíz del proyecto:
 
 ```bash
-# En la raíz del proyecto
-git clone <repo-url>
-cd ing-soft2-app
-python backend/seed.py
-cd frontend && npm install
-npm run dev
+cd backend
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+python seed.py
+python app.py
 ```
+
+En Linux/Mac, la activación del entorno virtual es:
+
+```bash
+source venv/bin/activate
+```
+
+El backend queda disponible en:
+
+```text
+http://localhost:5000
+```
+
+### Frontend
 
 En otra terminal:
-```bash
-cd backend
-pip install -r requirements.txt
-python app.py
-```
-
-### Opción 2: Paso a Paso
-
-#### Backend
 
 ```bash
-# 1. Ir al directorio del backend
-cd backend
-
-# 2. Crear entorno virtual (solo la primera vez)
-python -m venv venv
-
-# 3. Activar entorno virtual
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# 4. Instalar dependencias
-pip install -r requirements.txt
-
-# 5. Crear base de datos y datos de prueba
-python seed.py
-
-# 6. Levantar servidor (debería mostrar "Running on http://localhost:5000")
-python app.py
-```
-
-#### Frontend (en otra terminal)
-
-```bash
-# 1. Ir al directorio del frontend
 cd frontend
-
-# 2. Instalar dependencias
 npm install
-
-# 3. Levantar servidor (debería abrir en http://localhost:5173)
 npm run dev
 ```
 
----
+El frontend queda disponible en:
 
-## Validar Setup
-
-Si todo funciona correctamente deberías ver:
-
-✅ **Backend**: "Running on http://localhost:5000"
-✅ **Frontend**: "Local: http://localhost:5173"
-✅ **Base de datos**: archivo `backend/app.db` creado
-✅ **Seed**: mensaje "✅ SEED COMPLETADO EXITOSAMENTE"
-
----
-
-## Credenciales de Prueba (después de ejecutar `seed.py`)
-
-Usa cualquiera de estas cuentas para testear:
-
-| Email | Contraseña | Rol |
-|-------|-----------|-----|
-| admin@test.com | admin123 | admin |
-| employee@test.com | employee123 | employee |
-| client@test.com | client123 | client |
-
----
-
-## Datos de Prueba Incluidos
-
-Al ejecutar `seed.py` se crean automáticamente:
-
-- ✓ **3 usuarios** con diferentes roles (admin, employee, client)
-- ✓ **3 clases** de ejemplo (Ingeniería de Software 2, Programación Avanzada, Bases de Datos)
-- ✓ **Enrollments** (inscripciones de usuarios a clases)
-- ✓ Sistema de **asistencia mediante QR** listo para usar
-
----
-
-## Flujo de Funcionalidades
-
-### 1. Autenticación
-- Login/Logout
-- Registro de nuevos usuarios
-- Roles basados en acceso
-
-### 2. Clases
-- Ver clases disponibles
-- Inscribirse a clases
-- Ver mis inscripciones
-
-### 3. Asistencia por QR
-- Generar código QR para clase
-- Escanear código QR para marcar asistencia
-- Ver historial de asistencias
-
-### 4. Dashboard
-- Panel personalizado por rol
-- Estadísticas de asistencia
-- Información del usuario
-
----
-
-## Estructura del Proyecto
-
+```text
+http://localhost:5173
 ```
+
+### Setup automático
+
+El repositorio también incluye scripts de ayuda:
+
+```bash
+setup.bat
+```
+
+o en Linux/Mac:
+
+```bash
+./setup.sh
+```
+
+Estos scripts preparan el entorno del backend e inicializan datos de prueba. Luego se puede levantar frontend y backend manualmente. En Windows, también se puede usar desde `frontend/`:
+
+```bash
+npm run dev:all
+```
+
+## Variables de entorno
+
+El backend utiliza un archivo `.env` dentro de `backend/`. Se puede tomar como base `backend/.env.example`.
+
+Variables principales:
+
+- `SECRET_KEY`: clave utilizada por Flask para sesiones.
+- `SQLALCHEMY_DATABASE_URI`: URL de conexión a la base de datos. Por defecto se usa SQLite.
+- `CORS_ORIGINS`: origen permitido para el frontend local.
+- `ENVIRONMENT`: entorno de ejecución, por ejemplo `development`.
+- `FLASK_DEBUG`: activa o desactiva el modo debug en desarrollo.
+- `MERCADOPAGO_PUBLIC_KEY`: clave pública de Mercado Pago.
+- `MERCADOPAGO_ACCESS_TOKEN`: token usado por el SDK de Mercado Pago.
+- `MERCADOPAGO_CHECKOUT_MODE`: modo de checkout, por ejemplo `sandbox`.
+- `MERCADOPAGO_TEST_PAYER_EMAIL`: email opcional para pruebas sandbox.
+- `PAYMENT_SUCCESS_URL`: URL de retorno para pagos aprobados.
+- `PAYMENT_FAILURE_URL`: URL de retorno para pagos fallidos.
+- `PAYMENT_PENDING_URL`: URL de retorno para pagos pendientes.
+- `FRONTEND_PAYMENTS_URL`: URL del frontend donde se muestra el resultado del pago.
+- `RESEND_API_KEY`: API key de Resend para envío de emails.
+- `EMAIL_FROM`: remitente utilizado en emails transaccionales.
+- `APP_TIMEZONE`: zona horaria usada para fechas y reglas de descuento.
+- `LOG_LEVEL`: nivel de logs del backend.
+
+El frontend puede usar:
+
+- `VITE_API_URL`: URL base de la API. Si no se define, usa `http://localhost:5000/api`.
+
+No se deben commitear credenciales reales en el repositorio.
+
+## Usuarios de prueba
+
+Al ejecutar:
+
+```bash
+python backend/seed.py
+```
+
+se crean usuarios demo para probar el sistema:
+
+| Rol | Email | Contraseña |
+| --- | --- | --- |
+| Administrador | `admin@test.com` | `admin123` |
+| Empleado | `employee@test.com` | `employee123` |
+| Cliente | `client@test.com` | `client123` |
+
+El seed también carga actividades, clases, inscripciones y ejemplos de pagos/créditos para facilitar las pruebas iniciales.
+
+## Testing y validaciones
+
+El proyecto incluye scripts y pruebas de validación para revisar que el entorno y algunos flujos importantes funcionen correctamente.
+
+### Validación de setup
+
+Desde la raíz:
+
+```bash
+python validate_setup.py
+```
+
+Este script revisa estructura del proyecto, dependencias, base de datos y puertos principales.
+
+### Smoke test de pagos parciales
+
+Desde `backend/`:
+
+```bash
+python smoke_partial_payments.py
+```
+
+Este smoke test valida un flujo importante del sistema:
+
+- creación de una inscripción;
+- pago de seña;
+- bloqueo de asistencia QR mientras el pago está incompleto;
+- registro del saldo restante;
+- rechazo de sobrepagos;
+- aprobación final de la inscripción;
+- asistencia permitida una vez completado el pago;
+- consistencia del historial de pagos.
+
+### Pruebas E2E y sandbox
+
+Durante el desarrollo se realizaron validaciones de punta a punta sobre el flujo de pagos, usando el entorno sandbox de Mercado Pago. Estas pruebas ayudaron a revisar:
+
+- creación de preferencias de pago;
+- retornos desde Mercado Pago;
+- lifecycle de pagos pendientes, aprobados, rechazados y vencidos;
+- pagos completos, señas y saldos;
+- integración entre pagos, inscripciones y asistencia QR;
+- comportamiento de partial payments;
+- validaciones para evitar estados inconsistentes.
+
+## Estructura del proyecto
+
+```text
 ing-soft2-app/
 ├── backend/
-│   ├── app.py                  ← Servidor Flask + rutas API
-│   ├── email_service.py        ← Envío de emails transaccionales con Resend
-│   ├── models.py               ← Modelos SQLAlchemy (User, Class, Enrollment, Attendance)
-│   ├── seed.py                 ← Datos de prueba (IMPORTANTE)
-│   ├── requirements.txt         ← Dependencias Python
-│   ├── .env.example            ← Variables de entorno de ejemplo
-│   ├── app.db                  ← Base de datos SQLite (generada al ejecutar seed.py)
-│   └── instance/
+│   ├── app.py
+│   ├── models.py
+│   ├── constants.py
+│   ├── seed.py
+│   ├── requirements.txt
+│   ├── smoke_partial_payments.py
+│   ├── mercadopago_config.py
+│   ├── email_service.py
+│   └── services/
+│       ├── cancellation_service.py
+│       ├── class_service.py
+│       ├── credit_service.py
+│       ├── datetime_service.py
+│       ├── enrollment_service.py
+│       ├── notification_service.py
+│       └── payment_service.py
 │
 ├── frontend/
-│   ├── package.json            ← Dependencias Node.js
-│   ├── vite.config.js          ← Configuración Vite
-│   ├── index.html              ← Entry point HTML
-│   ├── src/
-│   │   ├── App.vue             ← Componente raíz
-│   │   ├── main.js             ← Entry point
-│   │   ├── router/
-│   │   │   └── index.js        ← Rutas (login, dashboard, etc)
-│   │   ├── views/
-│   │   │   ├── auth/           ← LoginView, RegisterView
-│   │   │   ├── dashboard/      ← DashboardView
-│   │   │   ├── actividades/    ← QR scanner y generador
-│   │   │   └── ...
-│   │   ├── components/         ← Componentes reutilizables
-│   │   ├── services/
-│   │   │   ├── api.js          ← Cliente HTTP (axios)
-│   │   │   └── authStore.js    ← Autenticación
-│   │   └── utils/
-│   │       └── roleHelpers.js  ← Utilidades de roles
-│   │
-│   └── public/
-│       └── robots.txt
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── index.html
+│   └── src/
+│       ├── main.js
+│       ├── App.vue
+│       ├── router/
+│       ├── services/
+│       ├── views/
+│       ├── layouts/
+│       ├── components/
+│       ├── constants/
+│       └── utils/
 │
-├── docs/                        ← Documentación del proyecto
-│   ├── epicas-historias-usuario/
-│   ├── flujo-trabajo/
-│   └── uml/
-│
-└── README.md                    ← Este archivo
+├── docs/
+├── setup.bat
+├── setup.sh
+├── validate_setup.py
+└── README.md
 ```
 
----
+## Documentación complementaria
 
-## Troubleshooting (problemas)
+La carpeta `docs/` contiene material adicional del proyecto, como guías de setup, checklist, documentación de usuarios, flujo de trabajo, validaciones y diagramas UML.
 
-### Backend no levanta
+Algunos archivos útiles:
 
-**Error: "ModuleNotFoundError: No module named 'flask'"**
-```bash
-# Solución: Asegurar que el venv está activado
-venv\Scripts\activate  # Windows
-source venv/bin/activate  # Linux/Mac
+- `docs/QUICK_START.md`
+- `docs/SETUP_STEP_BY_STEP.md`
+- `docs/CHECKLIST.md`
+- `docs/POLITICA_SETUP_BD.md`
+- `docs/VALIDACION_FINAL.md`
+- `docs/uml/`
 
-# Reinstalar dependencias
-pip install -r requirements.txt
-```
+## Notas finales
 
-**Error: "Address already in use :5000"**
-```bash
-# Puerto ya está en uso. Matar el proceso o usar otro puerto:
-python app.py --port 5001
-```
+SiempreGym fue desarrollado como proyecto académico para aplicar contenidos de Ingeniería de Software 2 en un sistema concreto. La aplicación busca mostrar un flujo completo de administración de gimnasio, integrando frontend, backend, base de datos, pagos, roles, asistencia y notificaciones.
 
-### Frontend no levanta
-
-**Error: "npm: command not found"**
-```bash
-# Solución: Instalar Node.js desde https://nodejs.org/
-# Luego en terminal nueva:
-npm install
-npm run dev
-```
-
-**Error: "Cannot GET /api/..."**
-```bash
-# Solución: Verificar que backend está corriendo en http://localhost:5000
-# El frontend redirige /api a http://localhost:5000/api automáticamente
-```
-
-### Base de datos no se crea
-
-**Error: "No module named 'app'"**
-```bash
-# Solución: Asegurar estar en directorio backend/
-cd backend
-python seed.py
-```
-
-**Error: "UNIQUE constraint failed"**
-```bash
-# Solución: Base de datos existe con datos previos
-# Opción 1: Borrar app.db y ejecutar seed.py nuevamente
-# Opción 2: Ejecutar seed.py nuevamente (es idempotente, no duplica datos)
-```
-
----
-
-## Variables de Entorno
-
-Crear archivo `.env` en `backend/` basado en `.env.example`:
-
-```bash
-# backend/.env
-SECRET_KEY=dev-secret-key
-CORS_ORIGINS=http://localhost:5173
-ENVIRONMENT=development
-
-# Mercado Pago
-MERCADOPAGO_PUBLIC_KEY=
-MERCADOPAGO_ACCESS_TOKEN=
-MERCADOPAGO_CHECKOUT_MODE=sandbox
-
-# Emails transaccionales con Resend
-RESEND_API_KEY=
-EMAIL_FROM=onboarding@resend.dev
-```
-
-### Emails con Resend
-
-El sistema usa Resend para enviar emails cuando una clase se cancela. Además de crear las notificaciones internas y los créditos reutilizables, el backend intenta enviar emails al usuario afectado.
-
-Para probar emails en desarrollo:
-
-1. Crear una cuenta gratuita en [Resend](https://resend.com/).
-2. Crear una API key.
-3. Copiar `backend/.env.example` a `backend/.env`.
-4. Completar:
-
-```env
-RESEND_API_KEY=tu_api_key_de_resend
-EMAIL_FROM=onboarding@resend.dev
-```
-
-Cada integrante del equipo debe usar su propia API key en su `.env` local. No commitear claves reales.
-
-Nota: `onboarding@resend.dev` sirve para pruebas. Para enviar desde un remitente propio en producción hace falta verificar un dominio en Resend.
-
----
-
-## APIs Backend Principales
-
-### Autenticación
-- `POST /api/login` - Login de usuario
-- `POST /api/logout` - Logout
-- `POST /api/register` - Registro de usuario
-- `GET /api/me` - Obtener usuario actual
-
-### Clases y Asistencia
-- `POST /api/attendance/register` - Registrar asistencia (QR)
-- `GET /api/classes` - Listar clases (a implementar)
-- `GET /api/enrollments` - Listar inscripciones (a implementar)
-
-Ver `backend/app.py` para documentación completa de endpoints.
-
----
-
-## 📝 Comandos Útiles
-
-```bash
-# Limpiar base de datos (ejecutar seed.py nuevamente)
-rm backend/app.db
-python backend/seed.py
-
-# Ver logs del backend en tiempo real
-python backend/app.py  # Ya está en modo debug
-
-# Actualizar dependencias
-pip install -r requirements.txt --upgrade
-npm update
-
-# Verificar versiones instaladas
-python --version
-node --version
-npm --version
-```
-
----
-
-## Contribuir
-
-Antes de commitear cambios:
-
-1. ✅ Verificar que `seed.py` funciona correctamente
-2. ✅ Verificar que backend y frontend levantan sin errores
-3. ✅ Tester con datos de prueba incluidos
-4. ✅ Actualizar `.env.example` si agregas nuevas variables
-
----
-
-## 📄 Licencia
-
-Proyecto educativo - INGE2 (Ingeniería de Software 2)
-
----
-
-## Ayuda
-
-Si encontras problemas:
-
-1. **Revisar este README** - Probablemente la solución está en "Troubleshooting"
-2. **Revisar logs de error** - Terminal muestra información del error
-3. **Ejecutar seed.py nuevamente** - Crea datos faltantes automáticamente
-4. **Borrar app.db y comenzar de nuevo** - Último recurso para limpiar estado
-
----
-
-**Última actualización:** Mayo 2024
-
-    │   └── views/
-    │       ├── LoginView.vue
-    │       └── RegisterView.vue
-    ├── index.html
-    └── vite.config.js
-```
-
----
-
-## 🔌 API Endpoints
-
-| Método | Ruta             | Auth | Descripción              |
-|--------|------------------|------|--------------------------|
-| POST   | /api/register    | ❌   | Crear cuenta             |
-| POST   | /api/login       | ❌   | Iniciar sesión           |
-| POST   | /api/logout      | ✅   | Cerrar sesión            |
-| GET    | /api/me          | ✅   | Usuario actual           |
-
----
-
-## 🧪 Probar la API con curl
-```bash
-# Registrar usuario
-curl -X POST http://localhost:5000/api/register \
-  -H "Content-Type: application/json" \
-  -d '{"username":"juan","email":"juan@test.com","password":"1234"}' \
-  -c cookies.txt
-
-# Ver usuario actual (usa la cookie de sesión)
-curl http://localhost:5000/api/me -b cookies.txt
-```
+Para continuar el desarrollo, se recomienda revisar el README, levantar el entorno local, ejecutar el seed y probar los usuarios demo antes de modificar funcionalidades existentes.

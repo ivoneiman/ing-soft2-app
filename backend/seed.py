@@ -26,6 +26,11 @@ def find_class_by_name_and_activity(name, actividad_id):
     return Class.query.filter_by(name=name, id_actividad=actividad_id).first()
 
 
+def find_class_by_datetime_and_activity(fecha_hora, actividad_id):
+    """Busca una clase por horario y actividad."""
+    return Class.query.filter_by(fecha_hora=fecha_hora, id_actividad=actividad_id).first()
+
+
 def actividad_exists(name):
     """Verifica si una actividad ya existe por nombre."""
     return Actividades.query.filter_by(name=name).first() is not None
@@ -114,7 +119,7 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
     """Crea o actualiza una clase semilla sin duplicarla."""
     fecha_hora = as_naive_datetime(fecha_hora)
     find_available_datetime = previous_available_datetime if search_direction == "backward" else next_available_datetime
-    existing_by_name = find_class_by_name_and_activity(name, actividad.id)
+    existing_by_name = find_class_by_datetime_and_activity(fecha_hora, actividad.id)
     found_legacy_name = False
     if not existing_by_name:
         for legacy_name in legacy_names or []:
@@ -219,7 +224,8 @@ def ensure_payment(enrollment, status, created_at=None):
     if payment:
         payment.user_id = enrollment.user_id
         payment.class_id = enrollment.class_id
-        payment.payment_type = _payment_type_for_enrollment(enrollment)
+        payment.product_type = _payment_type_for_enrollment(enrollment)
+        payment.payment_type = Payment.TYPE_FULL
         payment.payment_method = Payment.METHOD_MERCADO_PAGO
         payment.amount = quote["amount"]
         payment.discount_percentage = quote["discount_percentage"]
@@ -236,7 +242,8 @@ def ensure_payment(enrollment, status, created_at=None):
         user_id=enrollment.user_id,
         enrollment_id=enrollment.id,
         class_id=enrollment.class_id,
-        payment_type=_payment_type_for_enrollment(enrollment),
+        product_type=_payment_type_for_enrollment(enrollment),
+        payment_type=Payment.TYPE_FULL,
         payment_method=Payment.METHOD_MERCADO_PAGO,
         amount=quote["amount"],
         discount_percentage=quote["discount_percentage"],
@@ -261,10 +268,10 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
     print("Creando casos de pagos para client@test.com...")
 
     expired_class = create_test_class(
-        "Yoga Mediodia",
-        today - timedelta(days=1),
+        "Yoga",
+        at_app_time(today - timedelta(days=1), 12),
         actividad_yoga,
-        legacy_names=["Seed Pago Vencido - Yoga"],
+        legacy_names=["Yoga Mediodia", "Seed Pago Vencido - Yoga"],
         search_direction="backward",
     )
     expired_enrollment = ensure_enrollment(
@@ -279,10 +286,10 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
     )
 
     pending_class = create_test_class(
-        "Funcional Intensivo",
+        "Funcional",
         at_app_time(today + timedelta(days=1), 18),
         actividad_funcional,
-        legacy_names=["Seed Pago Pendiente - Funcional"],
+        legacy_names=["Funcional Intensivo", "Seed Pago Pendiente - Funcional"],
     )
     pending_enrollment = ensure_enrollment(
         client,
@@ -296,10 +303,10 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
     )
 
     paid_class = create_test_class(
-        "Pilates Suave",
+        "Pilates",
         at_app_time(today + timedelta(days=2), 16),
         actividad_pilates,
-        legacy_names=["Seed Pago Aprobado - Pilates"],
+        legacy_names=["Pilates Suave", "Seed Pago Aprobado - Pilates"],
     )
     paid_enrollment = ensure_enrollment(
         client,
@@ -313,10 +320,10 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
     )
 
     rejected_class = create_test_class(
-        "Yoga Restaurativo",
+        "Yoga",
         at_app_time(today + timedelta(days=3), 11),
         actividad_yoga,
-        legacy_names=["Seed Pago Rechazado - Yoga"],
+        legacy_names=["Yoga Restaurativo", "Seed Pago Rechazado - Yoga"],
     )
     rejected_enrollment = ensure_enrollment(
         client,
@@ -335,9 +342,10 @@ def create_client_credit_examples(client, actividad_pilates, today):
     print("Creando casos de créditos para client@test.com...")
 
     cancellable_class = create_test_class(
-        "Credito Test - Pilates Cancelable",
+        "Pilates",
         at_app_time(today + timedelta(days=7), 15),
         actividad_pilates,
+        legacy_names=["Credito Test - Pilates Cancelable"],
     )
     ensure_class_active(cancellable_class)
     paid_enrollment = ensure_enrollment(
@@ -352,14 +360,15 @@ def create_client_credit_examples(client, actividad_pilates, today):
     )
 
     target_class = create_test_class(
-        "Credito Test - Pilates Destino",
+        "Pilates",
         at_app_time(today + timedelta(days=8), 15),
         actividad_pilates,
+        legacy_names=["Credito Test - Pilates Destino"],
     )
     ensure_class_active(target_class)
     print(
-        "   [INFO] Para probar: cancelar 'Credito Test - Pilates Cancelable' "
-        "y luego inscribir client@test.com en 'Credito Test - Pilates Destino'."
+        "   [INFO] Para probar creditos: cancelar la clase de Pilates "
+        "cancelable y luego inscribir client@test.com en la clase de Pilates destino."
     )
 
 
@@ -404,7 +413,7 @@ def main():
         print()
 
         # ─── Crear clases de prueba ───────────────────────────────────────
-
+        
         print("Creando clases de prueba dinamicas...")
         today = app_now()
         print(
@@ -416,47 +425,51 @@ def main():
         )
 
         class1 = create_test_class(
-            "Yoga Mañana",
+            "Yoga",
             at_app_time(today + timedelta(days=1), 9),
             actividad1,
+            legacy_names=["Yoga Mañana"],
         )
         class2 = create_test_class(
-            "Funcional Tarde",
+            "Funcional",
             at_app_time(today + timedelta(days=2), 14),
             actividad2,
+            legacy_names=["Funcional Tarde"],
         )
         class3 = create_test_class(
-            "Pilates Noche",
+            "Pilates",
             at_app_time(today + timedelta(days=3), 20),
             actividad3,
+            legacy_names=["Pilates Noche"],
         )
         create_test_class(
-            "Yoga Caso No Payable",
-            today - timedelta(hours=2),
+            "Yoga",
+            at_app_time(today - timedelta(days=1), 9),
             actividad1,
             descuento=0,
-            legacy_names=["Yoga Pasada", "Yoga Pasada No Payable"],
+            legacy_names=["Yoga Caso No Payable", "Yoga Pasada", "Yoga Pasada No Payable"],
+            search_direction="backward",
         )
         create_test_class(
-            "Yoga Caso Pago Futuro",
+            "Yoga",
             at_app_time(today + timedelta(days=4), 10),
             actividad1,
             descuento=0,
-            legacy_names=["Yoga Caso Descuento 0%"],
+            legacy_names=["Yoga Caso Pago Futuro", "Yoga Caso Descuento 0%"],
         )
         create_test_class(
-            "Pilates Caso Clase Activa",
+            "Pilates",
             at_app_time(today + timedelta(days=5), 17),
             actividad3,
             descuento=0,
-            legacy_names=["Pilates Caso Descuento 40%"],
+            legacy_names=["Pilates Caso Clase Activa", "Pilates Caso Descuento 40%"],
         )
         create_test_class(
-            "Funcional Caso Clase Premium",
+            "Funcional",
             at_app_time(today + timedelta(days=6), 19),
             actividad2,
             descuento=0,
-            legacy_names=["Funcional Caso Descuento 70%"],
+            legacy_names=["Funcional Caso Clase Premium", "Funcional Caso Descuento 70%"],
         )
 
         db.session.commit()

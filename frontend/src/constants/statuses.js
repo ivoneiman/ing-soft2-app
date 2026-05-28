@@ -20,6 +20,9 @@ export const PAYMENT_STATUS = {
 export const PAYMENT_METHOD = {
   MERCADO_PAGO: 'mercado_pago',
   CREDIT: 'credit',
+  CASH: 'cash',
+  TRANSFER: 'transfer',
+  CARD: 'card',
 };
 
 export const ENROLLMENT_TYPE = {
@@ -53,6 +56,9 @@ export const STATUS_LABELS = {
   paymentMethod: {
     [PAYMENT_METHOD.MERCADO_PAGO]: 'Mercado Pago',
     [PAYMENT_METHOD.CREDIT]: 'Crédito',
+    [PAYMENT_METHOD.CASH]: 'Efectivo',
+    [PAYMENT_METHOD.TRANSFER]: 'Transferencia',
+    [PAYMENT_METHOD.CARD]: 'Tarjeta',
   },
   credit: {
     [CREDIT_STATUS.AVAILABLE]: 'Disponible',

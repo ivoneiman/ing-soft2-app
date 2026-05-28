@@ -1,5 +1,6 @@
 import logging
 import os
+import random
 from html import escape
 from pathlib import Path
 
@@ -8,6 +9,11 @@ try:
     import resend
 except ModuleNotFoundError:
     resend = None
+
+try:
+    from models import SystemSetting
+except ModuleNotFoundError:
+    from .models import SystemSetting
 
 
 load_dotenv(Path(__file__).with_name(".env"))
@@ -58,6 +64,25 @@ def _send_email(to_email, subject, html):
         return False
 
 
+def send_admin_login_code(user, code):
+    if not _has_valid_email(user):
+        return False
+
+    html = f"""
+    <h1>Código de verificación</h1>
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    <p>Utilizá el siguiente código para iniciar sesión como administrador:</p>
+    <p><strong>{escape(code)}</strong></p>
+    <p>El código expira en 5 minutos.</p>
+    """
+
+    return _send_email(
+        user.email,
+        "Código de verificación - SiempreGym",
+        html,
+    )
+
+
 def _format_class_datetime(class_obj):
     if not getattr(class_obj, "fecha_hora", None):
         return "fecha a confirmar"
@@ -75,25 +100,59 @@ def _activity_name(class_obj):
     return getattr(activity, "name", None) or getattr(class_obj, "name", "Actividad")
 
 
+def _get_cancellation_notification_message():
+    try:
+        setting = SystemSetting.query.filter_by(key="cancellation_notification_message").first()
+        if setting and isinstance(setting.value, str) and setting.value.strip():
+            return setting.value.strip()
+    except Exception:
+        logger.exception("[Email] Error leyendo mensaje de notificación de cancelación de clase")
+    return None
+
+
+def _render_cancellation_message(template, class_obj, credit_generated=False):
+    class_name = escape(getattr(class_obj, "name", "Clase"))
+    activity_name = escape(_activity_name(class_obj))
+    class_datetime = escape(_format_class_datetime(class_obj))
+
+    safe_template = escape(template)
+    safe_template = safe_template.replace("{class_name}", class_name)
+    safe_template = safe_template.replace("{activity_name}", activity_name)
+    safe_template = safe_template.replace("{class_datetime}", class_datetime)
+
+    html_message = f"<p>{safe_template}</p>"
+    if credit_generated:
+        html_message += "<p>Además, se generó un crédito reutilizable en tu cuenta.</p>"
+    return html_message
+
+
 def send_class_cancelled_email(user, class_obj, credit_generated=False):
     if not _has_valid_email(user):
         return False
 
-    class_name = escape(getattr(class_obj, "name", "Clase"))
-    activity_name = escape(_activity_name(class_obj))
-    class_datetime = escape(_format_class_datetime(class_obj))
-    credit_note = (
-        "<p>Además, se generó un crédito reutilizable en tu cuenta.</p>"
-        if credit_generated
-        else ""
-    )
+    admin_message = _get_cancellation_notification_message()
+    if admin_message:
+        message_body = _render_cancellation_message(admin_message, class_obj, credit_generated)
+    else:
+        class_name = escape(getattr(class_obj, "name", "Clase"))
+        activity_name = escape(_activity_name(class_obj))
+        class_datetime = escape(_format_class_datetime(class_obj))
+        credit_note = (
+            "<p>Además, se generó un crédito reutilizable en tu cuenta.</p>"
+            if credit_generated
+            else ""
+        )
+        message_body = f"""
+        <p>La clase <strong>{class_name}</strong> de <strong>{activity_name}</strong> fue cancelada.</p>
+        <p><strong>Fecha y hora:</strong> {class_datetime}</p>
+        <p>Te avisamos para que puedas reorganizar tu agenda.</p>
+        {credit_note}
+        """
+
     html = f"""
     <h1>Clase cancelada - SiempreGym</h1>
-    <p>Hola {escape(getattr(user, "username", "") or "")},</p>
-    <p>La clase <strong>{class_name}</strong> de <strong>{activity_name}</strong> fue cancelada.</p>
-    <p><strong>Fecha y hora:</strong> {class_datetime}</p>
-    <p>Te avisamos para que puedas reorganizar tu agenda.</p>
-    {credit_note}
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    {message_body}
     """
 
     return _send_email(
@@ -118,6 +177,7 @@ def send_credit_generated_email(user, class_obj, credit):
     <p><strong>Vencimiento:</strong> {expires_at}</p>
     <p>Podés utilizar este crédito para otra clase de la misma actividad con cupos disponibles.</p>
     """
+
 
     return _send_email(
         user.email,

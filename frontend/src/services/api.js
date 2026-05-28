@@ -11,14 +11,30 @@ export function register({ username, apellido, email, dni, telefono, password })
   return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
 }
 
-export function crearUsuario({ username, apellido, email, dni, telefono, password }) {
-  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
+export function crearUsuario({ username, apellido, email, dni, telefono, password, role }) {
+  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password, role }, REQUEST_CONFIG);
 }
 
 export function login({ email, password, remember }) {
   return axios.post(
     `${API_URL}/login`,
     { email, password, remember },
+    REQUEST_CONFIG
+  );
+}
+
+export function adminLoginRequest({ email }) {
+  return axios.post(
+    `${API_URL}/admin-login/request`,
+    { email },
+    REQUEST_CONFIG
+  );
+}
+
+export function adminLoginVerify({ email, code }) {
+  return axios.post(
+    `${API_URL}/admin-login/verify`,
+    { email, code },
     REQUEST_CONFIG
   );
 }
@@ -145,6 +161,25 @@ export function cancelarClaseCompleta(clase_id) {
   );
 }
 
+// =========================
+// CONFIGURACIONES
+// =========================
+
+export function getNotificationConfig() {
+  return axios.get(
+    `${API_URL}/settings/notification-message`,
+    REQUEST_CONFIG
+  );
+}
+
+export function saveNotificationConfig(message) {
+  return axios.put(
+    `${API_URL}/settings/notification-message`,
+    { message },
+    REQUEST_CONFIG
+  );
+}
+
 export function createEnrollment({ class_id, tipo }) {
   return axios.post(
     `${API_URL}/enrollments`,
@@ -169,12 +204,39 @@ export function getPendingEnrollments(testDay) {
 export function createPayment({
   payment_method,
   enrollment_id,
+  payment_type,
 }) {
   return axios.post(
     `${API_URL}/payments/create`,
     {
       payment_method,
       enrollment_id,
+      payment_type,
+    },
+    REQUEST_CONFIG
+  );
+}
+
+export function getAdminPaymentEnrollments() {
+  return axios.get(
+    `${API_URL}/admin/enrollments/payments`,
+    REQUEST_CONFIG
+  );
+}
+
+export function registerManualPayment(enrollmentId, {
+  amount,
+  payment_method,
+  payment_type,
+  notes,
+}) {
+  return axios.post(
+    `${API_URL}/enrollments/${enrollmentId}/manual-payment`,
+    {
+      amount,
+      payment_method,
+      payment_type,
+      notes,
     },
     REQUEST_CONFIG
   );

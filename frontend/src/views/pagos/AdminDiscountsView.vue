@@ -6,7 +6,7 @@
 <template>
   <div class="admin-discounts-container">
     <h2>Configurar Descuentos</h2>
-    <p class="subtitle">Aplica o visualiza promociones en las clases.</p>
+    <p class="subtitle">Aplica promociones a todos los turnos de la semana para un horario específico.</p>
 
     <!-- Estado de carga inicial -->
     <div v-if="loading" class="loading">
@@ -16,39 +16,46 @@
     <!-- Formulario de Descuentos -->
     <form v-else @submit.prevent="onSubmit">
       
-      <!-- 1. Selección de Clase -->
+      <!-- 1. Selección de Actividad -->
       <div class="form-group">
-        <label for="class-select">Seleccionar Clase:</label>
-        <select id="class-select" v-model="selectedClassId" required>
-          <option value="" disabled>-- Seleccione una clase --</option>
-          <option v-for="clase in allClasses" :key="clase.id" :value="clase.id">
-            {{ clase.actividad || clase.name }} - {{ formatDateTime(clase.fecha_hora) }}
+        <label for="activity-select">1. Seleccionar Actividad:</label>
+        <select id="activity-select" v-model="selectedActivityName" required>
+          <option value="" disabled>-- Seleccione una actividad --</option>
+          <option v-for="act in availableActivities" :key="act.id" :value="act.id">
+            {{ act.name }}
           </option>
         </select>
       </div>
 
-      <!-- Sección de descuento (solo si se ha seleccionado una clase) -->
-      <div v-if="selectedClass">
-        <div class="form-group">
-          <label for="discount-input">Porcentaje de Descuento:</label>
-          <select id="discount-input" v-model="discountValue" required>
-            <option value="" disabled>-- Seleccione el descuento --</option>
-            <option
-              v-for="option in discountOptions"
-              :key="option.percentage"
-              :value="String(option.percentage)"
-              :disabled="selectedClass.descuento === option.percentage"
-            >
-              {{ option.label }}
-            </option>
-          </select>
+      <!-- 2. Selección de Día -->
+      <div class="form-group" v-if="selectedActivityName">
+        <label for="day-select">2. Seleccionar Día:</label>
+        <select id="day-select" v-model="selectedWeekday" required>
+          <option value="" disabled>-- Seleccione un día --</option>
+          <option v-for="day in availableWeekdays" :key="day.value" :value="day.value">
+            Todos los {{ day.label }}
+          </option>
+        </select>
+      </div>
+
+      <!-- 3. Selección de Horario -->
+      <div class="form-group" v-if="selectedWeekday !== ''">
+        <label for="time-select">3. Seleccionar Horario:</label>
+        <select id="time-select" v-model="selectedTime" required>
+          <option value="" disabled>-- Seleccione un horario --</option>
+          <option v-for="time in availableTimes" :key="time" :value="time">
+            A las {{ time }}
+          </option>
+        </select>
+      </div>
+
+      <!-- 4. Sección de descuento -->
+      <div v-if="representativeClass">
+        <div class="info-msg" style="margin-bottom: 1rem;">
+          Se aplicará automáticamente un descuento del <strong>40%</strong> (días 15 al 21) y <strong>70%</strong> (día 22 en adelante) a todas las clases futuras en este horario.
         </div>
 
-        <div v-if="discountValue === ''" class="info-msg">
-          Descuento actual: {{ Number(selectedClass.descuento || 0) }}%
-        </div>
-
-        <button type="submit" :disabled="isSubmitting || discountValue === ''">
+        <button type="submit" :disabled="isSubmitting">
           {{ isSubmitting ? 'Aplicando...' : 'Confirmar descuento' }}
         </button>
       </div>
@@ -62,13 +69,12 @@
 
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
-import { applyClassDiscount, getAllClasses, getPaymentDiscountRules } from '../../services/api'
-import { formatDateTime } from '../../utils/formatters'
+import { applyClassDiscount, getAllClasses } from '../../services/api'
 
 const allClasses = ref([])
-const selectedClassId = ref('')
-const discountValue = ref('')
-const discountRules = ref({ periods: [] })
+const selectedActivityName = ref('')
+const selectedWeekday = ref('')
+const selectedTime = ref('')
 
 const loading = ref(true)
 const isSubmitting = ref(false)
@@ -79,12 +85,8 @@ const fetchClasses = async () => {
   loading.value = true;
   errorMessage.value = '';
   try {
-    const [classesResponse, rulesResponse] = await Promise.all([
-      getAllClasses(),
-      getPaymentDiscountRules(),
-    ])
+    const classesResponse = await getAllClasses()
     allClasses.value = classesResponse.data.classes || []
-    discountRules.value = rulesResponse.data || { periods: [] }
   } catch (error) {
     errorMessage.value = error.response?.data?.error || 'Error de conexión al cargar clases.'
   } finally {
@@ -94,39 +96,96 @@ const fetchClasses = async () => {
 
 onMounted(fetchClasses);
 
-const selectedClass = computed(() => {
-  if (!selectedClassId.value) return null;
-  return allClasses.value.find(c => c.id === Number(selectedClassId.value));
+const availableActivities = computed(() => {
+  const acts = new Set()
+  allClasses.value.forEach(c => {
+    const actName = c.actividad || c.name;
+    if (actName) {
+      acts.add(actName)
+    }
+  })
+  return Array.from(acts).sort().map(name => ({ id: name, name }))
 });
 
-const discountOptions = computed(() =>
-  discountRules.value.periods.map((period) => ({
-    percentage: period.percentage,
-    label: `${period.percentage}% (días ${period.start_day} al ${period.end_day})`,
-  }))
-);
+const availableWeekdays = computed(() => {
+  if (!selectedActivityName.value) return []
+  const days = new Set()
+  allClasses.value.forEach(c => {
+    const actName = c.actividad || c.name;
+    if (actName === selectedActivityName.value && c.fecha_hora) {
+      days.add(new Date(c.fecha_hora).getDay())
+    }
+  })
+  return Array.from(days).sort((a,b) => a - b).map(d => ({ value: d, label: getWeekdayName(d) }))
+})
 
-watch(selectedClassId, () => {
-  discountValue.value = '';
+const availableTimes = computed(() => {
+  if (selectedWeekday.value === '') return []
+  const times = new Set()
+  allClasses.value.forEach(c => {
+    const actName = c.actividad || c.name;
+    if (
+      actName === selectedActivityName.value && 
+      c.fecha_hora && 
+      new Date(c.fecha_hora).getDay() === Number(selectedWeekday.value)
+    ) {
+      times.add(getTime(c.fecha_hora))
+    }
+  })
+  return Array.from(times).sort()
+})
+
+const representativeClass = computed(() => {
+  if (!selectedTime.value) return null
+  return allClasses.value.find(c => 
+    (c.actividad || c.name) === selectedActivityName.value &&
+    c.fecha_hora &&
+    new Date(c.fecha_hora).getDay() === Number(selectedWeekday.value) &&
+    getTime(c.fecha_hora) === selectedTime.value
+  )
+});
+
+const getWeekdayName = (dayIndex) => {
+  const days = ["Domingos", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábados"];
+  return days[dayIndex];
+};
+
+const getTime = (dateString) => {
+  if (!dateString) return '';
+  return new Date(dateString).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+};
+
+watch(selectedActivityName, () => {
+  selectedWeekday.value = '';
+  selectedTime.value = '';
+  successMessage.value = '';
+  errorMessage.value = '';
+});
+
+watch(selectedWeekday, () => {
+  selectedTime.value = '';
+  successMessage.value = '';
+  errorMessage.value = '';
+});
+
+watch(selectedTime, () => {
   successMessage.value = '';
   errorMessage.value = '';
 });
 
 const onSubmit = async () => {
+  if (!representativeClass.value) return;
+  
   successMessage.value = ''
   errorMessage.value = ''
   isSubmitting.value = true
 
   try {
-    const response = await applyClassDiscount(selectedClassId.value, Number(discountValue.value))
+    // Pasamos un "0" o null como segundo argumento para no romper la petición wrapper genérica de api.js, el backend lo ignorará.
+    const response = await applyClassDiscount(representativeClass.value.id, 0)
     successMessage.value = response.data.message
-
-    const classIndex = allClasses.value.findIndex(c => c.id === Number(selectedClassId.value));
-    if (classIndex !== -1 && response.data.class) {
-      allClasses.value[classIndex] = response.data.class;
-    }
-
-    discountValue.value = ''
+    
+    await fetchClasses()
   } catch (error) {
     errorMessage.value = error.response?.data?.error || 'Error de conexión con el servidor.'
   } finally {
