@@ -170,6 +170,33 @@ class Enrollment(db.Model):
     __table_args__ = (db.UniqueConstraint("user_id", "class_id", name="uq_user_class"),)
 
 
+class WaitlistEntry(db.Model):
+    """Entrada de lista de espera por clase."""
+    __tablename__ = "waitlists"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    class_id = db.Column(db.Integer, db.ForeignKey("classes.id"), nullable=False)
+    type = db.Column(db.String(20), nullable=False)
+    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
+
+    user = db.relationship("User", backref=db.backref("waitlists", cascade="all, delete-orphan"))
+    class_ = db.relationship("Class", backref=db.backref("waitlists", cascade="all, delete-orphan"))
+
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "class_id", "type", name="uq_waitlist_user_class_type"),
+    )
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "class_id": self.class_id,
+            "type": self.type,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
 class Attendance(db.Model):
     """Registro de asistencia de un usuario a una clase."""
     __tablename__ = "attendances"

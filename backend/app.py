@@ -13,7 +13,12 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import IntegrityError
 
 try:
-    from email_service import send_admin_login_code, send_class_cancelled_email, send_credit_generated_email
+    from email_service import (
+        send_admin_login_code,
+        send_class_cancelled_email,
+        send_credit_generated_email,
+        send_waitlist_promotion_email,
+    )
     from mercadopago_config import get_mercadopago_client
     from models import db, User
     # Importar todos los modelos requeridos
@@ -23,6 +28,8 @@ try:
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
         ENROLLMENT_TYPE_MONTHLY,
+        WAITLIST_TYPE_INDIVIDUAL,
+        WAITLIST_TYPE_MONTHLY,
         MERCADO_PAGO_STATUS_APPROVED,
         MERCADO_PAGO_STATUS_IN_PROCESS,
         MERCADO_PAGO_STATUS_PENDING,
@@ -30,10 +37,15 @@ try:
         PAYMENT_RETURN_STATUS_PENDING,
         PAYMENT_RETURN_STATUS_SUCCESS,
     )
-    from services import cancellation_service, class_service, credit_service, enrollment_service, notification_service, payment_service
+    from services import cancellation_service, class_service, credit_service, enrollment_service, notification_service, payment_service, waitlist_service
     from services.api_response import api_error, api_success
 except ModuleNotFoundError:
-    from .email_service import send_admin_login_code, send_class_cancelled_email, send_credit_generated_email
+    from .email_service import (
+        send_admin_login_code,
+        send_class_cancelled_email,
+        send_credit_generated_email,
+        send_waitlist_promotion_email,
+    )
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
     # Importar todos los modelos requeridos
@@ -43,6 +55,8 @@ except ModuleNotFoundError:
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
         ENROLLMENT_TYPE_MONTHLY,
+        WAITLIST_TYPE_INDIVIDUAL,
+        WAITLIST_TYPE_MONTHLY,
         MERCADO_PAGO_STATUS_APPROVED,
         MERCADO_PAGO_STATUS_IN_PROCESS,
         MERCADO_PAGO_STATUS_PENDING,
@@ -50,7 +64,7 @@ except ModuleNotFoundError:
         PAYMENT_RETURN_STATUS_PENDING,
         PAYMENT_RETURN_STATUS_SUCCESS,
     )
-    from .services import cancellation_service, class_service, credit_service, enrollment_service, notification_service, payment_service
+    from .services import cancellation_service, class_service, credit_service, enrollment_service, notification_service, payment_service, waitlist_service
     from .services.api_response import api_error, api_success
 
 # Carga variables de entorno desde .env
@@ -697,7 +711,7 @@ def get_catalog_availability():
         return jsonify({"error": "Actividad no encontrada"}), 404
 
     enrollment_map = _enrollment_counts()
-    available_slots = []
+    slots = []
     full_count = 0
 
     # 🌟 Traemos solo las clases activas para que no bloqueen horarios en el catálogo
@@ -711,12 +725,17 @@ def get_catalog_availability():
             
         enrolled_count = enrollment_map.get(class_obj.id, 0)
         slot = _class_slot_payload(class_obj, enrolled_count)
-        if slot["available_spots"] > 0:
-            available_slots.append(slot)
-        else:
+        if slot["available_spots"] <= 0:
             full_count += 1
+        slots.append(slot)
 
-    return jsonify({"actividad": actividad.name, "fecha": fecha, "available": available_slots, "full_count": full_count}), 200
+    return jsonify({
+        "actividad": actividad.name,
+        "fecha": fecha,
+        "slots": slots,
+        "available": slots,
+        "full_count": full_count,
+    }), 200
 
 
 @app.route("/api/catalog/days", methods=["GET"])
@@ -738,10 +757,10 @@ def get_catalog_days():
     start = datetime(year, month, 1)
     end = datetime(year, month, last_day, 23, 59, 59)
 
-    enrollment_map = _enrollment_counts()
-    dates_with_cupo = set()
+    dates_with_classes = set()
 
-    # 🌟 Consideramos solo las clases activas para marcar los días con disponibilidad
+    # 🌟 Incluimos días que tengan clases activas en el catálogo,
+    # para permitir que se seleccionen también días con clases completas
     classes = Class.query.filter_by(id_actividad=actividad_id, estado=Class.STATUS_ACTIVE).filter(Class.fecha_hora >= start, Class.fecha_hora <= end).all()
 
     now = datetime.now()
@@ -750,12 +769,10 @@ def get_catalog_days():
         if class_obj.fecha_hora and class_obj.fecha_hora <= now:
             continue
 
-        enrolled_count = enrollment_map.get(class_obj.id, 0)
-        cupo_max = class_obj.cupoMaximo if class_obj.cupoMaximo is not None else 20
-        if enrolled_count < cupo_max:
-            dates_with_cupo.add(class_obj.fecha_hora.date().isoformat())
+        if class_obj.fecha_hora:
+            dates_with_classes.add(class_obj.fecha_hora.date().isoformat())
 
-    return jsonify({"dates": sorted(dates_with_cupo)}), 200
+    return jsonify({"dates": sorted(dates_with_classes)}), 200
 
 # ─── Rutas API: Gestión de Clases (Inscripciones de Alumnos) ───────────────────
 
@@ -789,6 +806,21 @@ def create_enrollment():
         db.session.commit()
         return api_error("Ya estás inscripto y pagaste esta clase", 409)
     if result == "full":
+        if data.get("waitlist") or data.get("waitlist_type"):
+            waitlist_type = data.get("waitlist_type", WAITLIST_TYPE_INDIVIDUAL)
+            waitlist_entry, waitlist_error = waitlist_service.add_waitlist_entry(
+                current_user,
+                class_obj,
+                waitlist_type,
+            )
+            if waitlist_error:
+                db.session.commit()
+                return api_error(waitlist_error, 409)
+            db.session.commit()
+            return api_success({
+                "message": "Te agregamos a la lista de espera",
+                "waitlist": waitlist_entry.to_dict(),
+            }, message="Te agregamos a la lista de espera", status_code=201)
         db.session.commit()
         return api_error("No quedan cupos disponibles para esta clase", 409)
     if result == "credit_used":
@@ -818,6 +850,66 @@ def create_enrollment():
         "enrollment": _enrollment_payload(enrollment, current_datetime),
         "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
     }, message="Inscripción creada. Podés completar el pago ahora o más adelante.", status_code=201)
+
+
+@app.route("/api/waitlists", methods=["POST"])
+def create_waitlist_entry():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    data = request.get_json() or {}
+    class_id = data.get("class_id")
+    if not class_id:
+        return api_error("Debe seleccionar una clase para lista de espera", 400)
+
+    class_obj = Class.query.get(class_id)
+    if not class_obj:
+        return api_error("Clase no encontrada", 404)
+
+    waitlist_type = data.get("type", WAITLIST_TYPE_INDIVIDUAL)
+    entry, error = waitlist_service.add_waitlist_entry(current_user, class_obj, waitlist_type)
+    if error:
+        return api_error(error, 400)
+
+    db.session.commit()
+    return api_success({
+        "message": "Te agregamos a la lista de espera",
+        "waitlist": entry.to_dict(),
+    }, message="Te agregamos a la lista de espera", status_code=201)
+
+
+@app.route("/api/enrollments/<int:enrollment_id>/cancel", methods=["POST"])
+def cancel_enrollment(enrollment_id):
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    enrollment = Enrollment.query.get(enrollment_id)
+    if not enrollment:
+        return api_error("Inscripción no encontrada", 404)
+    if enrollment.user_id != current_user.id and current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tenés permisos para cancelar esta inscripción"}), 403
+    if enrollment.estado == Enrollment.STATUS_CANCELLED:
+        return api_error("Esta inscripción ya fue cancelada", 400)
+
+    class_obj = enrollment.class_
+    if not class_obj:
+        return api_error("Clase asociada no encontrada", 404)
+
+    enrollment.estado = Enrollment.STATUS_CANCELLED
+    db.session.commit()
+
+    promotion = waitlist_service.promote_next_waitlisted_user(class_obj)
+    if promotion and promotion.get("enrollment"):
+        db.session.commit()
+        pending_payments = waitlist_service.get_pending_payments_for_user(promotion["user"], exclude_class_id=class_obj.id)
+        send_waitlist_promotion_email(promotion["user"], class_obj, pending_payments=pending_payments)
+
+    return api_success({
+        "message": "Inscripción cancelada correctamente",
+        "enrollment_id": enrollment.id,
+    }, message="Inscripción cancelada correctamente", status_code=200)
 
 
 @app.route("/api/enrollments/pending", methods=["GET"])

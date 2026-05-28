@@ -180,10 +180,26 @@ export function saveNotificationConfig(message) {
   );
 }
 
-export function createEnrollment({ class_id, tipo }) {
+export function createEnrollment({ class_id, tipo, waitlist, waitlist_type }) {
   return axios.post(
     `${API_URL}/enrollments`,
-    { class_id, tipo },
+    { class_id, tipo, waitlist, waitlist_type },
+    REQUEST_CONFIG
+  );
+}
+
+export function createWaitlist({ class_id, type }) {
+  return axios.post(
+    `${API_URL}/waitlists`,
+    { class_id, type },
+    REQUEST_CONFIG
+  );
+}
+
+export function cancelEnrollment({ enrollment_id }) {
+  return axios.post(
+    `${API_URL}/enrollments/${enrollment_id}/cancel`,
+    {},
     REQUEST_CONFIG
   );
 }
