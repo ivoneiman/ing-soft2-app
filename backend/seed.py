@@ -428,59 +428,61 @@ def main():
             f"{_payment_discount_percentage(today)}%"
         )
 
-        class1 = create_test_class(
-            "Yoga",
-            at_app_time(today + timedelta(days=1), 9),
-            actividad1,
-            legacy_names=["Yoga Mañana"],
-        )
-        # COMENTADO: Clase con cupo limitado 1/1 - actividad FUNCIONAL sin clases
+        # COMENTADAS TODAS LAS CLASES EXCEPTO LA DE CUPO 1/1
+        # class1 = create_test_class(
+        #     "Yoga",
+        #     at_app_time(today + timedelta(days=1), 9),
+        #     actividad1,
+        #     legacy_names=["Yoga Mañana"],
+        # )
+        class1 = None
         # class2 = create_test_class(
         #     "Funcional",
         #     at_app_time(today + timedelta(days=2), 14),
         #     actividad2,
         #     legacy_names=["Funcional Tarde"],
         # )
-        # Creando clase placeholder para references
         class2 = None
-        class3 = create_test_class(
-            "Pilates",
-            at_app_time(today + timedelta(days=3), 20),
-            actividad3,
-            legacy_names=["Pilates Noche"],
-        )
-        create_test_class(
-            "Yoga",
-            at_app_time(today - timedelta(days=1), 9),
-            actividad1,
-            descuento=0,
-            legacy_names=["Yoga Caso No Payable", "Yoga Pasada", "Yoga Pasada No Payable"],
-            search_direction="backward",
-        )
-        create_test_class(
-            "Yoga",
-            at_app_time(today + timedelta(days=4), 10),
-            actividad1,
-            descuento=0,
-            legacy_names=["Yoga Caso Pago Futuro", "Yoga Caso Descuento 0%"],
-        )
-        create_test_class(
-            "Pilates",
-            at_app_time(today + timedelta(days=5), 17),
-            actividad3,
-            descuento=0,
-            legacy_names=["Pilates Caso Clase Activa", "Pilates Caso Descuento 40%"],
-        )
-        create_test_class(
-            "Funcional",
-            at_app_time(today + timedelta(days=6), 19),
-            actividad2,
-            descuento=0,
-            legacy_names=["Funcional Caso Clase Premium", "Funcional Caso Descuento 70%"],
-        )
+        # class3 = create_test_class(
+        #     "Pilates",
+        #     at_app_time(today + timedelta(days=3), 20),
+        #     actividad3,
+        #     legacy_names=["Pilates Noche"],
+        # )
+        class3 = None
+        # create_test_class(
+        #     "Yoga",
+        #     at_app_time(today - timedelta(days=1), 9),
+        #     actividad1,
+        #     descuento=0,
+        #     legacy_names=["Yoga Caso No Payable", "Yoga Pasada", "Yoga Pasada No Payable"],
+        #     search_direction="backward",
+        # )
+        # create_test_class(
+        #     "Yoga",
+        #     at_app_time(today + timedelta(days=4), 10),
+        #     actividad1,
+        #     descuento=0,
+        #     legacy_names=["Yoga Caso Pago Futuro", "Yoga Caso Descuento 0%"],
+        # )
+        # create_test_class(
+        #     "Pilates",
+        #     at_app_time(today + timedelta(days=5), 17),
+        #     actividad3,
+        #     descuento=0,
+        #     legacy_names=["Pilates Caso Clase Activa", "Pilates Caso Descuento 40%"],
+        # )
+        # COMENTADA: FUNCIONAL NO TIENE CLASES
+        # create_test_class(
+        #     "Funcional",
+        #     at_app_time(today + timedelta(days=6), 19),
+        #     actividad2,
+        #     descuento=0,
+        #     legacy_names=["Funcional Caso Clase Premium", "Funcional Caso Descuento 70%"],
+        # )
 
         print("   Creando clase con cupo limitado 1/1...")
-        create_test_class(
+        class_limited_cupo = create_test_class(
             "Pilates - Clase Limitada (1 Cupo)",
             at_app_time(today + timedelta(days=7), 11),
             actividad3,
@@ -488,36 +490,37 @@ def main():
             legacy_names=["Pilates Limitado"]
         )
 
-        print("   Creando clases de Yoga para Junio (pruebas de lista de espera mensual)...")
-        year = today.year
-        create_test_class(
-            "Yoga - 4 Junio (1 Cupo)",
-            datetime(year, 6, 4, 10, 0),
-            actividad1,
-            cupo_maximo=1,
-            legacy_names=["Yoga Junio 4"]
-        )
-        create_test_class(
-            "Yoga - 11 Junio",
-            datetime(year, 6, 11, 10, 0),
-            actividad1,
-            cupo_maximo=20,
-            legacy_names=["Yoga Junio 11"]
-        )
-        create_test_class(
-            "Yoga - 18 Junio",
-            datetime(year, 6, 18, 10, 0),
-            actividad1,
-            cupo_maximo=20,
-            legacy_names=["Yoga Junio 18"]
-        )
-        create_test_class(
-            "Yoga - 25 Junio",
-            datetime(year, 6, 25, 10, 0),
-            actividad1,
-            cupo_maximo=20,
-            legacy_names=["Yoga Junio 25"]
-        )
+        # COMENTADAS: Clases de Yoga para Junio
+        # print("   Creando clases de Yoga para Junio (pruebas de lista de espera mensual)...")
+        # year = today.year
+        # create_test_class(
+        #     "Yoga - 4 Junio (1 Cupo)",
+        #     datetime(year, 6, 4, 10, 0),
+        #     actividad1,
+        #     cupo_maximo=1,
+        #     legacy_names=["Yoga Junio 4"]
+        # )
+        # create_test_class(
+        #     "Yoga - 11 Junio",
+        #     datetime(year, 6, 11, 10, 0),
+        #     actividad1,
+        #     cupo_maximo=20,
+        #     legacy_names=["Yoga Junio 11"]
+        # )
+        # create_test_class(
+        #     "Yoga - 18 Junio",
+        #     datetime(year, 6, 18, 10, 0),
+        #     actividad1,
+        #     cupo_maximo=20,
+        #     legacy_names=["Yoga Junio 18"]
+        # )
+        # create_test_class(
+        #     "Yoga - 25 Junio",
+        #     datetime(year, 6, 25, 10, 0),
+        #     actividad1,
+        #     cupo_maximo=20,
+        #     legacy_names=["Yoga Junio 25"]
+        # )
 
         db.session.commit()
         print()
@@ -526,31 +529,34 @@ def main():
 
         print("Creando enrollments de prueba...")
         
-        # Admin inscrito a todas las clases
-        create_enrollment(admin, class1)
-        if class2:
-            create_enrollment(admin, class2)
-        create_enrollment(admin, class3)
-        
-        # Employee inscrito a dos clases
-        create_enrollment(employee, class1)
-        if class2:
-            create_enrollment(employee, class2)
-        
-        # Client inscrito a una clase
-        create_enrollment(client, class1)
+        # COMENTADOS: No hay clases para inscribir (todas están comentadas excepto la de cupo 1/1)
+        # # Admin inscrito a todas las clases
+        # create_enrollment(admin, class1)
+        # if class2:
+        #     create_enrollment(admin, class2)
+        # create_enrollment(admin, class3)
+        # 
+        # # Employee inscrito a dos clases
+        # create_enrollment(employee, class1)
+        # if class2:
+        #     create_enrollment(employee, class2)
+        # 
+        # # Client inscrito a una clase
+        # create_enrollment(client, class1)
         db.session.commit()
         print()
 
         # ─── Casos de historial de pagos para client@test.com ───────────────
 
-        create_client_payment_examples(client, actividad1, actividad2, actividad3, today)
+        # COMENTADO: No hay clases para crear ejemplos de pagos
+        # create_client_payment_examples(client, actividad1, actividad2, actividad3, today)
         db.session.commit()
         print()
 
         # ─── Casos para probar créditos por cancelación ─────────────────────
 
-        create_client_credit_examples(client, actividad3, today)
+        # COMENTADO: No hay clases para crear ejemplos de créditos
+        # create_client_credit_examples(client, actividad3, today)
         db.session.commit()
         print()
 
