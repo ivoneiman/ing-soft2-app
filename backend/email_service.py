@@ -196,7 +196,6 @@ def send_waitlist_promotion_email(user, class_obj, pending_payments=None):
         return False
 
     activity_name = escape(_activity_name(class_obj))
-    class_name = escape(getattr(class_obj, "name", "Clase"))
     class_datetime = escape(_format_class_datetime(class_obj))
     site_url = _gym_site_url()
 
@@ -209,13 +208,14 @@ def send_waitlist_promotion_email(user, class_obj, pending_payments=None):
         payment_section = f"<p>Tienes pagos pendientes antes de completar la inscripción:</p><ul>{rows}</ul>"
 
     html = f"""
-    <h1>¡Tenés un lugar disponible en lista de espera!</h1>
+    <h1>Cupo disponible - SiempreGym</h1>
     <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
-    <p>Un cupo se liberó para <strong>{class_name}</strong> de <strong>{activity_name}</strong>.</p>
+    <p>Se ha liberado un cupo para la clase <strong>{activity_name}</strong> y se te ha inscripto automáticamente.</p>
     <p><strong>Fecha y hora:</strong> {class_datetime}</p>
     {payment_section}
-    <p>Ingresá a tu panel para finalizar la inscripción:</p>
+    <p>Ya tienes disponible la inscripción pendiente de pago para realizar en el siguiente enlace:</p>
     <p><a href=\"{site_url}\">{site_url}</a></p>
+    <p>Saludos,<br>Equipo SiempreGym</p>
     """
 
     return _send_email(

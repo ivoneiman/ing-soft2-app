@@ -19,7 +19,6 @@ try:
         send_admin_login_code,
         send_class_cancelled_email,
         send_credit_generated_email,
-        send_waitlist_promotion_email,
     )
     from mercadopago_config import get_mercadopago_client
     from models import db, User
@@ -54,7 +53,6 @@ except ModuleNotFoundError:
         send_admin_login_code,
         send_class_cancelled_email,
         send_credit_generated_email,
-        send_waitlist_promotion_email,
     )
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
@@ -98,6 +96,8 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///app.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
 
 # Inicializa extensiones
 db.init_app(app)
@@ -122,14 +122,21 @@ def _record_query_end(conn, cursor, statement, parameters, context, executemany)
     g.payment_query_count = getattr(g, "payment_query_count", 0) + 1
     g.payment_query_ms = getattr(g, "payment_query_ms", 0.0) + _elapsed_ms(query_start)
 
-# CORS para frontend local Vue/Vite
+def _cors_origins():
+    configured = os.getenv("FRONTEND_ORIGINS") or os.getenv("CORS_ORIGINS") or os.getenv("FRONTEND_URL", "")
+    origins = [origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()]
+    origins.extend([
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ])
+    return list(dict.fromkeys(origins))
+
+
+# CORS para frontend local y despliegues configurados
 CORS(
     app,
     supports_credentials=True,
-    origins=[
-        "http://localhost:5173",
-        "http://localhost:5174"
-    ]
+    origins=_cors_origins()
 )
 
 # ─── Migración de esquema mínimo para SQLite antiguo ─────────────────────────────────────────────
@@ -560,6 +567,20 @@ def _enrollment_payload(enrollment, current_datetime=None):
     payload["deposit_amount"] = deposit_final_amount
     payload["deposit_percentage"] = payment_service.deposit_percentage()
     payload["balance_amount"] = max((payload.get("total_amount") or 0) - (payload.get("paid_amount") or 0), 0)
+    payload["cancellation_will_generate_credit"] = _has_approved_payment(enrollment)
+    return payload
+
+
+def _payment_payload(payment, current_datetime=None):
+    payload = payment.to_dict()
+    enrollment = payment.enrollment
+    if enrollment:
+        payload["enrollment_estado"] = enrollment.estado
+        payload["enrollment_payment_status"] = enrollment.payment_status
+        payload["enrollment_is_cancelable"] = enrollment_service.enrollment_is_cancelable(enrollment, current_datetime)
+        deadline = enrollment_service.cancellation_deadline_for_class(enrollment.class_)
+        payload["enrollment_cancellation_deadline"] = deadline.isoformat() if deadline else None
+        payload["enrollment_cancellation_will_generate_credit"] = _has_approved_payment(enrollment)
     return payload
 
 
@@ -585,6 +606,26 @@ def _frontend_payments_url(status, message=None):
 
 def _configured_url(name, default):
     return payment_service.configured_url(name, default)
+
+
+def _public_backend_url():
+    configured = _configured_url("PUBLIC_BACKEND_URL", "")
+    if configured:
+        return configured.rstrip("/")
+    legacy_configured = _configured_url("BACKEND_PUBLIC_URL", "")
+    if legacy_configured:
+        return legacy_configured.rstrip("/")
+    return ""
+
+
+def _mercado_pago_callback_url(name, path, default):
+    configured = _configured_url(name, "")
+    if configured:
+        return configured
+    public_backend_url = _public_backend_url()
+    if public_backend_url:
+        return f"{public_backend_url}{path}"
+    return default
 
 
 def _is_absolute_http_url(value):
@@ -623,6 +664,10 @@ def _mercado_pago_notification_url():
     configured = os.getenv("MERCADOPAGO_NOTIFICATION_URL", "").strip()
     if configured:
         return configured
+
+    public_backend_url = _public_backend_url()
+    if public_backend_url:
+        return f"{public_backend_url}/api/payments/webhook"
 
     success_url = os.getenv("PAYMENT_SUCCESS_URL", "").strip()
     marker = "/api/payments/return/success"
@@ -673,6 +718,16 @@ def _apply_mercado_pago_status(payment, mercado_pago_status, status_detail=None,
     current_datetime = current_datetime or _current_discount_datetime()
     if mercado_pago_payment_id:
         payment.mercado_pago_payment_id = str(mercado_pago_payment_id)
+
+    if payment.enrollment and payment.enrollment.estado == Enrollment.STATUS_CANCELLED and payment.status != Payment.STATUS_APPROVED:
+        payment.status = Payment.STATUS_EXPIRED
+        payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
+        logger.info(
+            "[MercadoPago] callback_ignorado_inscripcion_cancelada payment_id=%s enrollment_id=%s",
+            payment.id,
+            payment.enrollment_id,
+        )
+        return PAYMENT_RETURN_STATUS_FAILURE, "La inscripción fue cancelada"
 
     if payment.status == Payment.STATUS_APPROVED:
         payment_service.expire_equivalent_pending_payments(payment)
@@ -1111,30 +1166,44 @@ def cancel_enrollment(enrollment_id):
         return jsonify({"error": "No autenticado"}), 401
 
     enrollment = Enrollment.query.get(enrollment_id)
-    if not enrollment:
-        return api_error("Inscripción no encontrada", 404)
-    if enrollment.user_id != current_user.id and current_user.role not in ["admin", "employee"]:
-        return jsonify({"error": "No tenés permisos para cancelar esta inscripción"}), 403
-    if enrollment.estado == Enrollment.STATUS_CANCELLED:
-        return api_error("Esta inscripción ya fue cancelada", 400)
+    current_datetime = _current_discount_datetime()
+    result, error, status_code = cancellation_service.cancel_enrollment(enrollment, current_user, current_datetime)
+    if error:
+        return api_error(error, status_code)
 
-    class_obj = enrollment.class_
-    if not class_obj:
-        return api_error("Clase asociada no encontrada", 404)
+    class_obj = result["class"]
+    credit = result["credit"]
 
-    enrollment.estado = Enrollment.STATUS_CANCELLED
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as err:
+        db.session.rollback()
+        logger.exception("[Cancelaciones] error enrollment_id=%s", enrollment_id)
+        return jsonify({"error": "Error interno al procesar la cancelación", "details": str(err)}), 500
+
+    email_sent = False
+    if credit:
+        email_sent = send_credit_generated_email(enrollment.user, class_obj, credit)
 
     promotion = waitlist_service.promote_next_waitlisted_user(class_obj)
     if promotion and promotion.get("enrollment"):
         db.session.commit()
-        pending_payments = waitlist_service.get_pending_payments_for_user(promotion["user"], exclude_class_id=class_obj.id)
-        send_waitlist_promotion_email(promotion["user"], class_obj, pending_payments=pending_payments)
 
+    message = (
+        "Tu inscripción fue cancelada correctamente. Se generó un crédito para futuras reservas."
+        if result["credit_generated"]
+        else "Tu inscripción fue cancelada correctamente."
+    )
     return api_success({
-        "message": "Inscripción cancelada correctamente",
+        "message": message,
         "enrollment_id": enrollment.id,
-    }, message="Inscripción cancelada correctamente", status_code=200)
+        "estado": enrollment.estado,
+        "payment_status": enrollment.payment_status,
+        "credit_generated": result["credit_generated"],
+        "credit": credit_service.credit_payload(credit, current_datetime) if credit else None,
+        "email_sent": email_sent,
+        "pending_payments_expired": result["pending_payments_expired"],
+    }, message=message, status_code=200)
 
 
 @app.route("/api/enrollments/pending", methods=["GET"])
@@ -1719,9 +1788,21 @@ def create_payment():
         "payer": _mercado_pago_payer_payload(current_user),
         "external_reference": str(payment.id),
         "back_urls": {
-            "success": _configured_url("PAYMENT_SUCCESS_URL", "http://localhost:5000/api/payments/return/success"),
-            "failure": _configured_url("PAYMENT_FAILURE_URL", "http://localhost:5000/api/payments/return/failure"),
-            "pending": _configured_url("PAYMENT_PENDING_URL", f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}"),
+            "success": _mercado_pago_callback_url(
+                "PAYMENT_SUCCESS_URL",
+                "/api/payments/return/success",
+                "http://localhost:5000/api/payments/return/success",
+            ),
+            "failure": _mercado_pago_callback_url(
+                "PAYMENT_FAILURE_URL",
+                "/api/payments/return/failure",
+                "http://localhost:5000/api/payments/return/failure",
+            ),
+            "pending": _mercado_pago_callback_url(
+                "PAYMENT_PENDING_URL",
+                f"/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+                f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+            ),
         },
         "notification_url": _mercado_pago_notification_url(),
         "auto_return": "approved",
@@ -1974,7 +2055,7 @@ def payment_history():
     )
     payments = payment_service.visible_payment_history(payments)
 
-    return jsonify({"payments": [payment.to_dict() for payment in payments]}), 200
+    return jsonify({"payments": [_payment_payload(payment, current_datetime) for payment in payments]}), 200
 
 
 @app.route("/api/admin/enrollments/payments", methods=["GET"])

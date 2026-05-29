@@ -4,6 +4,7 @@ from calendar import monthrange
 
 try:
     from models import Class, Enrollment, WaitlistEntry, db
+    from email_service import send_waitlist_promotion_email
     from constants import (
         ENROLLMENT_TYPE_MONTHLY,
         ENROLLMENT_TYPE_SINGLE,
@@ -11,8 +12,12 @@ try:
         WAITLIST_TYPE_INDIVIDUAL,
         WAITLIST_TYPE_MONTHLY,
     )
+    from services.class_service import enrollment_counts
+    from services.enrollment_service import class_capacity
+    from services.notification_service import create_waitlist_promotion_notification
 except ModuleNotFoundError:
     from ..models import Class, Enrollment, WaitlistEntry, db
+    from ..email_service import send_waitlist_promotion_email
     from ..constants import (
         ENROLLMENT_TYPE_MONTHLY,
         ENROLLMENT_TYPE_SINGLE,
@@ -20,8 +25,16 @@ except ModuleNotFoundError:
         WAITLIST_TYPE_INDIVIDUAL,
         WAITLIST_TYPE_MONTHLY,
     )
+    from .class_service import enrollment_counts
+    from .enrollment_service import class_capacity
+    from .notification_service import create_waitlist_promotion_notification
 
 logger = logging.getLogger(__name__)
+
+WAITLIST_PROMOTION_PRIORITY = (
+    WAITLIST_TYPE_MONTHLY,
+    WAITLIST_TYPE_INDIVIDUAL,
+)
 
 
 def _series_classes_for_month(class_obj):
@@ -130,6 +143,13 @@ def get_next_waitlist_entry(class_obj, entry_type=None):
     return query.order_by(WaitlistEntry.created_at.asc(), WaitlistEntry.id.asc()).first()
 
 
+def _available_spots(class_obj):
+    if not class_obj:
+        return 0
+    counts = enrollment_counts()
+    return class_capacity(class_obj) - counts.get(class_obj.id, 0)
+
+
 def get_pending_payments_for_user(user, exclude_class_id=None):
     if not user:
         return []
@@ -152,43 +172,92 @@ def get_pending_payments_for_user(user, exclude_class_id=None):
     return results
 
 
+def _entry_enrollment_type(entry_type):
+    return ENROLLMENT_TYPE_MONTHLY if entry_type == WAITLIST_TYPE_MONTHLY else ENROLLMENT_TYPE_SINGLE
+
+
+def _discard_waitlist_entry(entry, reason):
+    logger.info(
+        "[Waitlist] descarta_entry entry_id=%s user_id=%s class_id=%s type=%s reason=%s",
+        getattr(entry, "id", None),
+        getattr(entry, "user_id", None),
+        getattr(entry, "class_id", None),
+        getattr(entry, "type", None),
+        reason,
+    )
+    db.session.delete(entry)
+
+
 def promote_next_waitlisted_user(class_obj):
     if not class_obj:
         return None
+    if class_obj.estado != Class.STATUS_ACTIVE:
+        return None
 
-    monthly_entry = get_next_waitlist_entry(class_obj, WAITLIST_TYPE_MONTHLY)
-    if monthly_entry:
-        enrollment = Enrollment(
-            user_id=monthly_entry.user_id,
-            class_id=class_obj.id,
-            tipo=ENROLLMENT_TYPE_MONTHLY,
-            estado=Enrollment.STATUS_PENDING_PAYMENT,
-        )
-        db.session.add(enrollment)
-        db.session.delete(monthly_entry)
-        return {
-            "type": WAITLIST_TYPE_MONTHLY,
-            "user": monthly_entry.user,
-            "class_obj": class_obj,
-            "enrollment": enrollment,
-        }
+    if _available_spots(class_obj) <= 0:
+        logger.info("[Waitlist] sin_cupo class_id=%s", class_obj.id)
+        return None
 
-    individual_entry = get_next_waitlist_entry(class_obj, WAITLIST_TYPE_INDIVIDUAL)
-    if individual_entry:
-        enrollment = Enrollment(
-            user_id=individual_entry.user_id,
-            class_id=class_obj.id,
-            tipo=ENROLLMENT_TYPE_SINGLE,
-            estado=Enrollment.STATUS_PENDING_PAYMENT,
+    for entry_type in WAITLIST_PROMOTION_PRIORITY:
+        entries = (
+            WaitlistEntry.query
+            .filter_by(class_id=class_obj.id, type=entry_type)
+            .order_by(WaitlistEntry.created_at.asc(), WaitlistEntry.id.asc())
+            .all()
         )
-        db.session.add(enrollment)
-        db.session.delete(individual_entry)
-        return {
-            "type": WAITLIST_TYPE_INDIVIDUAL,
-            "user": individual_entry.user,
-            "class_obj": class_obj,
-            "enrollment": enrollment,
-        }
+        for entry in entries:
+            if _available_spots(class_obj) <= 0:
+                return None
+
+            user = entry.user
+            if not user:
+                _discard_waitlist_entry(entry, "missing_user")
+                continue
+            if user_is_enrolled_in_class(user, class_obj):
+                _discard_waitlist_entry(entry, "already_enrolled")
+                continue
+
+            enrollment = Enrollment.query.filter_by(user_id=user.id, class_id=class_obj.id).first()
+            if enrollment and enrollment.estado in Enrollment.CAPACITY_STATUSES:
+                _discard_waitlist_entry(entry, "active_enrollment")
+                continue
+
+            if enrollment:
+                enrollment.estado = Enrollment.STATUS_PENDING_PAYMENT
+                enrollment.tipo = _entry_enrollment_type(entry_type)
+                enrollment.requiere_reembolso = False
+            else:
+                enrollment = Enrollment(
+                    user_id=user.id,
+                    class_id=class_obj.id,
+                    tipo=_entry_enrollment_type(entry_type),
+                    estado=Enrollment.STATUS_PENDING_PAYMENT,
+                )
+                db.session.add(enrollment)
+
+            db.session.delete(entry)
+            db.session.flush()
+
+            notification = create_waitlist_promotion_notification(user, class_obj)
+            pending_payments = get_pending_payments_for_user(user, exclude_class_id=class_obj.id)
+            email_sent = send_waitlist_promotion_email(user, class_obj, pending_payments=pending_payments)
+
+            logger.info(
+                "[Waitlist] promovido user_id=%s class_id=%s type=%s enrollment_id=%s email_sent=%s",
+                user.id,
+                class_obj.id,
+                entry_type,
+                enrollment.id,
+                email_sent,
+            )
+            return {
+                "type": entry_type,
+                "user": user,
+                "class_obj": class_obj,
+                "enrollment": enrollment,
+                "notification": notification,
+                "email_sent": email_sent,
+            }
 
     return None
 
