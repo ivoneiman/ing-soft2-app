@@ -1,7 +1,10 @@
+from datetime import timedelta
+
 try:
     from constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, PAYMENT_OPTION_FULL
     from models import Enrollment
     from services.credit_service import available_credit_for_user_activity, consume_credit_for_enrollment
+    from services.datetime_service import current_datetime, datetime_in_app_timezone
     from services.payment_service import (
         class_has_finished,
         enrollment_payment_quote,
@@ -15,6 +18,7 @@ except ModuleNotFoundError:
     from ..constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, PAYMENT_OPTION_FULL
     from ..models import Enrollment
     from .credit_service import available_credit_for_user_activity, consume_credit_for_enrollment
+    from .datetime_service import current_datetime, datetime_in_app_timezone
     from .payment_service import (
         class_has_finished,
         enrollment_payment_quote,
@@ -28,6 +32,31 @@ except ModuleNotFoundError:
 
 def class_capacity(class_obj):
     return class_obj.cupoMaximo if class_obj and class_obj.cupoMaximo is not None else 20
+
+
+def cancellation_deadline_for_class(class_obj):
+    class_datetime = datetime_in_app_timezone(class_obj.fecha_hora if class_obj else None)
+    if not class_datetime:
+        return None
+    return (class_datetime - timedelta(hours=24)).replace(tzinfo=None)
+
+
+def enrollment_is_cancelable(enrollment, current_dt=None):
+    if not enrollment or enrollment.estado == Enrollment.STATUS_CANCELLED:
+        return False
+
+    class_obj = enrollment.class_
+    if not class_obj or not getattr(class_obj, "fecha_hora", None):
+        return False
+
+    class_datetime = datetime_in_app_timezone(class_obj.fecha_hora)
+    current_dt = datetime_in_app_timezone(current_dt or current_datetime())
+    deadline = datetime_in_app_timezone(cancellation_deadline_for_class(class_obj))
+    if not class_datetime or not deadline:
+        return False
+    if class_datetime <= current_dt:
+        return False
+    return current_dt <= deadline
 
 
 def validate_class_available_for_enrollment(class_obj, current_dt):
@@ -128,6 +157,12 @@ def enrollment_payload(enrollment, current_dt=None):
         "is_payable": (
             enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT
             and not class_has_finished(class_obj, current_dt)
+        ),
+        "is_cancelable": enrollment_is_cancelable(enrollment, current_dt),
+        "cancellation_deadline": (
+            cancellation_deadline_for_class(class_obj).isoformat()
+            if cancellation_deadline_for_class(class_obj)
+            else None
         ),
     }
 

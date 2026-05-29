@@ -51,6 +51,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { applyClassDiscount, getCatalog } from '../services/api'
 
 // Estados reactivos
 const classes = ref([])
@@ -65,20 +66,10 @@ const errorMessage = ref('')
 // Cargar las clases al montar el componente (usamos el catálogo disponible)
 onMounted(async () => {
   try {
-    // Llamamos al endpoint del catálogo para obtener la lista de clases
-    const response = await fetch('http://localhost:5000/api/catalog', {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' }
-    })
-    
-    const data = await response.json()
-    if (response.ok) {
-      classes.value = data.classes || []
-    } else {
-      errorMessage.value = data.error || 'Error al cargar las clases.'
-    }
+    const { data } = await getCatalog()
+    classes.value = data.classes || []
   } catch (error) {
-    errorMessage.value = 'Error de conexión al cargar clases.'
+    errorMessage.value = error.response?.data?.error || 'Error de conexión al cargar clases.'
   } finally {
     loading.value = false
   }
@@ -91,26 +82,12 @@ const onSubmit = async () => {
   isSubmitting.value = true
 
   try {
-    const response = await fetch(`http://localhost:5000/api/classes/${selectedClassId.value}/discount`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      // "include" es vital para enviar la cookie de sesión del admin
-      credentials: 'include', 
-      body: JSON.stringify({ descuento: discountValue.value })
-    })
-
-    const data = await response.json()
-
-    if (response.ok) {
-      successMessage.value = data.message // "Descuento aplicado con éxito"
-      // Limpiamos el formulario
-      selectedClassId.value = ''
-      discountValue.value = ''
-    } else {
-      errorMessage.value = data.error || 'Error al aplicar el descuento.'
-    }
+    const { data } = await applyClassDiscount(selectedClassId.value, discountValue.value)
+    successMessage.value = data.message
+    selectedClassId.value = ''
+    discountValue.value = ''
   } catch (error) {
-    errorMessage.value = 'Error de conexión con el servidor.'
+    errorMessage.value = error.response?.data?.error || 'Error de conexión con el servidor.'
   } finally {
     isSubmitting.value = false
   }

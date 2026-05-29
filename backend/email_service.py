@@ -25,10 +25,15 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_EMAIL_FROM = "onboarding@resend.dev"
+DEFAULT_GYM_SITE_URL = "http://localhost:5173"
 
 
 def _email_from():
     return os.getenv("EMAIL_FROM", DEFAULT_EMAIL_FROM)
+
+
+def _gym_site_url():
+    return os.getenv("GYM_SITE_URL", DEFAULT_GYM_SITE_URL).rstrip("/")
 
 
 def _has_valid_email(user):
@@ -182,5 +187,45 @@ def send_credit_generated_email(user, class_obj, credit):
     return _send_email(
         user.email,
         "Crédito generado - SiempreGym",
+        html,
+    )
+
+
+def send_waitlist_promotion_email(user, class_obj, new_enrollment, other_pending_enrollments=None):
+    if not _has_valid_email(user):
+        return False
+
+    activity_name = escape(_activity_name(class_obj))
+    class_datetime = escape(_format_class_datetime(class_obj))
+    site_url = _gym_site_url()
+    payments_url = f"{site_url}/pagos?tab=pending&enrollment_id={new_enrollment.id}"
+
+    pending_enrollments_section = ""
+    if other_pending_enrollments:
+        rows = "".join(
+            f"<li>{escape(e.class_.actividad.name)} - {escape(e.class_.name)} ({escape(_format_class_datetime(e.class_))})</li>"
+            for e in other_pending_enrollments
+        )
+        pending_enrollments_section = f"""
+        <hr>
+        <p><strong>Pagos pendientes adicionales:</strong></p>
+        <ul>{rows}</ul>
+        <p>Recordá que también debés abonar estas inscripciones para asegurar tu lugar.</p>
+        """
+
+    html = f"""
+    <h1>¡Conseguiste un lugar de la lista de espera!</h1>
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    <p>Se le ha inscripto a la clase <strong>{activity_name} {class_datetime}</strong> en la cual usted estaba en la lista de espera.</p>
+    <br>
+    <p>En la página del gimnasio usted podrá realizar el pago de la inscripción, o a través del siguiente link:<br>
+    <a href="{site_url}">{site_url}</a></p>
+    <p>Para tu comodidad, podés ir directamente a pagar haciendo click acá: <a href="{payments_url}"><b>Pagar mi inscripción ahora</b></a></p>
+    {pending_enrollments_section}
+    """
+
+    return _send_email(
+        user.email,
+        f"Fuiste inscripto a la clase de {activity_name} - SiempreGym",
         html,
     )
