@@ -618,6 +618,94 @@ def _mercado_pago_payer_payload(user):
         payer["email"] = payer_email
     return payer
 
+
+def _mercado_pago_notification_url():
+    configured = os.getenv("MERCADOPAGO_NOTIFICATION_URL", "").strip()
+    if configured:
+        return configured
+
+    success_url = os.getenv("PAYMENT_SUCCESS_URL", "").strip()
+    marker = "/api/payments/return/success"
+    if marker in success_url:
+        return f"{success_url.split(marker, 1)[0]}/api/payments/webhook"
+
+    return "http://localhost:5000/api/payments/webhook"
+
+
+def _mercado_pago_payment_response(mercado_pago_payment_id):
+    if not mercado_pago_payment_id:
+        return None
+    try:
+        result = get_mercadopago_client().payment().get(mercado_pago_payment_id)
+    except Exception:
+        logger.exception("[MercadoPago] no_se_pudo_consultar_pago mp_payment_id=%s", mercado_pago_payment_id)
+        return None
+
+    if not isinstance(result, dict):
+        logger.error("[MercadoPago] consulta_pago_respuesta_invalida response=%s", result)
+        return None
+    if result.get("status") not in [200, 201]:
+        logger.error("[MercadoPago] consulta_pago_rechazada response=%s", result)
+        return None
+
+    response = result.get("response")
+    return response if isinstance(response, dict) else None
+
+
+def _payment_from_mercado_pago_response(mp_payment):
+    if not isinstance(mp_payment, dict):
+        return None
+
+    external_reference = mp_payment.get("external_reference")
+    if external_reference:
+        payment = Payment.query.get(external_reference)
+        if payment:
+            return payment
+
+    preference_id = mp_payment.get("preference_id")
+    if preference_id:
+        return Payment.query.filter_by(mercado_pago_preference_id=preference_id).first()
+
+    return None
+
+
+def _apply_mercado_pago_status(payment, mercado_pago_status, status_detail=None, mercado_pago_payment_id=None, current_datetime=None):
+    current_datetime = current_datetime or _current_discount_datetime()
+    if mercado_pago_payment_id:
+        payment.mercado_pago_payment_id = str(mercado_pago_payment_id)
+
+    if payment.status == Payment.STATUS_APPROVED:
+        payment_service.expire_equivalent_pending_payments(payment)
+        if payment.enrollment:
+            payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
+        return PAYMENT_RETURN_STATUS_SUCCESS, None
+
+    if payment.enrollment and _class_has_finished(payment.enrollment.class_, current_datetime):
+        payment.status = Payment.STATUS_EXPIRED
+        if payment.enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
+            payment.enrollment.estado = Enrollment.STATUS_EXPIRED
+        payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
+        return PAYMENT_RETURN_STATUS_FAILURE, "El período de pago de la inscripción venció"
+
+    if mercado_pago_status == MERCADO_PAGO_STATUS_APPROVED:
+        if _payment_would_overpay(payment):
+            payment.status = Payment.STATUS_REJECTED
+            return PAYMENT_RETURN_STATUS_FAILURE, "El pago supera el saldo pendiente"
+
+        payment.status = Payment.STATUS_APPROVED
+        payment_service.expire_equivalent_pending_payments(payment)
+        if payment.enrollment:
+            payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
+        return PAYMENT_RETURN_STATUS_SUCCESS, None
+
+    if mercado_pago_status in [MERCADO_PAGO_STATUS_PENDING, MERCADO_PAGO_STATUS_IN_PROCESS]:
+        payment.status = Payment.STATUS_PENDING
+        return PAYMENT_RETURN_STATUS_PENDING, None
+
+    payment.status = Payment.STATUS_REJECTED
+    return PAYMENT_RETURN_STATUS_FAILURE, _payment_error_message(status_detail)
+
+
 # ─── Rutas API: Autenticación ─────────────────────────────────────────────────
 
 @app.route("/api/register", methods=["POST"])
@@ -1635,6 +1723,7 @@ def create_payment():
             "failure": _configured_url("PAYMENT_FAILURE_URL", "http://localhost:5000/api/payments/return/failure"),
             "pending": _configured_url("PAYMENT_PENDING_URL", f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}"),
         },
+        "notification_url": _mercado_pago_notification_url(),
         "auto_return": "approved",
     }
     timings["build_preference_payload"] = _elapsed_ms(preference_payload_start)
@@ -1758,44 +1847,43 @@ def mercado_pago_return(result):
 
     if mercado_pago_payment_id:
         payment.mercado_pago_payment_id = str(mercado_pago_payment_id)
+        mp_payment = _mercado_pago_payment_response(mercado_pago_payment_id)
+        if mp_payment:
+            mercado_pago_status = mp_payment.get("status") or mercado_pago_status
+            status_detail = mp_payment.get("status_detail") or status_detail
 
-    if payment.status == Payment.STATUS_APPROVED:
-        payment_service.expire_equivalent_pending_payments(payment)
-        redirect_status = PAYMENT_RETURN_STATUS_SUCCESS
-        message = None
-    elif (
-        payment.enrollment
-        and _class_has_finished(payment.enrollment.class_, current_datetime)
-    ):
-        payment.status = Payment.STATUS_EXPIRED
-        if payment.enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
-            payment.enrollment.estado = Enrollment.STATUS_EXPIRED
-        payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
-        redirect_status = PAYMENT_RETURN_STATUS_FAILURE
-        message = "El período de pago de la inscripción venció"
-    elif result == PAYMENT_RETURN_STATUS_SUCCESS or mercado_pago_status == MERCADO_PAGO_STATUS_APPROVED:
-        if _payment_would_overpay(payment):
-            payment.status = Payment.STATUS_REJECTED
-            redirect_status = PAYMENT_RETURN_STATUS_FAILURE
-            message = "El pago supera el saldo pendiente"
-        else:
-            payment.status = Payment.STATUS_APPROVED
-            payment_service.expire_equivalent_pending_payments(payment)
-            if payment.enrollment:
-                payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
-            redirect_status = PAYMENT_RETURN_STATUS_SUCCESS
-            message = None
-    elif result == PAYMENT_RETURN_STATUS_PENDING or mercado_pago_status in [
-        MERCADO_PAGO_STATUS_PENDING,
-        MERCADO_PAGO_STATUS_IN_PROCESS,
-    ]:
-        payment.status = Payment.STATUS_PENDING
-        redirect_status = PAYMENT_RETURN_STATUS_PENDING
-        message = None
+    if mercado_pago_status:
+        redirect_status, message = _apply_mercado_pago_status(
+            payment,
+            mercado_pago_status,
+            status_detail,
+            mercado_pago_payment_id,
+            current_datetime,
+        )
+    elif result == PAYMENT_RETURN_STATUS_SUCCESS:
+        redirect_status, message = _apply_mercado_pago_status(
+            payment,
+            MERCADO_PAGO_STATUS_APPROVED,
+            status_detail,
+            mercado_pago_payment_id,
+            current_datetime,
+        )
+    elif result == PAYMENT_RETURN_STATUS_PENDING:
+        redirect_status, message = _apply_mercado_pago_status(
+            payment,
+            MERCADO_PAGO_STATUS_PENDING,
+            status_detail,
+            mercado_pago_payment_id,
+            current_datetime,
+        )
     else:
-        payment.status = Payment.STATUS_REJECTED
-        redirect_status = PAYMENT_RETURN_STATUS_FAILURE
-        message = _payment_error_message(status_detail)
+        redirect_status, message = _apply_mercado_pago_status(
+            payment,
+            None,
+            status_detail,
+            mercado_pago_payment_id,
+            current_datetime,
+        )
 
     db.session.commit()
     logger.info(
@@ -1805,6 +1893,60 @@ def mercado_pago_return(result):
         redirect_status,
     )
     return redirect(_frontend_payments_url(redirect_status, message))
+
+
+@app.route("/api/payments/webhook", methods=["POST", "GET"])
+def mercado_pago_webhook():
+    payload = request.get_json(silent=True) or {}
+    query = request.args.to_dict()
+    logger.info("[MercadoPago Webhook] query=%s payload=%s", query, payload)
+
+    topic = query.get("topic") or query.get("type") or payload.get("topic") or payload.get("type")
+    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+    mercado_pago_payment_id = (
+        query.get("id")
+        or query.get("data.id")
+        or data.get("id")
+        or payload.get("id")
+    )
+
+    if topic == "merchant_order":
+        return jsonify({"message": "merchant order notification ignored"}), 200
+    if topic and topic != "payment":
+        return jsonify({"message": "notification ignored"}), 200
+    if not mercado_pago_payment_id:
+        return jsonify({"message": "payment id missing"}), 200
+
+    mp_payment = _mercado_pago_payment_response(mercado_pago_payment_id)
+    if not mp_payment:
+        return jsonify({"message": "payment not available yet"}), 200
+
+    payment = _payment_from_mercado_pago_response(mp_payment)
+    if not payment:
+        logger.error(
+            "[MercadoPago Webhook] payment_no_encontrado mp_payment_id=%s external_reference=%s preference_id=%s",
+            mercado_pago_payment_id,
+            mp_payment.get("external_reference"),
+            mp_payment.get("preference_id"),
+        )
+        return jsonify({"message": "local payment not found"}), 200
+
+    redirect_status, _message = _apply_mercado_pago_status(
+        payment,
+        mp_payment.get("status"),
+        mp_payment.get("status_detail"),
+        mercado_pago_payment_id,
+        _current_discount_datetime(),
+    )
+    db.session.commit()
+    logger.info(
+        "[MercadoPago Webhook] payment_id=%s mp_payment_id=%s status=%s notification_status=%s",
+        payment.id,
+        mercado_pago_payment_id,
+        payment.status,
+        redirect_status,
+    )
+    return jsonify({"message": "payment updated", "payment_id": payment.id, "status": payment.status}), 200
 
 
 @app.route("/api/payments/history", methods=["GET"])
