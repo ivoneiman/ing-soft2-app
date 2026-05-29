@@ -19,11 +19,12 @@ try:
         send_admin_login_code,
         send_class_cancelled_email,
         send_credit_generated_email,
+        send_waitlist_promotion_email,
     )
     from mercadopago_config import get_mercadopago_client
     from models import db, User
     # Importar todos los modelos requeridos
-    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting
+    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry
     from constants import (
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
@@ -53,11 +54,12 @@ except ModuleNotFoundError:
         send_admin_login_code,
         send_class_cancelled_email,
         send_credit_generated_email,
+        send_waitlist_promotion_email,
     )
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
     # Importar todos los modelos requeridos
-    from .models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting
+    from .models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry
     from .constants import (
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
@@ -1065,6 +1067,10 @@ def create_enrollment():
         return api_error(error, status_code)
 
     enrollment_map = _enrollment_counts()
+
+    # Eliminar de la lista de espera si se estaba inscribiendo con éxito
+    WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=class_obj.id).delete()
+
     enrollment, result = enrollment_service.create_or_reopen_enrollment(
         current_user,
         class_obj,
@@ -1078,6 +1084,16 @@ def create_enrollment():
         return api_error("Ya estás inscripto y pagaste esta clase", 409)
     if result == "full":
         if data.get("waitlist") or data.get("waitlist_type"):
+            existing_enr = Enrollment.query.filter_by(
+                user_id=current_user.id,
+                class_id=class_obj.id
+            ).filter(
+                Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+            ).first()
+
+            if existing_enr:
+                return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
+
             waitlist_type = data.get("waitlist_type", WAITLIST_TYPE_INDIVIDUAL)
             waitlist_entry, waitlist_error = waitlist_service.add_waitlist_entry(
                 current_user,
@@ -1138,6 +1154,16 @@ def create_waitlist_entry():
     if not class_obj:
         return api_error("Clase no encontrada", 404)
 
+    existing_enr = Enrollment.query.filter_by(
+        user_id=current_user.id,
+        class_id=class_obj.id
+    ).filter(
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+    ).first()
+
+    if existing_enr:
+        return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
+
     waitlist_type = data.get("type", WAITLIST_TYPE_INDIVIDUAL)
     entry, error = waitlist_service.add_waitlist_entry(current_user, class_obj, waitlist_type)
     if error:
@@ -1176,9 +1202,62 @@ def cancel_enrollment(enrollment_id):
     if credit:
         email_sent = send_credit_generated_email(enrollment.user, class_obj, credit)
 
-    promotion = waitlist_service.promote_next_waitlisted_user(class_obj)
-    if promotion and promotion.get("enrollment"):
-        db.session.commit()
+    try:
+        waitlist_entries = WaitlistEntry.query.filter_by(
+            class_id=class_obj.id,
+            type=WAITLIST_TYPE_INDIVIDUAL
+        ).order_by(WaitlistEntry.created_at.asc()).all()
+
+        promoted = False
+        for next_in_waitlist in waitlist_entries:
+            user_to_promote = next_in_waitlist.user
+
+            existing_enr = Enrollment.query.filter_by(
+                user_id=user_to_promote.id,
+                class_id=class_obj.id
+            ).first()
+
+            if existing_enr and existing_enr.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]:
+                db.session.delete(next_in_waitlist)
+                continue
+            
+            if existing_enr:
+                existing_enr.estado = Enrollment.STATUS_PENDING_PAYMENT
+                existing_enr.tipo = ENROLLMENT_TYPE_SINGLE
+                existing_enr.requiere_reembolso = False
+                existing_enr.total_amount = 0
+                existing_enr.paid_amount = 0
+                existing_enr.remaining_amount = 0
+                existing_enr.payment_status = Enrollment.PAYMENT_STATUS_PENDING
+                new_enrollment = existing_enr
+            else:
+                new_enrollment = Enrollment(
+                    user_id=user_to_promote.id,
+                    class_id=class_obj.id,
+                    tipo=ENROLLMENT_TYPE_SINGLE,
+                    estado=Enrollment.STATUS_PENDING_PAYMENT,
+                )
+                db.session.add(new_enrollment)
+            
+            db.session.delete(next_in_waitlist)
+            notification_service.create_waitlist_promotion_notification(user_to_promote, class_obj)
+            db.session.commit()
+
+            other_pending_enrollments = Enrollment.query.filter(
+                Enrollment.user_id == new_enrollment.user_id,
+                Enrollment.id != new_enrollment.id,
+                Enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT,
+            ).all()
+            send_waitlist_promotion_email(user_to_promote, class_obj, new_enrollment, other_pending_enrollments)
+            promoted = True
+            break
+            
+        if not promoted and waitlist_entries:
+            db.session.commit()
+            
+    except Exception as err:
+        db.session.rollback()
+        logger.exception("[Cancelaciones] Error al promover desde lista de espera: %s", err)
 
     message = (
         "Tu inscripción fue cancelada correctamente. Se generó un crédito para futuras reservas."

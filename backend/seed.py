@@ -115,7 +115,7 @@ def previous_available_datetime(actividad_id, fecha_hora, ignore_class_id=None):
         candidate = candidate - timedelta(days=1)
 
 
-def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=None, search_direction="forward"):
+def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=None, search_direction="forward", cupo_maximo=20):
     """Crea o actualiza una clase semilla sin duplicarla."""
     fecha_hora = as_naive_datetime(fecha_hora)
     find_available_datetime = previous_available_datetime if search_direction == "backward" else next_available_datetime
@@ -144,6 +144,9 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
         if existing_by_name.descuento != descuento:
             existing_by_name.descuento = descuento
             changed = True
+        if existing_by_name.cupoMaximo != cupo_maximo:
+            existing_by_name.cupoMaximo = cupo_maximo
+            changed = True
 
         action = "actualizada" if changed else "ya existe"
         print_class_log(existing_by_name, action)
@@ -156,6 +159,7 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
         fecha_hora=fecha_hora,
         id_actividad=actividad.id,
         descuento=descuento,
+        cupoMaximo=cupo_maximo,
     )
     db.session.add(class_obj)
     db.session.flush()  # Para obtener el ID generado
@@ -470,6 +474,37 @@ def main():
             actividad2,
             descuento=0,
             legacy_names=["Funcional Caso Clase Premium", "Funcional Caso Descuento 70%"],
+        )
+
+        print("   Creando clases de Yoga para Junio (pruebas de lista de espera mensual)...")
+        year = today.year
+        create_test_class(
+            "Yoga - 4 Junio (1 Cupo)",
+            datetime(year, 6, 4, 10, 0),
+            actividad1,
+            cupo_maximo=1,
+            legacy_names=["Yoga Junio 4"]
+        )
+        create_test_class(
+            "Yoga - 11 Junio",
+            datetime(year, 6, 11, 10, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Junio 11"]
+        )
+        create_test_class(
+            "Yoga - 18 Junio",
+            datetime(year, 6, 18, 10, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Junio 18"]
+        )
+        create_test_class(
+            "Yoga - 25 Junio",
+            datetime(year, 6, 25, 10, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Junio 25"]
         )
 
         db.session.commit()
