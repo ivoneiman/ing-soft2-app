@@ -19,7 +19,6 @@ try:
         send_admin_login_code,
         send_class_cancelled_email,
         send_credit_generated_email,
-        send_waitlist_promotion_email,
     )
     from mercadopago_config import get_mercadopago_client
     from models import db, User
@@ -54,7 +53,6 @@ except ModuleNotFoundError:
         send_admin_login_code,
         send_class_cancelled_email,
         send_credit_generated_email,
-        send_waitlist_promotion_email,
     )
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
@@ -601,6 +599,26 @@ def _configured_url(name, default):
     return payment_service.configured_url(name, default)
 
 
+def _public_backend_url():
+    configured = _configured_url("PUBLIC_BACKEND_URL", "")
+    if configured:
+        return configured.rstrip("/")
+    legacy_configured = _configured_url("BACKEND_PUBLIC_URL", "")
+    if legacy_configured:
+        return legacy_configured.rstrip("/")
+    return ""
+
+
+def _mercado_pago_callback_url(name, path, default):
+    configured = _configured_url(name, "")
+    if configured:
+        return configured
+    public_backend_url = _public_backend_url()
+    if public_backend_url:
+        return f"{public_backend_url}{path}"
+    return default
+
+
 def _is_absolute_http_url(value):
     return payment_service.is_absolute_http_url(value)
 
@@ -637,6 +655,10 @@ def _mercado_pago_notification_url():
     configured = os.getenv("MERCADOPAGO_NOTIFICATION_URL", "").strip()
     if configured:
         return configured
+
+    public_backend_url = _public_backend_url()
+    if public_backend_url:
+        return f"{public_backend_url}/api/payments/webhook"
 
     success_url = os.getenv("PAYMENT_SUCCESS_URL", "").strip()
     marker = "/api/payments/return/success"
@@ -1157,8 +1179,6 @@ def cancel_enrollment(enrollment_id):
     promotion = waitlist_service.promote_next_waitlisted_user(class_obj)
     if promotion and promotion.get("enrollment"):
         db.session.commit()
-        pending_payments = waitlist_service.get_pending_payments_for_user(promotion["user"], exclude_class_id=class_obj.id)
-        send_waitlist_promotion_email(promotion["user"], class_obj, pending_payments=pending_payments)
 
     message = (
         "Tu inscripción fue cancelada correctamente. Se generó un crédito para futuras reservas."
@@ -1759,9 +1779,21 @@ def create_payment():
         "payer": _mercado_pago_payer_payload(current_user),
         "external_reference": str(payment.id),
         "back_urls": {
-            "success": _configured_url("PAYMENT_SUCCESS_URL", "http://localhost:5000/api/payments/return/success"),
-            "failure": _configured_url("PAYMENT_FAILURE_URL", "http://localhost:5000/api/payments/return/failure"),
-            "pending": _configured_url("PAYMENT_PENDING_URL", f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}"),
+            "success": _mercado_pago_callback_url(
+                "PAYMENT_SUCCESS_URL",
+                "/api/payments/return/success",
+                "http://localhost:5000/api/payments/return/success",
+            ),
+            "failure": _mercado_pago_callback_url(
+                "PAYMENT_FAILURE_URL",
+                "/api/payments/return/failure",
+                "http://localhost:5000/api/payments/return/failure",
+            ),
+            "pending": _mercado_pago_callback_url(
+                "PAYMENT_PENDING_URL",
+                f"/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+                f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+            ),
         },
         "notification_url": _mercado_pago_notification_url(),
         "auto_return": "approved",
