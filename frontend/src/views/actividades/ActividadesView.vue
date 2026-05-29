@@ -56,9 +56,14 @@
                   class="slot-btn"
                   :class="{ active: selectedClassId === slot.id }"
                   @click="onSlotSelected(slot)">
-                  <div class="slot-time">{{ slot.time }}</div>
+                      <div class="slot-time">{{ slot.time }}</div>
                   <div class="slot-cupo">
-                    {{ slot.available_spots }} {{ slot.available_spots === 1 ? 'cupo' : 'cupos' }}
+                    <template v-if="slot.available_spots > 0">
+                      {{ slot.available_spots }} {{ slot.available_spots === 1 ? 'cupo' : 'cupos' }}
+                    </template>
+                    <template v-else>
+                      Sin cupo
+                    </template>
                   </div>
                 </button>
               </div>
@@ -78,14 +83,16 @@
       <!-- Resumen de selección -->
       <section v-if="selectedClass" class="summary">
         <h3>Tu selección</h3>
-        <ul class="summary-list">
-          <li><strong>Actividad:</strong> {{ selectedClass.actividad || selectedActivityName }}</li>
-          <li><strong>Día:</strong> {{ selectedDateLabel }}</li>
-          <li><strong>Horario:</strong> {{ selectedClass.time }} ({{ selectedClass.duration_minutes }} min)</li>
-          <li><strong>Cupos libres:</strong> {{ selectedClass.available_spots }}</li>
-        </ul>
+        <template v-if="!selectedClassFull">
+          <ul class="summary-list">
+            <li><strong>Actividad:</strong> {{ selectedClass.actividad || selectedActivityName }}</li>
+            <li><strong>Día:</strong> {{ selectedDateLabel }}</li>
+            <li><strong>Horario:</strong> {{ selectedClass.time }} ({{ selectedClass.duration_minutes }} min)</li>
+            <li><strong>Cupos libres:</strong> {{ selectedClass.available_spots }}</li>
+          </ul>
+        </template>
         
-        <div class="enrollment-options">
+        <div class="enrollment-options" v-if="!selectedClassFull">
           <h4>Tipo de inscripción</h4>
           <label class="radio-label">
             <input type="radio" :value="TIPO_SUELTA" v-model="enrollmentType" />
@@ -99,8 +106,28 @@
           </label>
         </div>
 
-        <button type="button" class="btn-inscribe" :disabled="isSubmittingEnrollment || checkingMensual" @click="handleEnrollment">
+        <div class="selection-summary" v-if="selectedClassFull">
+          <span class="radio-text">Esta clase no posee cupo disponible en este momento, pero puede inscribirse en la lista de espera. Al inscribirse, le notificaremos vía mail si se liberó un cupo para usted.</span>
+        </div>
+
+        <button
+          v-if="!selectedClassFull"
+          type="button"
+          class="btn-inscribe"
+          :disabled="isSubmittingEnrollment || checkingMensual"
+          @click="handleEnrollment"
+        >
           {{ isSubmittingEnrollment ? 'Creando inscripción...' : 'Inscribirse' }}
+        </button>
+
+        <button
+          v-if="selectedClassFull"
+          type="button"
+          class="btn-inscribe"
+          :disabled="isSubmittingEnrollment"
+          @click="handleEnrollment"
+        >
+          {{ isSubmittingEnrollment ? 'Enviando a lista de espera...' : 'inscribirse a lista de espera' }}
         </button>
       </section>
 
@@ -165,6 +192,8 @@ const selectedDateLabel = computed(() => {
 const selectedClass = computed(() =>
   availableSlots.value.find((s) => s.id === Number(selectedClassId.value)) || null
 );
+
+const selectedClassFull = computed(() => selectedClass.value && selectedClass.value.available_spots === 0);
 
 const calendarEnabledKeys = computed(() => {
   if (!selectedActivityId.value || loadingDays.value) return undefined;
@@ -238,7 +267,7 @@ async function onDateSelected(date) {
     const dateKey = toDateKey(date);
     const res = await getCatalogAvailability(selectedActivityId.value, dateKey);
     
-    let slots = res.data?.available || [];
+    let slots = res.data?.slots || res.data?.available || [];
     
     // Filtrar horarios que ya pasaron si el día seleccionado es hoy
     const todayKey = toDateKey(new Date());
@@ -291,7 +320,7 @@ async function onSlotSelected(slot) {
       if (dStr === toDateKey(selectedDate.value)) continue;
       
       const res = await getCatalogAvailability(selectedActivityId.value, dStr);
-      const slots = res.data?.available || [];
+      const slots = res.data?.slots || res.data?.available || [];
       const match = slots.find(s => s.time === slot.time && s.available_spots > 0);
       if (!match) {
         allAvailable = false;
@@ -314,9 +343,25 @@ async function handleEnrollment() {
   error.value = "";
   successMessage.value = "";
   try {
-    const res = await createEnrollment({ class_id: selectedClass.value.id, tipo: enrollmentType.value });
+    const isWaitlist = selectedClassFull.value;
+    const waitlistType = isWaitlist
+      ? (enrollmentType.value === TIPO_MENSUAL ? 'monthly' : 'individual')
+      : undefined;
+    const res = await createEnrollment({
+      class_id: selectedClass.value.id,
+      tipo: enrollmentType.value,
+      waitlist: isWaitlist,
+      waitlist_type: waitlistType,
+    });
     if (res.data?.credit_used) {
       successMessage.value = res.data?.message || "Inscripción realizada utilizando crédito";
+      selectedClassId.value = "";
+      await onDateSelected(selectedDate.value);
+      return;
+    }
+    if (res.data?.waitlist) {
+      successMessage.value = res.data?.message || "Te agregamos a la lista de espera.";
+      error.value = "";
       selectedClassId.value = "";
       await onDateSelected(selectedDate.value);
       return;

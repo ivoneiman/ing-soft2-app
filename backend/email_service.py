@@ -25,10 +25,15 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_EMAIL_FROM = "onboarding@resend.dev"
+DEFAULT_GYM_SITE_URL = "http://localhost:5173"
 
 
 def _email_from():
     return os.getenv("EMAIL_FROM", DEFAULT_EMAIL_FROM)
+
+
+def _gym_site_url():
+    return os.getenv("GYM_SITE_URL", DEFAULT_GYM_SITE_URL).rstrip("/")
 
 
 def _has_valid_email(user):
@@ -182,5 +187,39 @@ def send_credit_generated_email(user, class_obj, credit):
     return _send_email(
         user.email,
         "Crédito generado - SiempreGym",
+        html,
+    )
+
+
+def send_waitlist_promotion_email(user, class_obj, pending_payments=None):
+    if not _has_valid_email(user):
+        return False
+
+    activity_name = escape(_activity_name(class_obj))
+    class_name = escape(getattr(class_obj, "name", "Clase"))
+    class_datetime = escape(_format_class_datetime(class_obj))
+    site_url = _gym_site_url()
+
+    payment_section = ""
+    if pending_payments:
+        rows = "".join(
+            f"<li>{escape(p['actividad'] or 'Actividad')} - {escape(p['class_name'])} ({escape(p['fecha_hora'])})</li>"
+            for p in pending_payments
+        )
+        payment_section = f"<p>Tienes pagos pendientes antes de completar la inscripción:</p><ul>{rows}</ul>"
+
+    html = f"""
+    <h1>¡Tenés un lugar disponible en lista de espera!</h1>
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    <p>Un cupo se liberó para <strong>{class_name}</strong> de <strong>{activity_name}</strong>.</p>
+    <p><strong>Fecha y hora:</strong> {class_datetime}</p>
+    {payment_section}
+    <p>Ingresá a tu panel para finalizar la inscripción:</p>
+    <p><a href=\"{site_url}\">{site_url}</a></p>
+    """
+
+    return _send_email(
+        user.email,
+        "Tenés un lugar disponible en lista de espera - SiempreGym",
         html,
     )

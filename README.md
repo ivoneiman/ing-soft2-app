@@ -107,6 +107,7 @@ Variables principales:
 - `PAYMENT_SUCCESS_URL`: URL de retorno para pagos aprobados.
 - `PAYMENT_FAILURE_URL`: URL de retorno para pagos fallidos.
 - `PAYMENT_PENDING_URL`: URL de retorno para pagos pendientes.
+- `MERCADOPAGO_NOTIFICATION_URL`: URL pública del webhook para confirmar pagos automáticamente.
 - `FRONTEND_PAYMENTS_URL`: URL del frontend donde se muestra el resultado del pago.
 - `RESEND_API_KEY`: API key de Resend para envío de emails.
 - `EMAIL_FROM`: remitente utilizado en emails transaccionales.

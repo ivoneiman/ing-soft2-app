@@ -27,9 +27,27 @@ class FakePreference:
         }
 
 
+class FakePayment:
+    responses = {}
+
+    def get(self, payment_id):
+        response = self.responses.get(str(payment_id), {})
+        return {
+            "status": 200,
+            "response": {
+                "id": str(payment_id),
+                "status": "approved",
+                **response,
+            },
+        }
+
+
 class FakeMercadoPagoClient:
     def preference(self):
         return FakePreference()
+
+    def payment(self):
+        return FakePayment()
 
 
 def set_session_user(client, user_id):
@@ -145,6 +163,20 @@ def main():
                 payment_method=Payment.METHOD_MERCADO_PAGO,
             ).all()
             assert_equal("duplicate deposit keeps one logical payment", len(deposit_attempts), 1)
+
+        FakePayment.responses["mp-smoke-webhook-deposit"] = {
+            "external_reference": str(payment_id),
+            "preference_id": create_body["preference_id"],
+        }
+        webhook_res = http.post(
+            "/api/payments/webhook",
+            json={"type": "payment", "data": {"id": "mp-smoke-webhook-deposit"}},
+        )
+        assert_equal("deposit webhook status", webhook_res.status_code, 200)
+        with app.app_context():
+            deposit_payment = db.session.get(Payment, payment_id)
+            assert_equal("deposit approved by webhook", deposit_payment.status, Payment.STATUS_APPROVED)
+            assert_equal("deposit stores mp payment id", deposit_payment.mercado_pago_payment_id, "mp-smoke-webhook-deposit")
 
         callback_res = http.get(
             f"/api/payments/return/success?external_reference={payment_id}"
