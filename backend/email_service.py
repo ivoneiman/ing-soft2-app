@@ -191,35 +191,41 @@ def send_credit_generated_email(user, class_obj, credit):
     )
 
 
-def send_waitlist_promotion_email(user, class_obj, pending_payments=None):
+def send_waitlist_promotion_email(user, class_obj, new_enrollment, other_pending_enrollments=None):
     if not _has_valid_email(user):
         return False
 
     activity_name = escape(_activity_name(class_obj))
     class_datetime = escape(_format_class_datetime(class_obj))
     site_url = _gym_site_url()
+    payments_url = f"{site_url}/pagos?tab=pending&enrollment_id={new_enrollment.id}"
 
-    payment_section = ""
-    if pending_payments:
+    pending_enrollments_section = ""
+    if other_pending_enrollments:
         rows = "".join(
-            f"<li>{escape(p['actividad'] or 'Actividad')} - {escape(p['class_name'])} ({escape(p['fecha_hora'])})</li>"
-            for p in pending_payments
+            f"<li>{escape(e.class_.actividad.name)} - {escape(e.class_.name)} ({escape(_format_class_datetime(e.class_))})</li>"
+            for e in other_pending_enrollments
         )
-        payment_section = f"<p>Tienes pagos pendientes antes de completar la inscripción:</p><ul>{rows}</ul>"
+        pending_enrollments_section = f"""
+        <hr>
+        <p><strong>Pagos pendientes adicionales:</strong></p>
+        <ul>{rows}</ul>
+        <p>Recordá que también debés abonar estas inscripciones para asegurar tu lugar.</p>
+        """
 
     html = f"""
-    <h1>Cupo disponible - SiempreGym</h1>
+    <h1>¡Conseguiste un lugar de la lista de espera!</h1>
     <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
-    <p>Se ha liberado un cupo para la clase <strong>{activity_name}</strong> y se te ha inscripto automáticamente.</p>
-    <p><strong>Fecha y hora:</strong> {class_datetime}</p>
-    {payment_section}
-    <p>Ya tienes disponible la inscripción pendiente de pago para realizar en el siguiente enlace:</p>
-    <p><a href=\"{site_url}\">{site_url}</a></p>
-    <p>Saludos,<br>Equipo SiempreGym</p>
+    <p>Se le ha inscripto a la clase <strong>{activity_name} {class_datetime}</strong> en la cual usted estaba en la lista de espera.</p>
+    <br>
+    <p>En la página del gimnasio usted podrá realizar el pago de la inscripción, o a través del siguiente link:<br>
+    <a href="{site_url}">{site_url}</a></p>
+    <p>Para tu comodidad, podés ir directamente a pagar haciendo click acá: <a href="{payments_url}"><b>Pagar mi inscripción ahora</b></a></p>
+    {pending_enrollments_section}
     """
 
     return _send_email(
         user.email,
-        "Tenés un lugar disponible en lista de espera - SiempreGym",
+        f"Fuiste inscripto a la clase de {activity_name} - SiempreGym",
         html,
     )
