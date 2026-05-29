@@ -19,12 +19,12 @@
     <form @submit.prevent="onSubmit">
       <div>
         <label for="email">Email:</label>
-        <input id="email" v-model="email" type="email" required />
+        <input id="email" v-model="email" type="email" :disabled="mode === 'admin-code' && codeSent" required />
       </div>
 
-      <div v-if="mode === 'password'">
+      <div v-if="mode === 'password' || mode === 'admin-code'">
         <label for="password">Contraseña:</label>
-        <input id="password" v-model="password" type="password" required />
+        <input id="password" v-model="password" type="password" :disabled="mode === 'admin-code' && codeSent" required />
       </div>
 
       <div v-if="mode === 'admin-code' && codeSent">
@@ -33,7 +33,7 @@
       </div>
 
       <button type="submit" :disabled="loading">
-        {{ mode === 'admin-code' ? (codeSent ? 'Verificar código' : 'Solicitar código') : 'Ingresar' }}
+        {{ mode === 'admin-code' ? (codeSent ? 'Verificar código' : 'Recibir código') : 'Ingresar' }}
       </button>
       <div v-if="error" class="error">{{ error }}</div>
       <div v-if="info" class="info">{{ info }}</div>
@@ -90,7 +90,11 @@ async function onSubmit() {
   try {
     if (mode.value === 'admin-code') {
       if (!codeSent.value) {
-        const ok = await authStore.adminLoginRequest(email.value)
+        if (!password.value.trim()) {
+          error.value = 'Debe completar la contraseña'
+          return
+        }
+        const ok = await authStore.adminLoginRequest(email.value, password.value)
         if (ok) {
           info.value = 'Se envió un código al email. Ingresalo a continuación.'
           codeSent.value = true

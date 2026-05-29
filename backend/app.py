@@ -756,12 +756,13 @@ def login():
 def admin_login_request():
     data = request.get_json()
     email = data.get("email", "").strip()
-    if not email:
-        return jsonify({"error": "Debe ingresar un email"}), 400
+    password = data.get("password", "")
+    if not email or not password:
+        return jsonify({"error": "Debe ingresar email y contraseña"}), 400
 
     user = User.query.filter_by(email=email, role="admin").first()
-    if not user:
-        return jsonify({"error": "Email no corresponde a un administrador"}), 401
+    if not user or not user.check_password(password):
+        return jsonify({"error": "Credenciales incorrectas o no corresponde a un administrador"}), 401
 
     code = f"{random.randint(0, 999999):06d}"
     session["admin_login_email"] = email
