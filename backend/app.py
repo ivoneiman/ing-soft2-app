@@ -1076,6 +1076,10 @@ def create_enrollment():
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
 
+    # Solo clientes pueden inscribirse a clases
+    if current_user.role != "client":
+        return api_error("Solo los clientes pueden inscribirse a clases", 403)
+
     data = request.get_json() or {}
     class_id = data.get("class_id")
     if not class_id:
@@ -1165,6 +1169,10 @@ def create_waitlist_entry():
     current_user = _get_authenticated_user()
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
+
+    # Solo clientes pueden unirse a lista de espera
+    if current_user.role != "client":
+        return api_error("Solo los clientes pueden unirse a lista de espera", 403)
 
     data = request.get_json() or {}
     class_id = data.get("class_id")

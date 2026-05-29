@@ -15,7 +15,8 @@
     <!-- Centro (se oculta en mobile, muestra en desktop) -->
     <div class="center-menu" :class="{ active: isMobileMenuOpen }">
       <router-link to="/" class="nav-item" @click="closeMobileMenu">Home</router-link>
-      <router-link to="/actividades" class="nav-item" @click="closeMobileMenu">Actividades</router-link>
+      <!-- Solo clientes pueden ver Actividades -->
+      <router-link v-if="!authStore.isLoggedIn || roleHelpers.isClient()" to="/actividades" class="nav-item" @click="closeMobileMenu">Actividades</router-link>
       <router-link to="/sobre-nosotros" class="nav-item" @click="closeMobileMenu">Sobre Nosotros</router-link>
 
       <!-- Si no está autenticado: mostrar Login y Registro -->
