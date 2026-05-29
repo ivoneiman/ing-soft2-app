@@ -83,6 +83,13 @@ export function getAllClasses() {
   );
 }
 
+export function getCatalog() {
+  return axios.get(
+    `${API_URL}/catalog`,
+    REQUEST_CONFIG
+  );
+}
+
 export function getCatalogAvailability(actividad_id, fecha) {
   return axios.get(
     `${API_URL}/catalog/availability`,

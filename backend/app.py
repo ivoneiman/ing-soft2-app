@@ -96,6 +96,8 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///app.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
 
 # Inicializa extensiones
 db.init_app(app)
@@ -120,14 +122,21 @@ def _record_query_end(conn, cursor, statement, parameters, context, executemany)
     g.payment_query_count = getattr(g, "payment_query_count", 0) + 1
     g.payment_query_ms = getattr(g, "payment_query_ms", 0.0) + _elapsed_ms(query_start)
 
-# CORS para frontend local Vue/Vite
+def _cors_origins():
+    configured = os.getenv("FRONTEND_ORIGINS") or os.getenv("CORS_ORIGINS") or os.getenv("FRONTEND_URL", "")
+    origins = [origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()]
+    origins.extend([
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ])
+    return list(dict.fromkeys(origins))
+
+
+# CORS para frontend local y despliegues configurados
 CORS(
     app,
     supports_credentials=True,
-    origins=[
-        "http://localhost:5173",
-        "http://localhost:5174"
-    ]
+    origins=_cors_origins()
 )
 
 # ─── Migración de esquema mínimo para SQLite antiguo ─────────────────────────────────────────────
