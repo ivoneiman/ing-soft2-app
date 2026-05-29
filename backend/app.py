@@ -96,8 +96,20 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///app.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SESSION_COOKIE_SAMESITE"] = os.getenv("SESSION_COOKIE_SAMESITE", "Lax")
-app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+
+
+def _is_production():
+    return os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("PUBLIC_BACKEND_URL", "").strip())
+
+
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv(
+    "SESSION_COOKIE_SAMESITE",
+    "None" if _is_production() else "Lax",
+)
+app.config["SESSION_COOKIE_SECURE"] = os.getenv(
+    "SESSION_COOKIE_SECURE",
+    "true" if _is_production() else "false",
+).lower() == "true"
 
 # Inicializa extensiones
 db.init_app(app)
