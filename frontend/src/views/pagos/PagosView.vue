@@ -128,6 +128,15 @@
           >
             {{ isSubmittingId === enrollment.id ? 'Redirigiendo...' : 'Pagar ahora' }}
           </button>
+          <button
+            v-if="enrollment.is_cancelable"
+            class="secondary-button cancel-enrollment-button"
+            type="button"
+            :disabled="isCancellingId === enrollment.id"
+            @click="openCancelEnrollment(enrollment)"
+          >
+            {{ isCancellingId === enrollment.id ? 'Cancelando...' : 'Cancelar inscripción' }}
+          </button>
         </article>
       </template>
     </section>
@@ -148,6 +157,7 @@
             <th>Descuento</th>
             <th>Total</th>
             <th>Estado</th>
+            <th>Acción</th>
           </tr>
         </thead>
         <tbody>
@@ -159,6 +169,18 @@
             <td>{{ Number(payment.discount_percentage || 0) }}%</td>
             <td>{{ formatMoney(payment.final_amount) }}</td>
             <td>{{ paymentStatusLabel(payment) }}</td>
+            <td>
+              <button
+                v-if="payment.enrollment_is_cancelable"
+                type="button"
+                class="table-action"
+                :disabled="isCancellingId === payment.enrollment_id"
+                @click="openCancelEnrollment(payment)"
+              >
+                {{ isCancellingId === payment.enrollment_id ? 'Cancelando...' : 'Cancelar inscripción' }}
+              </button>
+              <span v-else>-</span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -266,6 +288,32 @@
       </section>
     </div>
 
+    <div v-if="cancelEnrollmentTarget" class="modal-backdrop" role="dialog" aria-modal="true">
+      <section class="manual-payment-modal">
+        <h2>Cancelar inscripción</h2>
+        <p v-if="cancelEnrollmentWillGenerateCredit">
+          ¿Deseás cancelar esta inscripción?
+        </p>
+        <p v-if="cancelEnrollmentWillGenerateCredit">
+          Como la inscripción posee pagos aprobados, se generará un crédito reutilizable para otra clase de la misma actividad.
+        </p>
+        <p v-if="cancelEnrollmentWillGenerateCredit">
+          La acción no puede deshacerse.
+        </p>
+        <p v-else>
+          ¿Deseás cancelar esta inscripción?
+          La acción liberará tu cupo y no podrá deshacerse.
+        </p>
+        <div class="modal-actions">
+          <button type="button" class="secondary-button" @click="closeCancelEnrollment">Volver</button>
+          <button type="button" :disabled="isCancellingId === cancelEnrollmentId" @click="submitCancelEnrollment">
+            {{ isCancellingId === cancelEnrollmentId ? 'Cancelando...' : 'Cancelar inscripción' }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
     <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
   </main>
 </template>
@@ -276,6 +324,7 @@ import { RouterLink, useRoute } from 'vue-router';
 import { PAYMENT_METHOD, statusLabel } from '../../constants/statuses';
 import { PAYMENT_RETURN_MESSAGES, PAYMENT_RETURN_STATUS, PAYMENT_TAB, PAYMENT_TABS } from '../../constants/payments';
 import {
+  cancelEnrollment,
   createPayment,
   getAdminPaymentEnrollments,
   getMyCredits,
@@ -297,6 +346,7 @@ function normalizedTab(tab) {
 
 const activeTab = ref(normalizedTab(route.query.tab));
 const isSubmittingId = ref(null);
+const isCancellingId = ref(null);
 const isLoadingEnrollments = ref(false);
 const isLoadingHistory = ref(false);
 const isLoadingCredits = ref(false);
@@ -304,6 +354,7 @@ const isLoadingNotifications = ref(false);
 const isLoadingAdminEnrollments = ref(false);
 const isRegisteringManualPayment = ref(false);
 const errorMessage = ref('');
+const successMessage = ref('');
 const pendingEnrollments = ref([]);
 const payments = ref([]);
 const credits = ref([]);
@@ -311,11 +362,18 @@ const notifications = ref([]);
 const adminEnrollments = ref([]);
 const selectedPaymentTypes = ref({});
 const manualPaymentEnrollment = ref(null);
+const cancelEnrollmentTarget = ref(null);
 const manualPaymentForm = ref({
   amount: '',
   payment_method: PAYMENT_METHOD.CASH,
   notes: '',
 });
+
+const cancelEnrollmentId = computed(() => cancelEnrollmentTarget.value?.enrollment_id || cancelEnrollmentTarget.value?.id || null);
+const cancelEnrollmentWillGenerateCredit = computed(() => Boolean(
+  cancelEnrollmentTarget.value?.cancellation_will_generate_credit
+  || cancelEnrollmentTarget.value?.enrollment_cancellation_will_generate_credit
+));
 
 const returnMessage = computed(() => {
   if (PAYMENT_RETURN_MESSAGES[route.query.status]) return PAYMENT_RETURN_MESSAGES[route.query.status];
@@ -417,6 +475,7 @@ async function loadNotifications() {
 
 async function payNow(enrollment) {
   errorMessage.value = '';
+  successMessage.value = '';
   isSubmittingId.value = enrollment.id;
   const clickStart = performance.now();
   try {
@@ -441,6 +500,39 @@ async function payNow(enrollment) {
     loadPendingEnrollments();
   } finally {
     isSubmittingId.value = null;
+  }
+}
+
+function openCancelEnrollment(item) {
+  cancelEnrollmentTarget.value = item;
+  errorMessage.value = '';
+  successMessage.value = '';
+}
+
+function closeCancelEnrollment() {
+  cancelEnrollmentTarget.value = null;
+}
+
+async function submitCancelEnrollment() {
+  if (!cancelEnrollmentId.value) return;
+  errorMessage.value = '';
+  successMessage.value = '';
+  isCancellingId.value = cancelEnrollmentId.value;
+  try {
+    const response = await cancelEnrollment({ enrollment_id: cancelEnrollmentId.value });
+    successMessage.value = response.data?.message || 'Tu inscripción fue cancelada correctamente.';
+    closeCancelEnrollment();
+    await Promise.all([
+      loadPendingEnrollments(),
+      loadPaymentHistory(),
+      loadCredits(),
+      loadNotifications(),
+      loadAdminEnrollments(),
+    ]);
+  } catch (err) {
+    errorMessage.value = err.response?.data?.error || 'No se pudo cancelar la inscripción.';
+  } finally {
+    isCancellingId.value = null;
   }
 }
 
@@ -548,6 +640,7 @@ watch(
 .return-message,
 .history-section,
 .discount-test-mode,
+.success-message,
 .error-message {
   background: #fff;
   border: 2px solid #d0c0d0;
@@ -574,6 +667,12 @@ watch(
 .return-message.success {
   border-color: #12b76a;
   color: #027a48 !important;
+}
+
+.success-message {
+  border-color: #12b76a;
+  color: #027a48 !important;
+  font-weight: 700;
 }
 
 .return-message.pending {
@@ -665,6 +764,11 @@ dd {
 }
 
 .pay-button {
+  margin-top: 1rem;
+}
+
+.cancel-enrollment-button {
+  margin-left: 0.75rem;
   margin-top: 1rem;
 }
 

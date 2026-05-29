@@ -47,6 +47,20 @@ def create_cancellation_notification(enrollment, class_obj, credited):
     return notification
 
 
+def create_enrollment_cancellation_credit_notification(enrollment, class_obj):
+    activity_name = getattr(getattr(class_obj, "actividad", None), "name", None) or getattr(class_obj, "name", "Actividad")
+    notification = Notification(
+        user_id=enrollment.user_id,
+        title="Inscripción cancelada",
+        message=(
+            "Asistencia cancelada correctamente. Se generó un crédito reutilizable "
+            f"para otra clase de {activity_name}."
+        ),
+    )
+    db.session.add(notification)
+    return notification
+
+
 def notifications_for_user(user_id):
     return (
         Notification.query

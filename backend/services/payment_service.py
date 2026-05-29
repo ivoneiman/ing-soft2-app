@@ -14,6 +14,7 @@ try:
         ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID,
         ENROLLMENT_PAYMENT_STATUS_PENDING,
         ENROLLMENT_STATUS_EXPIRED,
+        ENROLLMENT_STATUS_CANCELLED,
         ENROLLMENT_STATUS_PAID,
         ENROLLMENT_TYPE_MONTHLY,
         PAYMENT_METHOD_CREDIT,
@@ -43,6 +44,7 @@ except ModuleNotFoundError:
         ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID,
         ENROLLMENT_PAYMENT_STATUS_PENDING,
         ENROLLMENT_STATUS_EXPIRED,
+        ENROLLMENT_STATUS_CANCELLED,
         ENROLLMENT_STATUS_PAID,
         ENROLLMENT_TYPE_MONTHLY,
         PAYMENT_METHOD_CREDIT,
@@ -316,6 +318,18 @@ def expire_equivalent_pending_payments(payment):
     return updated
 
 
+def expire_pending_payments_for_enrollment(enrollment):
+    if not enrollment:
+        return 0
+
+    updated = 0
+    for payment in list(getattr(enrollment, "payments", []) or []):
+        if payment.status == PAYMENT_STATUS_PENDING:
+            payment.status = PAYMENT_STATUS_EXPIRED
+            updated += 1
+    return updated
+
+
 def visible_payment_history(payments):
     approved_keys = {
         (payment.enrollment_id, payment.payment_method, payment.payment_type)
@@ -363,11 +377,13 @@ def recompute_enrollment_payment_state(enrollment, current_dt=None):
         paid_amount = total_amount
     remaining_amount = round(max(total_amount - paid_amount, 0), 2)
 
+    is_cancelled = getattr(enrollment, "estado", None) == ENROLLMENT_STATUS_CANCELLED
     if getattr(enrollment, "estado", None) == ENROLLMENT_STATUS_EXPIRED:
         payment_status = ENROLLMENT_PAYMENT_STATUS_EXPIRED
     elif total_amount > 0 and remaining_amount <= 0:
         payment_status = ENROLLMENT_PAYMENT_STATUS_PAID
-        enrollment.estado = ENROLLMENT_STATUS_PAID
+        if not is_cancelled:
+            enrollment.estado = ENROLLMENT_STATUS_PAID
     elif paid_amount > 0:
         payment_status = ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID
     else:
