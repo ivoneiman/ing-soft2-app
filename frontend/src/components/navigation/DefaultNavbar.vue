@@ -94,9 +94,6 @@
             <router-link to="/pagos" @click="handleAdminDropdownClick">
               Pagos
             </router-link>
-            <router-link to="/dashboard" @click="handleAdminDropdownClick">
-              Dashboard
-            </router-link>
             <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" @click="handleAdminDropdownClick">
               Pasar Asistencia
             </router-link>
