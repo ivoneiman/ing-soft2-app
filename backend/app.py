@@ -2,6 +2,7 @@ import os
 import logging
 import random
 import time
+import urllib.parse
 from datetime import datetime, timedelta
 from calendar import monthrange
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -537,7 +538,7 @@ def _payment_would_overpay(payment):
 
 def _enrollment_payment_quote(enrollment, current_datetime=None):
     quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
-    discount = int(enrollment.class_.descuento or 0)
+    discount = int(quote.get("discount_percentage", 0))
     
     if enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
         amount = float(quote.get("amount", 0))
@@ -546,13 +547,14 @@ def _enrollment_payment_quote(enrollment, current_datetime=None):
         
     quote["amount"] = amount
     quote["discount_percentage"] = discount
-    quote["final_amount"] = amount - (amount * discount / 100)
+    quote["final_amount"] = _calculate_final_amount(amount, discount)
     return quote
 
 
 def _enrollment_payload(enrollment, current_datetime=None):
     payload = enrollment_service.enrollment_payload(enrollment, current_datetime)
-    discount = int(enrollment.class_.descuento or 0)
+    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
+    discount = int(quote.get("discount_percentage", 0))
     
     if enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
         amount = 3000.0
@@ -561,7 +563,7 @@ def _enrollment_payload(enrollment, current_datetime=None):
         
     payload["amount"] = amount
     payload["discount_percentage"] = discount
-    payload["final_amount"] = amount - (amount * discount / 100)
+    payload["final_amount"] = _calculate_final_amount(amount, discount)
     if not float(payload.get("paid_amount") or 0):
         enrollment.total_amount = round(payload["final_amount"], 2)
         enrollment.paid_amount = 0
@@ -1129,6 +1131,24 @@ def create_enrollment():
     error, status_code = _validate_class_available_for_enrollment(class_obj, current_datetime)
     if error:
         return api_error(error, status_code)
+        
+    # 🌟 NUEVA VALIDACIÓN: Verificar si ya tiene una inscripción mensual que cubra esta clase en el mismo mes
+    month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+    last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
+    month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, last_day, 23, 59, 59)
+    
+    existing_monthly_enrs = Enrollment.query.join(Class).filter(
+        Enrollment.user_id == current_user.id,
+        Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Class.id_actividad == class_obj.id_actividad,
+        Class.fecha_hora >= month_start,
+        Class.fecha_hora <= month_end
+    ).all()
+
+    for enr in existing_monthly_enrs:
+        if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+            return api_error("Ya te encuentras inscripto mensualmente en este horario y día de la semana para el mes actual.", 409)
 
     enrollment_map = _enrollment_counts()
 
@@ -1221,6 +1241,24 @@ def create_waitlist_entry():
     class_obj = Class.query.get(class_id)
     if not class_obj:
         return api_error("Clase no encontrada", 404)
+        
+    # 🌟 NUEVA VALIDACIÓN: Verificar si ya tiene una inscripción mensual que cubra esta clase en el mismo mes
+    month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+    last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
+    month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, last_day, 23, 59, 59)
+    
+    existing_monthly_enrs = Enrollment.query.join(Class).filter(
+        Enrollment.user_id == current_user.id,
+        Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Class.id_actividad == class_obj.id_actividad,
+        Class.fecha_hora >= month_start,
+        Class.fecha_hora <= month_end
+    ).all()
+
+    for enr in existing_monthly_enrs:
+        if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+            return api_error("Ya te encuentras inscripto mensualmente en este horario, por lo que no necesitas unirte a la lista de espera.", 409)
 
     existing_enr = Enrollment.query.filter_by(
         user_id=current_user.id,
@@ -1425,6 +1463,9 @@ def create_class():
         fecha_hora = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
     except ValueError:
         return jsonify({"error": "Fecha u hora inválida"}), 400
+
+    if fecha_hora < datetime.now():
+        return jsonify({"error": "No se pueden crear clases en un horario que ya pasó"}), 400
 
     # 1. Buscamos si ya existe CUALQUIER registro en ese horario para esta actividad
     target_str = fecha_hora.strftime("%Y-%m-%d %H:%M")
@@ -1821,13 +1862,15 @@ def create_payment():
     class_obj = enrollment.class_
     product_type = _payment_type_for_enrollment(enrollment)
 
+    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
+    discount_percentage = int(quote.get("discount_percentage", 0))
+
     if product_type == "single_class" or enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
         amount = 3000.0
     else:
         amount = _get_monthly_base_price(class_obj)
 
-    discount_percentage = int(class_obj.descuento or 0)
-    full_final_amount = amount - (amount * discount_percentage / 100)
+    full_final_amount = _calculate_final_amount(amount, discount_percentage)
     timings["calculate_amounts"] = _elapsed_ms(calculate_start)
     if not float(enrollment.paid_amount or 0):
         enrollment.total_amount = round(full_final_amount, 2)
@@ -2257,7 +2300,7 @@ def register_manual_payment(enrollment_id):
     except (TypeError, ValueError):
         return jsonify({"error": "El monto debe ser numérico"}), 400
 
-    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    _recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     remaining_amount = round(float(enrollment.remaining_amount or 0), 2)
     if amount <= 0:
         return jsonify({"error": "El monto debe ser mayor a cero"}), 400
@@ -2281,7 +2324,7 @@ def register_manual_payment(enrollment_id):
     db.session.add(payment)
     db.session.flush()
     db.session.expire(enrollment, ["payments"])
-    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    _recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     db.session.commit()
 
     return jsonify({
