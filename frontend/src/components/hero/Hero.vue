@@ -16,15 +16,46 @@
       </p>
 
       <div class="hero-buttons">
-        <button class="btn-primary">ASOCIATE</button>
-        <button class="btn-secondary">ACTIVIDADES</button>
+        <button class="btn-primary" @click="handleAsociateClick">
+          {{ authStore.isLoggedIn ? 'PERFIL' : 'ASOCIATE' }}
+        </button>
+        <button class="btn-secondary" @click="handleActividadesClick">ACTIVIDADES</button>
       </div>
     </div>
   </section>
 </template>
 
 <script setup>
-// ya no necesitás props acá
+import { useRouter } from 'vue-router'
+import { roleHelpers } from '../../utils/roleHelpers'
+import { authStore } from '../../services/authStore'
+
+const router = useRouter()
+
+// Función para manejar el click del botón ASOCIATE
+const handleAsociateClick = () => {
+  if (roleHelpers.isClient() || roleHelpers.isEmployee() || roleHelpers.isAdmin()) {
+    // Si está autenticado, ir a editar perfil
+    router.push('/configuracion')
+  } else {
+    // Si no está autenticado, ir a register
+    router.push('/register')
+  }
+}
+
+// Función para manejar el click del botón ACTIVIDADES
+const handleActividadesClick = () => {
+  if (roleHelpers.isClient()) {
+    // Si es cliente, ir a actividades
+    router.push('/actividades')
+  } else if (roleHelpers.isEmployee() || roleHelpers.isAdmin()) {
+    // Si es employee o admin, ir a dashboard
+    router.push('/dashboard')
+  } else {
+    // Si no está autenticado, ir a login
+    router.push('/login')
+  }
+}
 </script>
 
 <style scoped>

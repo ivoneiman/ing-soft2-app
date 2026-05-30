@@ -41,10 +41,31 @@
 
       <!-- Si está autenticado: mostrar opciones según rol -->
       <div v-if="authStore.isLoggedIn" class="auth-menu">
-        <!-- CLIENT: Mi QR -->
-        <router-link v-if="roleHelpers.isClient()" to="/mi-qr" class="nav-item" @click="closeMobileMenu">
-          Mi QR
-        </router-link>
+        <!-- CLIENT: Dropdown Perfil -->
+        <div v-if="roleHelpers.isClient()" class="dropdown" ref="profileDropdownRef">
+          <button
+            class="dropdown-header"
+            type="button"
+            :aria-expanded="isProfileDropdownOpen"
+            aria-haspopup="true"
+            @click="toggleProfileDropdown"
+          >
+            Perfil
+            <span class="arrow">
+              {{ isProfileDropdownOpen ? '▲' : '▼' }}
+            </span>
+          </button>
+
+          <div v-if="isProfileDropdownOpen" class="dropdown-container">
+            <router-link to="/mi-qr" @click="handleProfileDropdownClick">
+              Mi QR
+            </router-link>
+            <router-link to="/configuracion" @click="handleProfileDropdownClick">
+              Editar perfil
+            </router-link>
+          </div>
+        </div>
+
         <div v-if="roleHelpers.isClient()" class="dropdown" ref="paymentsDropdownRef">
           <button
             class="dropdown-header"
@@ -97,7 +118,7 @@
             <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" @click="handleAdminDropdownClick">
               Pasar Asistencia
             </router-link>
-            <router-link v-if="roleHelpers.isAdmin()" to="/configuracion" @click="handleAdminDropdownClick">
+            <router-link v-if="roleHelpers.isAdmin()" to="/configuracion/notificacion" @click="handleAdminDropdownClick">
               Configuración
             </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/reportes" @click="handleAdminDropdownClick">
@@ -105,6 +126,9 @@
             </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/admin/descuentos" @click="handleAdminDropdownClick">
               Gestión de descuentos
+            </router-link>
+            <router-link to="/configuracion" @click="handleAdminDropdownClick">
+              Editar perfil
             </router-link>
           </div>
         </div>
@@ -115,9 +139,9 @@
       </div>
     </div>
 
-    <!-- Derecha: acceso rápido a QR/asistencia según rol (desktop) -->
+    <!-- Derecha: acceso rápido a asistencia para employee (desktop) -->
     <router-link
-      v-if="authStore.isLoggedIn && attendanceShortcutRoute"
+      v-if="authStore.isLoggedIn && roleHelpers.isEmployee()"
       :to="attendanceShortcutRoute"
       class="right-section"
     >
@@ -139,9 +163,11 @@ const router = useRouter()
 
 const isAdminDropdownOpen = ref(false)
 const isPaymentsDropdownOpen = ref(false)
+const isProfileDropdownOpen = ref(false)
 const isMobileMenuOpen = ref(false)
 const adminDropdownRef = ref(null)
 const paymentsDropdownRef = ref(null)
+const profileDropdownRef = ref(null)
 
 const attendanceShortcutRoute = computed(() => {
   if (roleHelpers.isClient()) return '/mi-qr'
@@ -165,6 +191,14 @@ function closePaymentsDropdown() {
   isPaymentsDropdownOpen.value = false
 }
 
+function toggleProfileDropdown() {
+  isProfileDropdownOpen.value = !isProfileDropdownOpen.value
+}
+
+function closeProfileDropdown() {
+  isProfileDropdownOpen.value = false
+}
+
 function toggleMobileMenu() {
   isMobileMenuOpen.value = !isMobileMenuOpen.value
 }
@@ -173,6 +207,7 @@ function closeMobileMenu() {
   isMobileMenuOpen.value = false
   closeAdminDropdown()
   closePaymentsDropdown()
+  closeProfileDropdown()
 }
 
 function handleAdminDropdownClick() {
@@ -185,12 +220,21 @@ function handlePaymentsDropdownClick() {
   closeMobileMenu()
 }
 
+function handleProfileDropdownClick() {
+  closeProfileDropdown()
+  closeMobileMenu()
+}
+
 onClickOutside(adminDropdownRef, () => {
   closeAdminDropdown()
 })
 
 onClickOutside(paymentsDropdownRef, () => {
   closePaymentsDropdown()
+})
+
+onClickOutside(profileDropdownRef, () => {
+  closeProfileDropdown()
 })
 
 function handleLogout() {

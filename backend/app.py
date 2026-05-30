@@ -901,6 +901,45 @@ def me():
         "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
     }), 200
 
+@app.route("/api/me", methods=["PUT"])
+def update_profile():
+    """Actualiza el perfil del usuario actual."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "No autenticado"}), 401
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    data = request.get_json()
+    
+    # Validar que los campos obligatorios no estén vacíos
+    username = data.get("username", "").strip()
+    apellido = data.get("apellido", "").strip()
+    telefono = data.get("telefono", "").strip()
+    dni = data.get("dni", "").strip()
+    
+    if not all([username, apellido, telefono, dni]):
+        return jsonify({"error": "Todos los campos son obligatorios"}), 400
+    
+    # Actualizar los datos del usuario
+    user.username = username
+    user.apellido = apellido
+    user.telefono = telefono
+    user.dni = dni
+    
+    try:
+        db.session.commit()
+        return jsonify({
+            "message": "Perfil actualizado correctamente",
+            "user": user.to_dict()
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error al actualizar perfil: {e}")
+        return jsonify({"error": "Error al actualizar el perfil"}), 500
+
 # ─── Rutas API: Actividades, Usuarios y Catálogo ────────────────────────────────────────
 
 @app.route("/api/actividades", methods=["GET"])

@@ -54,6 +54,14 @@ export function getCurrentUser() {
   );
 }
 
+export function updateProfile({ username, apellido, telefono, dni }) {
+  return axios.put(
+    `${API_URL}/me`,
+    { username, apellido, telefono, dni },
+    REQUEST_CONFIG
+  );
+}
+
 // =========================
 // ACTIVIDADES
 // =========================
