@@ -61,6 +61,19 @@ def create_enrollment_cancellation_credit_notification(enrollment, class_obj):
     return notification
 
 
+def create_waitlist_promotion_notification(user, class_obj):
+    notification = Notification(
+        user_id=user.id,
+        title="Cupo disponible",
+        message=(
+            "Se liberó un cupo para una clase en la que estabas en lista de espera. "
+            "Te hemos inscrito automáticamente y ya podés realizar el pago de tu reserva."
+        ),
+    )
+    db.session.add(notification)
+    return notification
+
+
 def notifications_for_user(user_id):
     return (
         Notification.query

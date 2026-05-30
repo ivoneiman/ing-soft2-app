@@ -55,7 +55,7 @@ const routes = [
         path: "configuracion",
         name: "Configuracion",
         component: ConfiguracionView,
-        meta: { requiresAuth: true, requiresAdmin: true }
+        meta: { requiresAuth: true }
       },
       {
         path: "configuracion/notificacion",
