@@ -2459,7 +2459,7 @@ def register_manual_payment(enrollment_id):
     except (TypeError, ValueError):
         return jsonify({"error": "El monto debe ser numérico"}), 400
 
-    _recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     remaining_amount = round(float(enrollment.remaining_amount or 0), 2)
     if amount <= 0:
         return jsonify({"error": "El monto debe ser mayor a cero"}), 400
@@ -2483,7 +2483,7 @@ def register_manual_payment(enrollment_id):
     db.session.add(payment)
     db.session.flush()
     db.session.expire(enrollment, ["payments"])
-    _recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     db.session.commit()
 
     return jsonify({
