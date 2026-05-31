@@ -54,6 +54,14 @@ export function getCurrentUser() {
   );
 }
 
+export function updateProfile({ username, apellido, telefono, dni }) {
+  return axios.put(
+    `${API_URL}/me`,
+    { username, apellido, telefono, dni },
+    REQUEST_CONFIG
+  );
+}
+
 // =========================
 // ACTIVIDADES
 // =========================
@@ -79,6 +87,13 @@ export function getActivityClasses(actividad_id) {
 export function getAllClasses() {
   return axios.get(
     `${API_URL}/classes/all`,
+    REQUEST_CONFIG
+  );
+}
+
+export function getCatalog() {
+  return axios.get(
+    `${API_URL}/catalog`,
     REQUEST_CONFIG
   );
 }

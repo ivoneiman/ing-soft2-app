@@ -2,6 +2,7 @@ import os
 import logging
 import random
 import time
+import urllib.parse
 from datetime import datetime, timedelta
 from calendar import monthrange
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -24,7 +25,7 @@ try:
     from mercadopago_config import get_mercadopago_client
     from models import db, User
     # Importar todos los modelos requeridos
-    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting
+    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry
     from constants import (
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
@@ -59,7 +60,7 @@ except ModuleNotFoundError:
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
     # Importar todos los modelos requeridos
-    from .models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting
+    from .models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry
     from .constants import (
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
@@ -99,6 +100,20 @@ app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
 app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("SQLALCHEMY_DATABASE_URI", "sqlite:///app.db")
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
+
+def _is_production():
+    return os.getenv("ENVIRONMENT", "").lower() == "production" or bool(os.getenv("PUBLIC_BACKEND_URL", "").strip())
+
+
+app.config["SESSION_COOKIE_SAMESITE"] = os.getenv(
+    "SESSION_COOKIE_SAMESITE",
+    "None" if _is_production() else "Lax",
+)
+app.config["SESSION_COOKIE_SECURE"] = os.getenv(
+    "SESSION_COOKIE_SECURE",
+    "true" if _is_production() else "false",
+).lower() == "true"
+
 # Inicializa extensiones
 db.init_app(app)
 
@@ -122,14 +137,21 @@ def _record_query_end(conn, cursor, statement, parameters, context, executemany)
     g.payment_query_count = getattr(g, "payment_query_count", 0) + 1
     g.payment_query_ms = getattr(g, "payment_query_ms", 0.0) + _elapsed_ms(query_start)
 
-# CORS para frontend local Vue/Vite
+def _cors_origins():
+    configured = os.getenv("FRONTEND_ORIGINS") or os.getenv("CORS_ORIGINS") or os.getenv("FRONTEND_URL", "")
+    origins = [origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()]
+    origins.extend([
+        "http://localhost:5173",
+        "http://localhost:5174",
+    ])
+    return list(dict.fromkeys(origins))
+
+
+# CORS para frontend local y despliegues configurados
 CORS(
     app,
     supports_credentials=True,
-    origins=[
-        "http://localhost:5173",
-        "http://localhost:5174"
-    ]
+    origins=_cors_origins()
 )
 
 # ─── Migración de esquema mínimo para SQLite antiguo ─────────────────────────────────────────────
@@ -516,7 +538,7 @@ def _payment_would_overpay(payment):
 
 def _enrollment_payment_quote(enrollment, current_datetime=None):
     quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
-    discount = int(enrollment.class_.descuento or 0)
+    discount = int(quote.get("discount_percentage", 0))
     
     if enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
         amount = float(quote.get("amount", 0))
@@ -525,13 +547,14 @@ def _enrollment_payment_quote(enrollment, current_datetime=None):
         
     quote["amount"] = amount
     quote["discount_percentage"] = discount
-    quote["final_amount"] = amount - (amount * discount / 100)
+    quote["final_amount"] = _calculate_final_amount(amount, discount)
     return quote
 
 
 def _enrollment_payload(enrollment, current_datetime=None):
     payload = enrollment_service.enrollment_payload(enrollment, current_datetime)
-    discount = int(enrollment.class_.descuento or 0)
+    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
+    discount = int(quote.get("discount_percentage", 0))
     
     if enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
         amount = 3000.0
@@ -540,7 +563,7 @@ def _enrollment_payload(enrollment, current_datetime=None):
         
     payload["amount"] = amount
     payload["discount_percentage"] = discount
-    payload["final_amount"] = amount - (amount * discount / 100)
+    payload["final_amount"] = _calculate_final_amount(amount, discount)
     if not float(payload.get("paid_amount") or 0):
         enrollment.total_amount = round(payload["final_amount"], 2)
         enrollment.paid_amount = 0
@@ -560,6 +583,20 @@ def _enrollment_payload(enrollment, current_datetime=None):
     payload["deposit_amount"] = deposit_final_amount
     payload["deposit_percentage"] = payment_service.deposit_percentage()
     payload["balance_amount"] = max((payload.get("total_amount") or 0) - (payload.get("paid_amount") or 0), 0)
+    payload["cancellation_will_generate_credit"] = _has_approved_payment(enrollment)
+    return payload
+
+
+def _payment_payload(payment, current_datetime=None):
+    payload = payment.to_dict()
+    enrollment = payment.enrollment
+    if enrollment:
+        payload["enrollment_estado"] = enrollment.estado
+        payload["enrollment_payment_status"] = enrollment.payment_status
+        payload["enrollment_is_cancelable"] = enrollment_service.enrollment_is_cancelable(enrollment, current_datetime)
+        deadline = enrollment_service.cancellation_deadline_for_class(enrollment.class_)
+        payload["enrollment_cancellation_deadline"] = deadline.isoformat() if deadline else None
+        payload["enrollment_cancellation_will_generate_credit"] = _has_approved_payment(enrollment)
     return payload
 
 
@@ -585,6 +622,26 @@ def _frontend_payments_url(status, message=None):
 
 def _configured_url(name, default):
     return payment_service.configured_url(name, default)
+
+
+def _public_backend_url():
+    configured = _configured_url("PUBLIC_BACKEND_URL", "")
+    if configured:
+        return configured.rstrip("/")
+    legacy_configured = _configured_url("BACKEND_PUBLIC_URL", "")
+    if legacy_configured:
+        return legacy_configured.rstrip("/")
+    return ""
+
+
+def _mercado_pago_callback_url(name, path, default):
+    configured = _configured_url(name, "")
+    if configured:
+        return configured
+    public_backend_url = _public_backend_url()
+    if public_backend_url:
+        return f"{public_backend_url}{path}"
+    return default
 
 
 def _is_absolute_http_url(value):
@@ -623,6 +680,10 @@ def _mercado_pago_notification_url():
     configured = os.getenv("MERCADOPAGO_NOTIFICATION_URL", "").strip()
     if configured:
         return configured
+
+    public_backend_url = _public_backend_url()
+    if public_backend_url:
+        return f"{public_backend_url}/api/payments/webhook"
 
     success_url = os.getenv("PAYMENT_SUCCESS_URL", "").strip()
     marker = "/api/payments/return/success"
@@ -673,6 +734,16 @@ def _apply_mercado_pago_status(payment, mercado_pago_status, status_detail=None,
     current_datetime = current_datetime or _current_discount_datetime()
     if mercado_pago_payment_id:
         payment.mercado_pago_payment_id = str(mercado_pago_payment_id)
+
+    if payment.enrollment and payment.enrollment.estado == Enrollment.STATUS_CANCELLED and payment.status != Payment.STATUS_APPROVED:
+        payment.status = Payment.STATUS_EXPIRED
+        payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
+        logger.info(
+            "[MercadoPago] callback_ignorado_inscripcion_cancelada payment_id=%s enrollment_id=%s",
+            payment.id,
+            payment.enrollment_id,
+        )
+        return PAYMENT_RETURN_STATUS_FAILURE, "La inscripción fue cancelada"
 
     if payment.status == Payment.STATUS_APPROVED:
         payment_service.expire_equivalent_pending_payments(payment)
@@ -832,6 +903,45 @@ def me():
     return jsonify({
         "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
     }), 200
+
+@app.route("/api/me", methods=["PUT"])
+def update_profile():
+    """Actualiza el perfil del usuario actual."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "No autenticado"}), 401
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    data = request.get_json()
+    
+    # Validar que los campos obligatorios no estén vacíos
+    username = data.get("username", "").strip()
+    apellido = data.get("apellido", "").strip()
+    telefono = data.get("telefono", "").strip()
+    dni = data.get("dni", "").strip()
+    
+    if not all([username, apellido, telefono, dni]):
+        return jsonify({"error": "Todos los campos son obligatorios"}), 400
+    
+    # Actualizar los datos del usuario
+    user.username = username
+    user.apellido = apellido
+    user.telefono = telefono
+    user.dni = dni
+    
+    try:
+        db.session.commit()
+        return jsonify({
+            "message": "Perfil actualizado correctamente",
+            "user": user.to_dict()
+        }), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error al actualizar perfil: {e}")
+        return jsonify({"error": "Error al actualizar el perfil"}), 500
 
 # ─── Rutas API: Actividades, Usuarios y Catálogo ────────────────────────────────────────
 
@@ -1008,6 +1118,10 @@ def create_enrollment():
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
 
+    # Solo clientes pueden inscribirse a clases
+    if current_user.role != "client":
+        return api_error("Solo los clientes pueden inscribirse a clases", 403)
+
     data = request.get_json() or {}
     class_id = data.get("class_id")
     if not class_id:
@@ -1018,8 +1132,30 @@ def create_enrollment():
     error, status_code = _validate_class_available_for_enrollment(class_obj, current_datetime)
     if error:
         return api_error(error, status_code)
+        
+    # 🌟 NUEVA VALIDACIÓN: Verificar si ya tiene una inscripción mensual que cubra esta clase en el mismo mes
+    month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+    last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
+    month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, last_day, 23, 59, 59)
+    
+    existing_monthly_enrs = Enrollment.query.join(Class).filter(
+        Enrollment.user_id == current_user.id,
+        Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Class.id_actividad == class_obj.id_actividad,
+        Class.fecha_hora >= month_start,
+        Class.fecha_hora <= month_end
+    ).all()
+
+    for enr in existing_monthly_enrs:
+        if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+            return api_error("Ya te encuentras inscripto mensualmente en este horario y día de la semana para el mes actual.", 409)
 
     enrollment_map = _enrollment_counts()
+
+    # Eliminar de la lista de espera si se estaba inscribiendo con éxito
+    WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=class_obj.id).delete()
+
     enrollment, result = enrollment_service.create_or_reopen_enrollment(
         current_user,
         class_obj,
@@ -1033,6 +1169,16 @@ def create_enrollment():
         return api_error("Ya estás inscripto y pagaste esta clase", 409)
     if result == "full":
         if data.get("waitlist") or data.get("waitlist_type"):
+            existing_enr = Enrollment.query.filter_by(
+                user_id=current_user.id,
+                class_id=class_obj.id
+            ).filter(
+                Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+            ).first()
+
+            if existing_enr:
+                return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
+
             waitlist_type = data.get("waitlist_type", WAITLIST_TYPE_INDIVIDUAL)
             waitlist_entry, waitlist_error = waitlist_service.add_waitlist_entry(
                 current_user,
@@ -1084,6 +1230,10 @@ def create_waitlist_entry():
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
 
+    # Solo clientes pueden unirse a lista de espera
+    if current_user.role != "client":
+        return api_error("Solo los clientes pueden unirse a lista de espera", 403)
+
     data = request.get_json() or {}
     class_id = data.get("class_id")
     if not class_id:
@@ -1092,6 +1242,34 @@ def create_waitlist_entry():
     class_obj = Class.query.get(class_id)
     if not class_obj:
         return api_error("Clase no encontrada", 404)
+        
+    # 🌟 NUEVA VALIDACIÓN: Verificar si ya tiene una inscripción mensual que cubra esta clase en el mismo mes
+    month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+    last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
+    month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, last_day, 23, 59, 59)
+    
+    existing_monthly_enrs = Enrollment.query.join(Class).filter(
+        Enrollment.user_id == current_user.id,
+        Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Class.id_actividad == class_obj.id_actividad,
+        Class.fecha_hora >= month_start,
+        Class.fecha_hora <= month_end
+    ).all()
+
+    for enr in existing_monthly_enrs:
+        if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+            return api_error("Ya te encuentras inscripto mensualmente en este horario, por lo que no necesitas unirte a la lista de espera.", 409)
+
+    existing_enr = Enrollment.query.filter_by(
+        user_id=current_user.id,
+        class_id=class_obj.id
+    ).filter(
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+    ).first()
+
+    if existing_enr:
+        return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
 
     waitlist_type = data.get("type", WAITLIST_TYPE_INDIVIDUAL)
     entry, error = waitlist_service.add_waitlist_entry(current_user, class_obj, waitlist_type)
@@ -1112,30 +1290,97 @@ def cancel_enrollment(enrollment_id):
         return jsonify({"error": "No autenticado"}), 401
 
     enrollment = Enrollment.query.get(enrollment_id)
-    if not enrollment:
-        return api_error("Inscripción no encontrada", 404)
-    if enrollment.user_id != current_user.id and current_user.role not in ["admin", "employee"]:
-        return jsonify({"error": "No tenés permisos para cancelar esta inscripción"}), 403
-    if enrollment.estado == Enrollment.STATUS_CANCELLED:
-        return api_error("Esta inscripción ya fue cancelada", 400)
+    current_datetime = _current_discount_datetime()
+    result, error, status_code = cancellation_service.cancel_enrollment(enrollment, current_user, current_datetime)
+    if error:
+        return api_error(error, status_code)
 
-    class_obj = enrollment.class_
-    if not class_obj:
-        return api_error("Clase asociada no encontrada", 404)
+    class_obj = result["class"]
+    credit = result["credit"]
 
-    enrollment.estado = Enrollment.STATUS_CANCELLED
-    db.session.commit()
-
-    promotion = waitlist_service.promote_next_waitlisted_user(class_obj)
-    if promotion and promotion.get("enrollment"):
+    try:
         db.session.commit()
-        pending_payments = waitlist_service.get_pending_payments_for_user(promotion["user"], exclude_class_id=class_obj.id)
-        send_waitlist_promotion_email(promotion["user"], class_obj, pending_payments=pending_payments)
+    except Exception as err:
+        db.session.rollback()
+        logger.exception("[Cancelaciones] error enrollment_id=%s", enrollment_id)
+        return jsonify({"error": "Error interno al procesar la cancelación", "details": str(err)}), 500
 
+    email_sent = False
+    if credit:
+        email_sent = send_credit_generated_email(enrollment.user, class_obj, credit)
+
+    try:
+        waitlist_entries = WaitlistEntry.query.filter_by(
+            class_id=class_obj.id,
+            type=WAITLIST_TYPE_INDIVIDUAL
+        ).order_by(WaitlistEntry.created_at.asc()).all()
+
+        promoted = False
+        for next_in_waitlist in waitlist_entries:
+            user_to_promote = next_in_waitlist.user
+
+            existing_enr = Enrollment.query.filter_by(
+                user_id=user_to_promote.id,
+                class_id=class_obj.id
+            ).first()
+
+            if existing_enr and existing_enr.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]:
+                db.session.delete(next_in_waitlist)
+                continue
+            
+            if existing_enr:
+                existing_enr.estado = Enrollment.STATUS_PENDING_PAYMENT
+                existing_enr.tipo = ENROLLMENT_TYPE_SINGLE
+                existing_enr.requiere_reembolso = False
+                existing_enr.total_amount = 0
+                existing_enr.paid_amount = 0
+                existing_enr.remaining_amount = 0
+                existing_enr.payment_status = Enrollment.PAYMENT_STATUS_PENDING
+                new_enrollment = existing_enr
+            else:
+                new_enrollment = Enrollment(
+                    user_id=user_to_promote.id,
+                    class_id=class_obj.id,
+                    tipo=ENROLLMENT_TYPE_SINGLE,
+                    estado=Enrollment.STATUS_PENDING_PAYMENT,
+                )
+                db.session.add(new_enrollment)
+            
+            db.session.delete(next_in_waitlist)
+            notification_service.create_waitlist_promotion_notification(user_to_promote, class_obj)
+            db.session.commit()
+
+            other_pending_enrollments = Enrollment.query.filter(
+                Enrollment.user_id == new_enrollment.user_id,
+                Enrollment.id != new_enrollment.id,
+                Enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT,
+            ).all()
+            send_waitlist_promotion_email(user_to_promote, class_obj, new_enrollment, other_pending_enrollments)
+            promoted = True
+            break
+            
+        if not promoted and waitlist_entries:
+            db.session.commit()
+            
+    except Exception as err:
+        db.session.rollback()
+        logger.exception("[Cancelaciones] Error al promover desde lista de espera: %s", err)
+
+    message = (
+        "Tu inscripción fue cancelada correctamente. Se generó un crédito para futuras reservas."
+        if result["credit_generated"]
+        else "Tu inscripción fue cancelada correctamente."
+    )
     return api_success({
-        "message": "Inscripción cancelada correctamente",
+        "message": message,
         "enrollment_id": enrollment.id,
-    }, message="Inscripción cancelada correctamente", status_code=200)
+        "estado": enrollment.estado,
+        "payment_status": enrollment.payment_status,
+        "credit_generated": result["credit_generated"],
+        "credit": credit_service.credit_payload(credit, current_datetime) if credit else None,
+        "email_sent": email_sent,
+        "pending_payments_expired": result["pending_payments_expired"],
+    }, message=message, status_code=200)
 
 
 @app.route("/api/enrollments/pending", methods=["GET"])
@@ -1219,6 +1464,9 @@ def create_class():
         fecha_hora = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
     except ValueError:
         return jsonify({"error": "Fecha u hora inválida"}), 400
+
+    if fecha_hora < datetime.now():
+        return jsonify({"error": "No se pueden crear clases en un horario que ya pasó"}), 400
 
     # 1. Buscamos si ya existe CUALQUIER registro en ese horario para esta actividad
     target_str = fecha_hora.strftime("%Y-%m-%d %H:%M")
@@ -1615,13 +1863,15 @@ def create_payment():
     class_obj = enrollment.class_
     product_type = _payment_type_for_enrollment(enrollment)
 
+    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
+    discount_percentage = int(quote.get("discount_percentage", 0))
+
     if product_type == "single_class" or enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
         amount = 3000.0
     else:
         amount = _get_monthly_base_price(class_obj)
 
-    discount_percentage = int(class_obj.descuento or 0)
-    full_final_amount = amount - (amount * discount_percentage / 100)
+    full_final_amount = _calculate_final_amount(amount, discount_percentage)
     timings["calculate_amounts"] = _elapsed_ms(calculate_start)
     if not float(enrollment.paid_amount or 0):
         enrollment.total_amount = round(full_final_amount, 2)
@@ -1720,9 +1970,21 @@ def create_payment():
         "payer": _mercado_pago_payer_payload(current_user),
         "external_reference": str(payment.id),
         "back_urls": {
-            "success": _configured_url("PAYMENT_SUCCESS_URL", "http://localhost:5000/api/payments/return/success"),
-            "failure": _configured_url("PAYMENT_FAILURE_URL", "http://localhost:5000/api/payments/return/failure"),
-            "pending": _configured_url("PAYMENT_PENDING_URL", f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}"),
+            "success": _mercado_pago_callback_url(
+                "PAYMENT_SUCCESS_URL",
+                "/api/payments/return/success",
+                "http://localhost:5000/api/payments/return/success",
+            ),
+            "failure": _mercado_pago_callback_url(
+                "PAYMENT_FAILURE_URL",
+                "/api/payments/return/failure",
+                "http://localhost:5000/api/payments/return/failure",
+            ),
+            "pending": _mercado_pago_callback_url(
+                "PAYMENT_PENDING_URL",
+                f"/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+                f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+            ),
         },
         "notification_url": _mercado_pago_notification_url(),
         "auto_return": "approved",
@@ -1975,7 +2237,7 @@ def payment_history():
     )
     payments = payment_service.visible_payment_history(payments)
 
-    return jsonify({"payments": [payment.to_dict() for payment in payments]}), 200
+    return jsonify({"payments": [_payment_payload(payment, current_datetime) for payment in payments]}), 200
 
 
 @app.route("/api/admin/enrollments/payments", methods=["GET"])
@@ -2039,7 +2301,7 @@ def register_manual_payment(enrollment_id):
     except (TypeError, ValueError):
         return jsonify({"error": "El monto debe ser numérico"}), 400
 
-    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    _recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     remaining_amount = round(float(enrollment.remaining_amount or 0), 2)
     if amount <= 0:
         return jsonify({"error": "El monto debe ser mayor a cero"}), 400
@@ -2063,7 +2325,7 @@ def register_manual_payment(enrollment_id):
     db.session.add(payment)
     db.session.flush()
     db.session.expire(enrollment, ["payments"])
-    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    _recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     db.session.commit()
 
     return jsonify({

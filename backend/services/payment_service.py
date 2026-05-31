@@ -2,7 +2,7 @@ import logging
 import os
 from calendar import monthrange
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import timedelta
+from datetime import timedelta, datetime
 from urllib.parse import quote
 
 try:
@@ -14,6 +14,7 @@ try:
         ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID,
         ENROLLMENT_PAYMENT_STATUS_PENDING,
         ENROLLMENT_STATUS_EXPIRED,
+        ENROLLMENT_STATUS_CANCELLED,
         ENROLLMENT_STATUS_PAID,
         ENROLLMENT_TYPE_MONTHLY,
         PAYMENT_METHOD_CREDIT,
@@ -43,6 +44,7 @@ except ModuleNotFoundError:
         ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID,
         ENROLLMENT_PAYMENT_STATUS_PENDING,
         ENROLLMENT_STATUS_EXPIRED,
+        ENROLLMENT_STATUS_CANCELLED,
         ENROLLMENT_STATUS_PAID,
         ENROLLMENT_TYPE_MONTHLY,
         PAYMENT_METHOD_CREDIT,
@@ -138,11 +140,11 @@ def calculate_final_amount(amount, discount_percentage):
 
 def payment_quote(product_type, payment_option=PAYMENT_OPTION_FULL, current_dt=None):
     amount = payment_amount(product_type, payment_option)
-    discount_percentage = current_discount_period_percentage(current_dt)
+    
     return {
         "amount": amount,
-        "discount_percentage": discount_percentage,
-        "final_amount": calculate_final_amount(amount, discount_percentage),
+        "discount_percentage": 0,
+        "final_amount": calculate_final_amount(amount, 0),
     }
 
 
@@ -187,25 +189,81 @@ def has_approved_payment(enrollment):
 
 
 def enrollment_payment_quote(enrollment, current_dt=None):
-    return payment_quote(product_type_for_enrollment(enrollment), PAYMENT_OPTION_FULL, current_dt)
+    product_type = product_type_for_enrollment(enrollment)
+    quote_data = payment_quote(product_type, PAYMENT_OPTION_FULL, current_dt)
+    
+    # Calcular el precio base mensual correcto multiplicando $3000 por la cantidad de clases que hay en el mes
+    if product_type == PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION and enrollment and getattr(enrollment, "class_", None):
+        class_obj = enrollment.class_
+        if getattr(class_obj, "fecha_hora", None):
+            y = class_obj.fecha_hora.year
+            m = class_obj.fecha_hora.month
+            wd = class_obj.fecha_hora.weekday()
+            total_classes = 0
+            for day in range(1, monthrange(y, m)[1] + 1):
+                if datetime(y, m, day).weekday() == wd:
+                    total_classes += 1
+            quote_data["amount"] = 3000.0 * total_classes
+            quote_data["final_amount"] = quote_data["amount"]
+
+    # El descuento aplica SOLO a la suscripción mensual y depende del DÍA DE LA CLASE seleccionada
+    if product_type == PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION:
+        if enrollment and getattr(enrollment, "class_", None):
+            class_dt = datetime_in_app_timezone(getattr(enrollment.class_, "fecha_hora", None))
+            if class_dt:
+                class_day = class_dt.day
+                
+                if 15 <= class_day <= 21:
+                    quote_data["discount_percentage"] = 40
+                elif class_day >= 22:
+                    quote_data["discount_percentage"] = 70
+                    
+                if quote_data["discount_percentage"] > 0:
+                    quote_data["final_amount"] = calculate_final_amount(quote_data["amount"], quote_data["discount_percentage"])
+
+    return quote_data
 
 
 def enrollment_total_amount(enrollment, current_dt=None):
     if not enrollment:
         return 0
 
-    stored_total = float(getattr(enrollment, "total_amount", 0) or 0)
-    if stored_total > 0:
-        return stored_total
-
     payments = list(getattr(enrollment, "payments", []) or [])
-    for payment in payments:
-        if getattr(payment, "status", None) in (PAYMENT_STATUS_APPROVED, PAYMENT_STATUS_PENDING):
-            final_amount = float(getattr(payment, "final_amount", 0) or 0)
-            if final_amount > 0:
-                return final_amount
+    has_active_payments = any(
+        getattr(p, "status", None) == PAYMENT_STATUS_APPROVED
+        for p in payments
+    )
 
-    return float(enrollment_payment_quote(enrollment, current_dt)["final_amount"])
+    # Respetamos el precio guardado SOLAMENTE si ya hay pagos APROBADOS
+    if has_active_payments:
+        stored_total = float(getattr(enrollment, "total_amount", 0) or 0)
+        if stored_total > 0:
+            return stored_total
+
+        for payment in payments:
+            if getattr(payment, "status", None) == PAYMENT_STATUS_APPROVED:
+                final_amount = float(getattr(payment, "final_amount", 0) or 0)
+                if final_amount > 0:
+                    return final_amount
+
+    # Si no hay pagos aprobados, siempre recalculamos el precio en tiempo real
+    quote = enrollment_payment_quote(enrollment, current_dt)
+    
+    # Actualizamos los atributos del modelo en vivo para que la API envíe los datos actualizados al frontend
+    if hasattr(enrollment, "amount"): enrollment.amount = quote["amount"]
+    if hasattr(enrollment, "discount_percentage"): enrollment.discount_percentage = quote["discount_percentage"]
+    if hasattr(enrollment, "final_amount"): enrollment.final_amount = quote["final_amount"]
+    
+    # ¡VITAL! Actualizamos también los pagos PENDIENTES generados anteriormente para no mostrar precios viejos
+    for payment in payments:
+        if getattr(payment, "status", None) == PAYMENT_STATUS_PENDING:
+            payment.amount = quote["amount"]
+            payment.discount_percentage = quote["discount_percentage"]
+            payment.final_amount = quote["final_amount"]
+            if hasattr(payment, "mercado_pago_payment_id"):
+                payment.mercado_pago_payment_id = None
+                
+    return float(quote["final_amount"])
 
 
 def approved_payment_amount(enrollment, total_amount=None):
@@ -316,6 +374,18 @@ def expire_equivalent_pending_payments(payment):
     return updated
 
 
+def expire_pending_payments_for_enrollment(enrollment):
+    if not enrollment:
+        return 0
+
+    updated = 0
+    for payment in list(getattr(enrollment, "payments", []) or []):
+        if payment.status == PAYMENT_STATUS_PENDING:
+            payment.status = PAYMENT_STATUS_EXPIRED
+            updated += 1
+    return updated
+
+
 def visible_payment_history(payments):
     approved_keys = {
         (payment.enrollment_id, payment.payment_method, payment.payment_type)
@@ -363,11 +433,13 @@ def recompute_enrollment_payment_state(enrollment, current_dt=None):
         paid_amount = total_amount
     remaining_amount = round(max(total_amount - paid_amount, 0), 2)
 
+    is_cancelled = getattr(enrollment, "estado", None) == ENROLLMENT_STATUS_CANCELLED
     if getattr(enrollment, "estado", None) == ENROLLMENT_STATUS_EXPIRED:
         payment_status = ENROLLMENT_PAYMENT_STATUS_EXPIRED
     elif total_amount > 0 and remaining_amount <= 0:
         payment_status = ENROLLMENT_PAYMENT_STATUS_PAID
-        enrollment.estado = ENROLLMENT_STATUS_PAID
+        if not is_cancelled:
+            enrollment.estado = ENROLLMENT_STATUS_PAID
     elif paid_amount > 0:
         payment_status = ENROLLMENT_PAYMENT_STATUS_PARTIALLY_PAID
     else:

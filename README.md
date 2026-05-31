@@ -104,10 +104,11 @@ Variables principales:
 - `MERCADOPAGO_ACCESS_TOKEN`: token usado por el SDK de Mercado Pago.
 - `MERCADOPAGO_CHECKOUT_MODE`: modo de checkout, por ejemplo `sandbox`.
 - `MERCADOPAGO_TEST_PAYER_EMAIL`: email opcional para pruebas sandbox.
-- `PAYMENT_SUCCESS_URL`: URL de retorno para pagos aprobados.
-- `PAYMENT_FAILURE_URL`: URL de retorno para pagos fallidos.
-- `PAYMENT_PENDING_URL`: URL de retorno para pagos pendientes.
-- `MERCADOPAGO_NOTIFICATION_URL`: URL pública del webhook para confirmar pagos automáticamente.
+- `PUBLIC_BACKEND_URL`: URL pública base del backend para Mercado Pago, por ejemplo la URL HTTPS de Cloudflare Tunnel o ngrok, sin barra final.
+- `PAYMENT_SUCCESS_URL`: override opcional de retorno para pagos aprobados.
+- `PAYMENT_FAILURE_URL`: override opcional de retorno para pagos fallidos.
+- `PAYMENT_PENDING_URL`: override opcional de retorno para pagos pendientes.
+- `MERCADOPAGO_NOTIFICATION_URL`: override opcional del webhook para confirmar pagos automáticamente.
 - `FRONTEND_PAYMENTS_URL`: URL del frontend donde se muestra el resultado del pago.
 - `RESEND_API_KEY`: API key de Resend para envío de emails.
 - `EMAIL_FROM`: remitente utilizado en emails transaccionales.
@@ -119,6 +120,30 @@ El frontend puede usar:
 - `VITE_API_URL`: URL base de la API. Si no se define, usa `http://localhost:5000/api`.
 
 No se deben commitear credenciales reales.
+
+### Retorno desde Mercado Pago en desarrollo
+
+Mercado Pago Checkout Pro no debe recibir `localhost` ni `127.0.0.1` en `back_urls` cuando se usa `auto_return`. Para probar en local hay que exponer el backend con una URL HTTPS pública.
+
+Flujo recomendado con Cloudflare Tunnel:
+
+1. Levantar el backend local en `http://localhost:5000`.
+2. Levantar el túnel apuntando al backend, por ejemplo `cloudflared tunnel --url http://localhost:5000`.
+3. Copiar la URL HTTPS generada por Cloudflare en `backend/.env`:
+
+```env
+PUBLIC_BACKEND_URL=https://tu-url.trycloudflare.com
+FRONTEND_PAYMENTS_URL=http://localhost:5173/pagos
+```
+
+Con `PUBLIC_BACKEND_URL`, el backend arma automáticamente:
+
+- `https://tu-url.trycloudflare.com/api/payments/return/success`
+- `https://tu-url.trycloudflare.com/api/payments/return/failure`
+- `https://tu-url.trycloudflare.com/api/payments/return/pending`
+- `https://tu-url.trycloudflare.com/api/payments/webhook`
+
+Si Cloudflare genera una URL nueva, solo hay que actualizar `PUBLIC_BACKEND_URL` y reiniciar Flask.
 
 ## Funcionalidades principales
 
