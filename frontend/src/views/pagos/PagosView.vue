@@ -28,9 +28,6 @@
       <button type="button" :class="{ active: activeTab === PAYMENT_TAB.NOTIFICATIONS }" @click="activeTab = PAYMENT_TAB.NOTIFICATIONS">
         Notificaciones
       </button>
-      <button v-if="canManagePayments" type="button" :class="{ active: activeTab === PAYMENT_TAB.ADMIN }" @click="activeTab = PAYMENT_TAB.ADMIN">
-        Cobros presenciales
-      </button>
     </nav>
 
     <section v-if="activeTab === PAYMENT_TAB.PENDING" class="pending-section">
@@ -229,65 +226,6 @@
       </div>
     </section>
 
-    <section v-else class="history-section">
-      <h2>Cobros presenciales</h2>
-
-      <div v-if="isLoadingAdminEnrollments" class="empty-state">Cargando saldos...</div>
-      <div v-else-if="adminEnrollments.length === 0" class="empty-state">No hay saldos pendientes.</div>
-
-      <table v-else class="payments-table">
-        <thead>
-          <tr>
-            <th>Cliente</th>
-            <th>Actividad</th>
-            <th>Estado</th>
-            <th>Pagado</th>
-            <th>Saldo</th>
-            <th>Acción</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="enrollment in adminEnrollments" :key="enrollment.id">
-            <td>{{ enrollment.user?.apellido }} {{ enrollment.user?.username }}</td>
-            <td>{{ enrollment.actividad || enrollment.class_name || '-' }}</td>
-            <td><span class="status-pill compact">{{ enrollment.payment_status === 'PARTIALLY_PAID' ? 'Señado' : enrollmentStatusLabel(enrollment.estado) }}</span></td>
-            <td>{{ formatMoney(enrollment.paid_amount) }}</td>
-            <td>{{ formatMoney(enrollment.remaining_amount) }}</td>
-            <td><button type="button" class="table-action" @click="openManualPayment(enrollment)">Registrar pago</button></td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <div v-if="manualPaymentEnrollment" class="modal-backdrop" role="dialog" aria-modal="true">
-      <section class="manual-payment-modal">
-        <h2>Registrar pago presencial</h2>
-        <p>{{ manualPaymentEnrollment.user?.apellido }} {{ manualPaymentEnrollment.user?.username }} · {{ manualPaymentEnrollment.actividad || manualPaymentEnrollment.class_name }}</p>
-        <label>
-          <span>Monto</span>
-          <input v-model="manualPaymentForm.amount" type="number" min="1" step="0.01" />
-        </label>
-        <label>
-          <span>Método</span>
-          <select v-model="manualPaymentForm.payment_method">
-            <option value="cash">Efectivo</option>
-            <option value="transfer">Transferencia</option>
-            <option value="card">Tarjeta</option>
-          </select>
-        </label>
-        <label>
-          <span>Notas</span>
-          <textarea v-model="manualPaymentForm.notes" rows="3" />
-        </label>
-        <div class="modal-actions">
-          <button type="button" class="secondary-button" @click="closeManualPayment">Cancelar</button>
-          <button type="button" :disabled="isRegisteringManualPayment" @click="submitManualPayment">
-            {{ isRegisteringManualPayment ? 'Registrando...' : 'Registrar' }}
-          </button>
-        </div>
-      </section>
-    </div>
-
     <div v-if="cancelEnrollmentTarget" class="modal-backdrop" role="dialog" aria-modal="true">
       <section class="manual-payment-modal">
         <h2>Cancelar inscripción</h2>
@@ -326,21 +264,17 @@ import { PAYMENT_RETURN_MESSAGES, PAYMENT_RETURN_STATUS, PAYMENT_TAB, PAYMENT_TA
 import {
   cancelEnrollment,
   createPayment,
-  getAdminPaymentEnrollments,
   getMyCredits,
   getMyNotifications,
   getPaymentHistory,
   getPendingEnrollments,
-  registerManualPayment,
 } from '../../services/api';
 import { formatDateTime, formatMoney } from '../../utils/formatters';
 import { roleHelpers } from '../../utils/roleHelpers';
 
 const route = useRoute();
 const isAdmin = ref(roleHelpers.isAdmin());
-const canManagePayments = ref(roleHelpers.hasAnyRole(['admin', 'employee']));
 function normalizedTab(tab) {
-  if (tab === PAYMENT_TAB.ADMIN && !canManagePayments.value) return PAYMENT_TAB.PENDING;
   return PAYMENT_TABS.includes(tab) ? tab : PAYMENT_TAB.PENDING;
 }
 
@@ -351,23 +285,14 @@ const isLoadingEnrollments = ref(false);
 const isLoadingHistory = ref(false);
 const isLoadingCredits = ref(false);
 const isLoadingNotifications = ref(false);
-const isLoadingAdminEnrollments = ref(false);
-const isRegisteringManualPayment = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 const pendingEnrollments = ref([]);
 const payments = ref([]);
 const credits = ref([]);
 const notifications = ref([]);
-const adminEnrollments = ref([]);
 const selectedPaymentTypes = ref({});
-const manualPaymentEnrollment = ref(null);
 const cancelEnrollmentTarget = ref(null);
-const manualPaymentForm = ref({
-  amount: '',
-  payment_method: PAYMENT_METHOD.CASH,
-  notes: '',
-});
 
 const cancelEnrollmentId = computed(() => cancelEnrollmentTarget.value?.enrollment_id || cancelEnrollmentTarget.value?.id || null);
 const cancelEnrollmentWillGenerateCredit = computed(() => Boolean(
@@ -421,19 +346,6 @@ async function loadPendingEnrollments() {
     console.error("Error cargando inscripciones:", err);
   } finally {
     isLoadingEnrollments.value = false;
-  }
-}
-
-async function loadAdminEnrollments() {
-  if (!canManagePayments.value) return;
-  isLoadingAdminEnrollments.value = true;
-  try {
-    const response = await getAdminPaymentEnrollments();
-    adminEnrollments.value = response.data.enrollments || [];
-  } catch (err) {
-    console.error("Error cargando saldos pendientes:", err);
-  } finally {
-    isLoadingAdminEnrollments.value = false;
   }
 }
 
@@ -527,7 +439,6 @@ async function submitCancelEnrollment() {
       loadPaymentHistory(),
       loadCredits(),
       loadNotifications(),
-      loadAdminEnrollments(),
     ]);
   } catch (err) {
     errorMessage.value = err.response?.data?.error || 'No se pudo cancelar la inscripción.';
@@ -536,45 +447,11 @@ async function submitCancelEnrollment() {
   }
 }
 
-function openManualPayment(enrollment) {
-  manualPaymentEnrollment.value = enrollment;
-  manualPaymentForm.value = {
-    amount: enrollment.remaining_amount || '',
-    payment_method: PAYMENT_METHOD.CASH,
-    notes: '',
-  };
-}
-
-function closeManualPayment() {
-  manualPaymentEnrollment.value = null;
-}
-
-async function submitManualPayment() {
-  if (!manualPaymentEnrollment.value) return;
-  errorMessage.value = '';
-  isRegisteringManualPayment.value = true;
-  try {
-    await registerManualPayment(manualPaymentEnrollment.value.id, {
-      amount: manualPaymentForm.value.amount,
-      payment_method: manualPaymentForm.value.payment_method,
-      payment_type: 'balance',
-      notes: manualPaymentForm.value.notes,
-    });
-    closeManualPayment();
-    await Promise.all([loadAdminEnrollments(), loadPaymentHistory(), loadPendingEnrollments()]);
-  } catch (err) {
-    errorMessage.value = err.response?.data?.error || 'No se pudo registrar el pago presencial';
-  } finally {
-    isRegisteringManualPayment.value = false;
-  }
-}
-
 onMounted(() => {
   loadPendingEnrollments();
   loadPaymentHistory();
   loadCredits();
   loadNotifications();
-  loadAdminEnrollments();
 });
 
 watch(

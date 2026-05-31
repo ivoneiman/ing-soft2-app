@@ -24,6 +24,8 @@ const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
 const AttendanceClassesView = () => import("../views/actividades/AttendanceClassesView.vue");
 const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
 const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue"); 
+const ReporteUsuariosView = () => import("../views/reportes/ReporteUsuariosView.vue");
+const ReportePagosView = () => import("../views/reportes/ReportePagosView.vue");
 
 // 🌟 CORRECCIÓN 1: El archivo físico se llama index.vue en tu carpeta dashboard
 const DashboardView = () => import("../views/dashboard/DashboardView.vue"); 
@@ -72,6 +74,18 @@ const routes = [
         path: "reportes",
         name: "Reportes",
         component: ReportesView,
+        meta: { requiresAuth: true, requiresAdmin: true }
+      },
+      {
+        path: "reportes/usuarios",
+        name: "ReporteUsuarios",
+        component: ReporteUsuariosView,
+        meta: { requiresAuth: true, requiresAdmin: true }
+      },
+      {
+        path: "reportes/pagos",
+        name: "ReportePagos",
+        component: ReportePagosView,
         meta: { requiresAuth: true, requiresAdmin: true }
       },
       {

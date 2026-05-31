@@ -111,9 +111,6 @@
             <router-link to="/crear-usuario" @click="handleAdminDropdownClick">
               Crear Usuario
             </router-link>
-            <router-link to="/pagos" @click="handleAdminDropdownClick">
-              Pagos
-            </router-link>
             <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" @click="handleAdminDropdownClick">
               Pasar Asistencia
             </router-link>

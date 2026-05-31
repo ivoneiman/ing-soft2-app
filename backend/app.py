@@ -1388,6 +1388,9 @@ def pending_enrollments():
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
 
+    if current_user.role != "client":
+        return jsonify({"enrollments": []}), 200
+
     current_datetime = _discount_datetime_from_request()
     enrollments = (
         Enrollment.query
@@ -1415,6 +1418,9 @@ def my_credits():
     current_user = _get_authenticated_user()
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
+
+    if current_user.role != "client":
+        return api_success({"credits": []}, status_code=200)
 
     current_datetime = _current_discount_datetime()
     credits = (
@@ -2217,6 +2223,9 @@ def payment_history():
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
 
+    if current_user.role != "client":
+        return jsonify({"payments": []}), 200
+
     current_datetime = _current_discount_datetime()
     enrollments = Enrollment.query.filter_by(user_id=current_user.id).all()
     changed = False
@@ -2269,6 +2278,113 @@ def admin_payment_enrollments():
         db.session.commit()
 
     return jsonify({"enrollments": payload}), 200
+
+
+@app.route("/api/admin/reportes/pagos", methods=["GET"])
+def get_pagos_reporte():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+    if current_user.role != "admin":
+        return jsonify({"error": "No tienes permisos"}), 403
+
+    current_datetime = _current_discount_datetime()
+    payments = Payment.query.filter_by(status="approved").all()
+    
+    payload = []
+    for p in payments:
+        item = p.to_dict()
+        if p.user:
+            item["user"] = {"username": p.user.username, "apellido": p.user.apellido}
+        if p.enrollment and p.enrollment.class_:
+            class_obj = p.enrollment.class_
+            actividad_name = class_obj.actividad.name if class_obj.actividad else class_obj.name
+            item["actividad"] = actividad_name
+        
+        payload.append(item)
+
+    enrollments = Enrollment.query.all()
+    changed = False
+    for enr in enrollments:
+        changed = payment_service.recompute_enrollment_payment_state(enr, current_datetime) or changed
+        if float(enr.remaining_amount or 0) > 0:
+            class_obj = enr.class_
+            actividad_name = class_obj.actividad.name if class_obj and class_obj.actividad else (class_obj.name if class_obj else "-")
+            payload.append({
+                "id": f"enr_{enr.id}",
+                "created_at": enr.created_at.isoformat() if enr.created_at else None,
+                "user": {"username": enr.user.username, "apellido": enr.user.apellido} if enr.user else None,
+                "actividad": actividad_name,
+                "payment_method": "-",
+                "payment_type": "pending_enrollment",
+                "final_amount": enr.remaining_amount,
+                "status": "pending_payment"
+            })
+
+    if changed:
+        db.session.commit()
+
+    payload.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+
+    return jsonify({"payments": payload}), 200
+
+
+@app.route("/api/admin/reportes/usuarios", methods=["GET"])
+def get_usuarios_reporte():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+    if current_user.role != "admin":
+        return jsonify({"error": "No tienes permisos"}), 403
+
+    users = User.query.all()
+    # Ordenar primero admins, luego employees, por último clients
+    role_order = {"admin": 1, "employee": 2, "client": 3}
+    users_sorted = sorted(users, key=lambda u: (role_order.get(u.role, 4), u.apellido or "", u.username or ""))
+
+    payload = []
+    for u in users_sorted:
+        payload.append({
+            "id": u.id,
+            "username": u.username,
+            "apellido": u.apellido,
+            "email": u.email,
+            "dni": u.dni,
+            "telefono": u.telefono,
+            "role": u.role
+        })
+
+    return jsonify({"users": payload}), 200
+
+
+@app.route("/api/admin/reportes/usuarios/<int:target_user_id>/detalles", methods=["GET"])
+def get_usuario_detalles(target_user_id):
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+    if current_user.role != "admin":
+        return jsonify({"error": "No tienes permisos"}), 403
+
+    target_user = User.query.get_or_404(target_user_id)
+    enrollments = Enrollment.query.filter_by(user_id=target_user_id).order_by(Enrollment.id.desc()).all()
+    
+    enrollment_data = []
+    for enr in enrollments:
+        class_obj = enr.class_
+        actividad_name = class_obj.actividad.name if class_obj.actividad else class_obj.name
+
+        enrollment_data.append({
+            "id": enr.id,
+            "class_name": class_obj.name,
+            "actividad": actividad_name,
+            "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj.fecha_hora else None,
+            "estado_pago": enr.payment_status,
+            "tipo": enr.tipo,
+            "monto_total": enr.total_amount,
+            "saldo": enr.remaining_amount
+        })
+    
+    return jsonify({"user": target_user.to_dict(), "enrollments": enrollment_data}), 200
 
 
 @app.route("/api/enrollments/<int:enrollment_id>/manual-payment", methods=["POST"])
