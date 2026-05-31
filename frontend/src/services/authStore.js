@@ -36,11 +36,11 @@ export const authStore = reactive({
     }
   },
 
-  async adminLoginRequest(email) {
+  async adminLoginRequest(email, password) {
     this.loading = true
     this.error = null
     try {
-      await adminLoginRequest({ email })
+      await adminLoginRequest({ email, password })
       return true
     } catch (err) {
       this.error = err.response?.data?.error || 'Error al solicitar el código'

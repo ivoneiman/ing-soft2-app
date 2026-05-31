@@ -912,12 +912,13 @@ def login():
 def admin_login_request():
     data = request.get_json()
     email = data.get("email", "").strip()
-    if not email:
-        return jsonify({"error": "Debe ingresar un email"}), 400
+    password = data.get("password", "")
+    if not email or not password:
+        return jsonify({"error": "Debe ingresar email y contraseña"}), 400
 
     user = User.query.filter_by(email=email, role="admin").first()
-    if not user:
-        return jsonify({"error": "Email no corresponde a un administrador"}), 401
+    if not user or not user.check_password(password):
+        return jsonify({"error": "Credenciales incorrectas o no corresponde a un administrador"}), 401
 
     code = f"{random.randint(0, 999999):06d}"
     session["admin_login_email"] = email
@@ -985,7 +986,15 @@ def me():
         return jsonify({"error": "Usuario no encontrado"}), 404
 
     return jsonify({
-        "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
+        "user": {
+            "id": user.id, 
+            "username": user.username, 
+            "apellido": user.apellido,
+            "email": user.email, 
+            "dni": user.dni,
+            "telefono": user.telefono,
+            "role": user.role
+        }
     }), 200
 
 @app.route("/api/me", methods=["PUT"])
@@ -1026,6 +1035,40 @@ def update_profile():
         db.session.rollback()
         logger.error(f"Error al actualizar perfil: {e}")
         return jsonify({"error": "Error al actualizar el perfil"}), 500
+
+@app.route("/api/me", methods=["DELETE"])
+def delete_my_account():
+    """Elimina la cuenta del usuario actual."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "No autenticado"}), 401
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    # Validación explícita: Bloqueamos la eliminación solo si hay inscripciones activas
+    # o pagos aprobados, para evitar borrar historial contable o de clases en cascada.
+    # Las inscripciones canceladas o vencidas (sin pagos) permiten borrar la cuenta.
+    active_enrollments = [e for e in user.enrollments if e.estado not in [Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED]]
+    approved_payments = [p for p in user.payments if p.status == Payment.STATUS_APPROVED]
+
+    if active_enrollments or approved_payments:
+        return jsonify({"error": "No se puede eliminar la cuenta porque tienes inscripciones activas"}), 400
+
+    try:
+        db.session.delete(user)
+        db.session.commit()
+        # Cerramos la sesión
+        session.clear()
+        return jsonify({"message": "Cuenta eliminada correctamente"}), 200
+    except IntegrityError:
+        db.session.rollback()
+        return jsonify({"error": "No se puede eliminar la cuenta porque tiene registros asociados (pagos, inscripciones, etc)."}), 400
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error al eliminar cuenta: {e}")
+        return jsonify({"error": "Error al eliminar la cuenta"}), 500
 
 # ─── Rutas API: Actividades, Usuarios y Catálogo ────────────────────────────────────────
 
@@ -2632,7 +2675,7 @@ def register_manual_payment(enrollment_id):
     except (TypeError, ValueError):
         return jsonify({"error": "El monto debe ser numérico"}), 400
 
-    _recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     remaining_amount = round(float(enrollment.remaining_amount or 0), 2)
     if amount <= 0:
         return jsonify({"error": "El monto debe ser mayor a cero"}), 400
@@ -2656,7 +2699,7 @@ def register_manual_payment(enrollment_id):
     db.session.add(payment)
     db.session.flush()
     db.session.expire(enrollment, ["payments"])
-    _recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
+    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
     db.session.commit()
 
     return jsonify({

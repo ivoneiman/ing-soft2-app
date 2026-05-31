@@ -23,10 +23,10 @@ export function login({ email, password, remember }) {
   );
 }
 
-export function adminLoginRequest({ email }) {
+export function adminLoginRequest({ email, password }) {
   return axios.post(
     `${API_URL}/admin-login/request`,
-    { email },
+    { email, password },
     REQUEST_CONFIG
   );
 }
@@ -58,6 +58,13 @@ export function updateProfile({ username, apellido, telefono, dni }) {
   return axios.put(
     `${API_URL}/me`,
     { username, apellido, telefono, dni },
+    REQUEST_CONFIG
+  );
+}
+
+export function deleteAccount() {
+  return axios.delete(
+    `${API_URL}/me`,
     REQUEST_CONFIG
   );
 }
