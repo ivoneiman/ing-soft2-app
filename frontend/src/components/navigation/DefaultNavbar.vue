@@ -17,9 +17,11 @@
       <router-link to="/" class="nav-item" @click="closeMobileMenu">Home</router-link>
       <!-- Dashboard para admin y employee -->
       <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/dashboard" class="nav-item" @click="closeMobileMenu">Dashboard</router-link>
+      <!-- Crear clase como botón principal para admin y employee -->
+      <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/crear-clase" class="nav-item" @click="closeMobileMenu">Crear clase</router-link>
       <!-- Solo clientes pueden ver Actividades -->
       <router-link v-if="!authStore.isLoggedIn || roleHelpers.isClient()" to="/actividades" class="nav-item" @click="closeMobileMenu">Actividades</router-link>
-      <router-link to="/sobre-nosotros" class="nav-item" @click="closeMobileMenu">Sobre Nosotros</router-link>
+      <router-link v-if="!authStore.isLoggedIn || roleHelpers.isClient()" to="/sobre-nosotros" class="nav-item" @click="closeMobileMenu">Sobre Nosotros</router-link>
 
       <!-- Si no está autenticado: mostrar Login y Registro -->
       <router-link
@@ -106,9 +108,6 @@
           </button>
 
           <div v-if="isAdminDropdownOpen" class="dropdown-container">
-            <router-link to="/crear-clase" @click="handleAdminDropdownClick">
-              Crear clases
-            </router-link>
             <router-link to="/crear-usuario" @click="handleAdminDropdownClick">
               Crear Usuario
             </router-link>
@@ -123,9 +122,6 @@
             </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/reportes" @click="handleAdminDropdownClick">
               Reportes
-            </router-link>
-            <router-link v-if="roleHelpers.isAdmin()" to="/admin/descuentos" @click="handleAdminDropdownClick">
-              Gestión de descuentos
             </router-link>
             <router-link to="/configuracion" @click="handleAdminDropdownClick">
               Editar perfil

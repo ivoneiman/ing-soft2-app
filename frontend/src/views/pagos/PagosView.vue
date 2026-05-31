@@ -99,7 +99,7 @@
               <input v-model="selectedPaymentTypes[enrollment.id]" type="radio" :name="`payment-type-${enrollment.id}`" value="full" />
               <span>Pagar completo</span>
             </label>
-            <label v-if="Number(enrollment.paid_amount || 0) === 0">
+            <label v-if="Number(enrollment.paid_amount || 0) === 0 && enrollment.tipo !== 'Mensual'">
               <input v-model="selectedPaymentTypes[enrollment.id]" type="radio" :name="`payment-type-${enrollment.id}`" value="deposit" />
               <span>Reservar con seña</span>
             </label>

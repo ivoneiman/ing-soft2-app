@@ -175,7 +175,19 @@ const availableSlots = computed(() => {
   const allSlots = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
   const occupied = occupiedSlotsForMonth.value;
   
-  return allSlots.filter(slot => !occupied.includes(slot));
+  const now = new Date();
+
+  return allSlots.filter(slot => {
+    if (occupied.includes(slot)) return false;
+    
+    // Verificar que al menos una de las clases que se van a generar con este horario sea en el futuro
+    return targetDatesForSelectedDay.value.some(fechaStr => {
+      const [year, month, day] = fechaStr.split('-');
+      const [hour, minute] = slot.split(':');
+      const slotDate = new Date(year, Number(month) - 1, day, hour, minute);
+      return slotDate > now;
+    });
+  });
 });
 
 const loadActivities = async () => {

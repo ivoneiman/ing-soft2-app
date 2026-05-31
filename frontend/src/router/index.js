@@ -27,8 +27,6 @@ const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue");
 
 // 🌟 CORRECCIÓN 1: El archivo físico se llama index.vue en tu carpeta dashboard
 const DashboardView = () => import("../views/dashboard/DashboardView.vue"); 
-const AdminDiscountsView = () => import("../views/pagos/AdminDiscountsView.vue");
-
 
 const routes = [
   // 🔵 Layout principal (con navbar)
@@ -45,6 +43,7 @@ const routes = [
         path: "actividades",
         name: "Actividades",
         component: ActividadesView,
+        meta: { requiresAuth: true }
       },
       {
         path: "sobre-nosotros",
@@ -110,13 +109,7 @@ const routes = [
         name: "Dashboard",
         component: DashboardView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
-      },
-      {
-        path: "admin/descuentos",
-        name: "AdminDiscounts",
-        component: AdminDiscountsView,
-        meta: { requiresAuth: true, requiresAdmin: true },
-      } // 🌟 CORRECCIÓN 2: Eliminamos los caracteres invisibles que arrastraba el archivo al final de esta llave
+      }
     ],
   },
 
