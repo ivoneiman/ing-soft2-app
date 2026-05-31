@@ -9,6 +9,7 @@
     <div v-if="roleHelpers.hasAnyRole(['admin', 'employee'])" class="role-badge">
       Estás navegando como: <strong>{{ roleHelpers.isAdmin() ? 'Administrador' : 'Empleado' }}</strong>
     </div>
+
     <Hero />
   </div>
 </template>

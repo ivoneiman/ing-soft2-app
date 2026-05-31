@@ -11,10 +11,19 @@
     </header>
 
     <section class="table-section">
-      <div v-if="isLoading" class="empty-state">Cargando directorio...</div>
-      <div v-else-if="users.length === 0" class="empty-state">No se encontraron usuarios.</div>
+      <div class="search-container">
+        <input 
+          type="text" 
+          v-model="searchQuery" 
+          placeholder="Buscar usuario por nombre, apellido o email..." 
+          class="search-input"
+        />
+      </div>
 
-      <table v-else class="users-table">
+      <div v-if="isLoading" class="empty-state mt-4">Cargando directorio...</div>
+      <div v-else-if="filteredUsers.length === 0" class="empty-state mt-4">No se encontraron usuarios.</div>
+
+      <table v-else class="users-table mt-4">
         <thead>
           <tr>
             <th>Rol</th>
@@ -25,7 +34,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="user in users" :key="user.id">
+          <tr v-for="user in filteredUsers" :key="user.id">
             <td><span :class="['role-pill', user.role]">{{ roleLabel(user.role) }}</span></td>
             <td class="bold">{{ user.apellido }} {{ user.username }}</td>
             <td>{{ user.email }}</td>
@@ -92,13 +101,28 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="enr in selectedUser.enrollments" :key="enr.id">
+                <tr v-for="enr in selectedUser.enrollments" :key="enr.id" :class="{'is-cancelled': isCancelled(enr)}">
                   <td class="bold">{{ enr.actividad }}</td>
                   <td>{{ formatDateTime(enr.fecha_hora) }}</td>
                   <td>{{ enr.tipo }}</td>
-                  <td><span :class="['status-pill', enr.estado_pago.toLowerCase()]">{{ paymentStatusLabel(enr.estado_pago) }}</span></td>
-                  <td>{{ formatMoney(enr.monto_total) }}</td>
-                  <td :class="{'debt': Number(enr.saldo) > 0}">{{ formatMoney(enr.saldo) }}</td>
+                  <td>
+                    <template v-if="isCancelled(enr)">
+                      <span v-if="enr.requiere_reembolso" class="status-pill expired">Cancelada (Reembolso pendiente)</span>
+                      <span v-else-if="enr.estado_pago === 'PAID'" class="status-pill expired">Cancelada (Créditos devueltos)</span>
+                      <span v-else class="status-pill expired">Cancelada</span>
+                    </template>
+                    <template v-else>
+                      <span :class="['status-pill', (enr.estado_pago || '').toLowerCase()]">{{ paymentStatusLabel(enr.estado_pago) }}</span>
+                    </template>
+                  </td>
+                  <td>
+                    <span v-if="isCancelled(enr)">-</span>
+                    <span v-else>{{ formatMoney(enr.monto_total) }}</span>
+                  </td>
+                  <td :class="{'debt': Number(enr.saldo) > 0 && !isCancelled(enr)}">
+                    <span v-if="isCancelled(enr)">-</span>
+                    <span v-else>{{ formatMoney(enr.saldo) }}</span>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -110,7 +134,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import axios from 'axios';
 import { formatDateTime, formatMoney } from '../../utils/formatters';
 
@@ -120,9 +144,30 @@ const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 const users = ref([]);
 const isLoading = ref(false);
+const searchQuery = ref('');
+
+const filteredUsers = computed(() => {
+  if (!searchQuery.value) return users.value;
+  const query = searchQuery.value.toLowerCase().trim();
+  return users.value.filter(user => {
+    const fullName = `${user.username || ''} ${user.apellido || ''}`.toLowerCase();
+    const reversedName = `${user.apellido || ''} ${user.username || ''}`.toLowerCase();
+    
+    return fullName.includes(query) ||
+           reversedName.includes(query) ||
+           (user.email && user.email.toLowerCase().includes(query)) ||
+           (user.dni && user.dni.toLowerCase().includes(query));
+  });
+});
 
 const selectedUser = ref(null);
 const isLoadingProfile = ref(false);
+
+function isCancelled(enr) {
+  const estadoInsc = String(enr.estado_inscripcion || '').toLowerCase();
+  const estadoClas = String(enr.estado_clase || '').toLowerCase();
+  return ['cancelada', 'cancelled'].includes(estadoInsc) || ['cancelada', 'cancelled'].includes(estadoClas);
+}
 
 function roleLabel(role) {
   const labels = { admin: 'Administrador', employee: 'Empleado', client: 'Cliente' };
@@ -231,6 +276,29 @@ onMounted(() => {
   text-align: left;
 }
 
+.search-container {
+  margin-bottom: 1rem;
+}
+.search-input {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid #d0c0d0;
+  border-radius: 8px;
+  font-size: 1rem;
+  outline: none;
+  color: #4a3a4a;
+  transition: border-color 0.2s;
+}
+.search-input:focus {
+  border-color: #9f5f91;
+}
+.mt-4 {
+  margin-top: 1.5rem;
+}
+.is-cancelled td {
+  opacity: 0.6;
+  background-color: #fafafa;
+}
 .users-table th { color: #572c57; }
 .bold { font-weight: 700; }
 

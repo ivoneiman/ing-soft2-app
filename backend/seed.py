@@ -490,6 +490,15 @@ def main():
             legacy_names=["Pilates Limitado"]
         )
 
+        print("   Creando clase de prueba para cupos (19/20)...")
+        class_19_cupos = create_test_class(
+            "Yoga - Prueba Cupos (19/20)",
+            at_app_time(today + timedelta(days=8), 19),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Prueba 19 Cupos"]
+        )
+
         # COMENTADAS: Clases de Yoga para Junio
         # print("   Creando clases de Yoga para Junio (pruebas de lista de espera mensual)...")
         # year = today.year
@@ -543,6 +552,16 @@ def main():
         # 
         # # Client inscrito a una clase
         # create_enrollment(client, class1)
+        
+        print("   Inscribiendo 19 usuarios ficticios a 'Yoga - Prueba Cupos (19/20)'...")
+        for i in range(1, 20):
+            dummy = create_test_user(
+                username=f"Alumno{i}", apellido="Dummy", email=f"dummy{i}@test.com",
+                password="password123", dni=f"888888{i:02d}", telefono="11111111", role="client"
+            )
+            enr = ensure_enrollment(dummy, class_19_cupos, estado=Enrollment.STATUS_PAID, tipo="Suelta")
+            ensure_payment(enr, Payment.STATUS_APPROVED)
+            
         db.session.commit()
         print()
 

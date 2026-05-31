@@ -65,6 +65,9 @@
             <router-link to="/configuracion" @click="handleProfileDropdownClick">
               Editar perfil
             </router-link>
+            <router-link to="/mis-clases" @click="handleProfileDropdownClick">
+              Mis Clases
+            </router-link>
           </div>
         </div>
 

@@ -26,6 +26,7 @@ const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
 const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue"); 
 const ReporteUsuariosView = () => import("../views/reportes/ReporteUsuariosView.vue");
 const ReportePagosView = () => import("../views/reportes/ReportePagosView.vue");
+const MisClasesView = () => import("../views/actividades/MisClasesView.vue");
 
 // 🌟 CORRECCIÓN 1: El archivo físico se llama index.vue en tu carpeta dashboard
 const DashboardView = () => import("../views/dashboard/DashboardView.vue"); 
@@ -123,6 +124,12 @@ const routes = [
         name: "Dashboard",
         component: DashboardView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "mis-clases",
+        name: "MisClases",
+        component: MisClasesView,
+        meta: { requiresAuth: true, requiresClient: true }
       }
     ],
   },
