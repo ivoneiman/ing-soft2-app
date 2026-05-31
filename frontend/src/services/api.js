@@ -23,10 +23,10 @@ export function login({ email, password, remember }) {
   );
 }
 
-export function adminLoginRequest({ email }) {
+export function adminLoginRequest({ email, password }) {
   return axios.post(
     `${API_URL}/admin-login/request`,
-    { email },
+    { email, password },
     REQUEST_CONFIG
   );
 }

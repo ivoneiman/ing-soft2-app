@@ -5,7 +5,10 @@
   en curso muestra "Cargando usuario..."; si no hay sesión redirige al login.
 -->
 <template>
-  <div>
+  <div class="home-container">
+    <div v-if="roleHelpers.hasAnyRole(['admin', 'employee'])" class="role-badge">
+      Estás navegando como: <strong>{{ roleHelpers.isAdmin() ? 'Administrador' : 'Empleado' }}</strong>
+    </div>
     <Hero />
   </div>
 </template>
@@ -17,6 +20,7 @@ import { ref, onMounted } from 'vue'
 import Hero from '../../components/hero/Hero.vue'
 // `getCurrentUser` obtiene los datos del usuario autenticado; `logout` cierra la sesión
 import { getCurrentUser } from '../../services/api'
+import { roleHelpers } from '../../utils/roleHelpers'
 // `useRouter` permite navegar programáticamente entre rutas
 
 // Estado reactivo del componente
@@ -42,6 +46,29 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.home-container {
+  position: relative;
+}
+
+.role-badge {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background-color: #f6ea98;
+  color: #572c57;
+  padding: 12px 24px;
+  border-radius: 50px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+}
+
+.role-badge strong {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
 img {
   max-width: 300px;
   height: auto;
