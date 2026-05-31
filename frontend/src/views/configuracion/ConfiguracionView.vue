@@ -79,25 +79,55 @@
         </button>
       </form>
     </section>
+
+    <!-- Botón de eliminación de cuenta -->
+    <div class="delete-action">
+      <button type="button" class="btn-delete" @click="openDeleteConfirm">
+        Eliminar Usuario
+      </button>
+      <!-- Mensaje de error al eliminar -->
+      <div v-if="deleteErrorMessage" class="alert alert-error delete-error">
+        {{ deleteErrorMessage }}
+      </div>
+    </div>
+
+    <!-- Modal de confirmación de eliminación -->
+    <div v-if="showDeleteConfirm" class="delete-confirm-overlay">
+      <div class="confirm-box">
+        <p>¿Está seguro que desea eliminar su cuenta? Esta acción no se puede deshacer.</p>
+        <div class="buttons">
+          <button @click="confirmDelete" class="btn-danger" :disabled="isDeleting">
+            {{ isDeleting ? 'Eliminando...' : 'Confirmar' }}
+          </button>
+          <button @click="cancelDelete" class="btn-secondary" :disabled="isDeleting">Cancelar</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getCurrentUser, updateProfile } from '../../services/api'
+import { getCurrentUser, updateProfile, deleteAccount, logout } from '../../services/api'
 import { roleHelpers } from '../../utils/roleHelpers'
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 // Estado reactivo
 const formData = ref({
   username: '',
   apellido: '',
   email: '',
+    dni: '',
   telefono: ''
 })
 
 const isLoading = ref(false)
 const successMessage = ref('')
 const errorMessage = ref('')
+const deleteErrorMessage = ref('')
+const showDeleteConfirm = ref(false)
+const isDeleting = ref(false)
 
 // Cargar datos del usuario actual
 onMounted(async () => {
@@ -157,6 +187,32 @@ const handleSaveProfile = async () => {
     errorMessage.value = err.response?.data?.error || 'Error al actualizar el perfil'
   } finally {
     isLoading.value = false
+  }
+}
+
+// Funciones de eliminación de usuario
+const openDeleteConfirm = () => {
+  deleteErrorMessage.value = ''
+  showDeleteConfirm.value = true
+}
+
+const cancelDelete = () => {
+  showDeleteConfirm.value = false
+}
+
+const confirmDelete = async () => {
+  isDeleting.value = true
+  try {
+    // Ejecuta la función del endpoint para eliminar la cuenta y cierra sesión
+    await deleteAccount()
+    await logout()
+    showDeleteConfirm.value = false
+    router.push('/login')
+  } catch (err) {
+    deleteErrorMessage.value = err.response?.data?.error || 'Error al eliminar la cuenta'
+    showDeleteConfirm.value = false
+  } finally {
+    isDeleting.value = false
   }
 }
 </script>
@@ -303,6 +359,100 @@ const handleSaveProfile = async () => {
   min-width: 220px;
   display: inline-flex;
   justify-content: center;
+}
+
+/* === ESTILOS PARA LA ELIMINACIÓN DE CUENTA === */
+.delete-action {
+  margin-top: 2rem;
+  text-align: left;
+}
+
+.btn-delete {
+  padding: 10px 16px;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.btn-delete:hover {
+  background-color: #c82333;
+}
+
+.delete-error {
+  margin-top: 1rem;
+}
+
+/* Modal de confirmación */
+.delete-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.confirm-box {
+  background: white;
+  padding: 24px;
+  border-radius: 8px;
+  text-align: center;
+  max-width: 400px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.confirm-box p {
+  margin-bottom: 20px;
+  font-size: 1.1rem;
+  color: #333;
+}
+
+.buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.btn-danger {
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #c82333;
+}
+
+.btn-secondary {
+  background: #f5e6f5;
+  color: #572c57;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 4px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #e8dce8;
+}
+
+.btn-danger:disabled,
+.btn-secondary:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
 }
 
 /* Media Queries */

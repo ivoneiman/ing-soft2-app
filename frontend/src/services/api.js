@@ -62,6 +62,13 @@ export function updateProfile({ username, apellido, telefono, dni }) {
   );
 }
 
+export function deleteAccount() {
+  return axios.delete(
+    `${API_URL}/me`,
+    REQUEST_CONFIG
+  );
+}
+
 // =========================
 // ACTIVIDADES
 // =========================
