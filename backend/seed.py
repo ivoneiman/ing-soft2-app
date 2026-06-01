@@ -560,7 +560,9 @@ def main():
                 password="password123", dni=f"888888{i:02d}", telefono="11111111", role="client"
             )
             enr = ensure_enrollment(dummy, class_19_cupos, estado=Enrollment.STATUS_PAID, tipo="Suelta")
-            ensure_payment(enr, Payment.STATUS_APPROVED)
+            # Distribuimos los pagos de los dummies en los últimos 90 días para verlos en el reporte
+            payment_date = today - timedelta(days=(i * 4))
+            ensure_payment(enr, Payment.STATUS_APPROVED, created_at=payment_date)
             
         db.session.commit()
         print()

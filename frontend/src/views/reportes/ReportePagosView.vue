@@ -216,7 +216,7 @@ function paymentStatusLabel(status) {
 async function loadPayments() {
   isLoading.value = true;
   try {
-    const response = await axios.get(`${baseURL}/admin/reportes/pagos`, { withCredentials: true });
+    const response = await axios.get(`${baseURL}/admin/enrollments/payments`, { withCredentials: true });
     payments.value = response.data.payments || [];
   } catch (err) {
     console.error("Error cargando el historial global de pagos:", err);

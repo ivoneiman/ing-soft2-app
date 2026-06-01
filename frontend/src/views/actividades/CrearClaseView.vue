@@ -2,7 +2,7 @@
   <div class="catalog-view">
     <header class="catalog-header">
       <h1>Crear Nuevas Clases</h1>
-      <p class="lead">Seleccioná actividad, día y horario. Se generarán clases para todos los días de ese mes.</p>
+      <p class="lead">Seleccioná actividad, día y horario para generar las clases de todo el mes.</p>
     </header>
 
     <div class="catalog-card">
@@ -54,7 +54,7 @@
               </button>
             </div>
             <p v-if="availableSlots.length === 0" class="info-box">
-              No hay horarios disponibles para todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes.
+              No hay horarios disponibles para los {{ getWeekdayName(selectedDate).toLowerCase() }} de este mes.
             </p>
           </template>
         </section>
@@ -65,12 +65,17 @@
         <h3>Tu selección</h3>
         <ul class="summary-list">
           <li><strong>Actividad:</strong> {{ selectedActivityName }}</li>
-          <li><strong>Días a crear:</strong> Todos los {{ getWeekdayName(selectedDate) }} del mes</li>
+          <li><strong>Días a crear:</strong> Todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes</li>
           <li><strong>Horario:</strong> {{ selectedSlot }}</li>
         </ul>
-        <button type="button" class="btn-inscribe" @click="submitForm">
-          Generar Clases del Mes
-        </button>
+        <div style="text-align: center; margin-top: 1rem;">
+          <button type="button" class="btn-inscribe" :disabled="isMonthlyDisabled" @click="submitForm">
+            Generar Clases del Mes
+          </button>
+          <small v-if="isMonthlyDisabled" style="color: #6b7280; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
+            Para crear todo el mes, seleccione un día del 1 al 7.
+          </small>
+        </div>
       </section>
 
       <p v-if="successMessage" class="success">{{ successMessage }}</p>
@@ -95,6 +100,10 @@ const selectedSlot = ref("");
 const errorMessage = ref("");
 const successMessage = ref("");
 const occupiedClasses = ref([]);
+
+const isMonthlyDisabled = computed(() => {
+  return selectedDate.value && selectedDate.value.getDate() > 7;
+});
 
 const selectedActivityName = computed(() => {
   const actividad = actividades.value.find((item) => item.id === Number(form.activity_id));
@@ -176,14 +185,26 @@ const availableSlots = computed(() => {
   const occupied = occupiedSlotsForMonth.value;
   
   const now = new Date();
+  const isToday = selectedDate.value.getFullYear() === now.getFullYear() &&
+                  selectedDate.value.getMonth() === now.getMonth() &&
+                  selectedDate.value.getDate() === now.getDate();
 
   return allSlots.filter(slot => {
     if (occupied.includes(slot)) return false;
     
+    const [hour, minute] = slot.split(':').map(Number);
+
+    if (isToday) {
+      const currentHours = now.getHours();
+      const currentMinutes = now.getMinutes();
+      if (hour < currentHours || (hour === currentHours && minute <= currentMinutes)) {
+        return false;
+      }
+    }
+
     // Verificar que al menos una de las clases que se van a generar con este horario sea en el futuro
     return targetDatesForSelectedDay.value.some(fechaStr => {
       const [year, month, day] = fechaStr.split('-');
-      const [hour, minute] = slot.split(':');
       const slotDate = new Date(year, Number(month) - 1, day, hour, minute);
       return slotDate > now;
     });
@@ -244,8 +265,13 @@ const submitForm = async () => {
     return;
   }
 
+  if (selectedDate.value.getDate() > 7) {
+    errorMessage.value = "Para crear las clases de todo el mes, debes seleccionar un día de la primera semana (del 1 al 7).";
+    return;
+  }
+
   try {
-    const targetDates = targetDatesForSelectedDay.value;
+    let targetDates = targetDatesForSelectedDay.value;
 
     // Comprobar conflictos por si acaso antes de crear
     const conflicts = targetDates.filter(fechaStr =>
@@ -445,6 +471,15 @@ const submitForm = async () => {
 .btn-inscribe {
   width: 100%;
   transition: all 0.3s ease;
+}
+
+.btn-inscribe:disabled {
+  background-color: #e5e7eb !important;
+  color: #9ca3af !important;
+  border-color: #e5e7eb !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .mt-4 {

@@ -352,7 +352,7 @@ function handleLogout() {
 }
 
 .nav-item:hover,
-.router-link-active.nav-item {
+.router-link-exact-active.nav-item {
   color: #e26972;
 }
 

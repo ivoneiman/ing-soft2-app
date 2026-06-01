@@ -2,6 +2,7 @@ import os
 import logging
 import random
 import time
+import threading
 import urllib.parse
 from datetime import datetime, timedelta
 from calendar import monthrange
@@ -11,7 +12,7 @@ from dotenv import load_dotenv
 from flask import Flask, request, jsonify, session, redirect, g, has_request_context
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-from sqlalchemy import event, inspect, text
+from sqlalchemy import case, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
 
@@ -599,6 +600,7 @@ def _enrollment_payload(enrollment, current_datetime=None):
     payload["deposit_percentage"] = payment_service.deposit_percentage()
     payload["balance_amount"] = max((payload.get("total_amount") or 0) - (payload.get("paid_amount") or 0), 0)
     payload["cancellation_will_generate_credit"] = _has_approved_payment(enrollment)
+    payload["is_cancelable"] = False  # Oculta el botón en la lista de pagos pendientes
     return payload
 
 
@@ -608,7 +610,7 @@ def _payment_payload(payment, current_datetime=None):
     if enrollment:
         payload["enrollment_estado"] = enrollment.estado
         payload["enrollment_payment_status"] = enrollment.payment_status
-        payload["enrollment_is_cancelable"] = enrollment_service.enrollment_is_cancelable(enrollment, current_datetime)
+        payload["enrollment_is_cancelable"] = False  # Oculta el botón en detalles de pago
         deadline = enrollment_service.cancellation_deadline_for_class(enrollment.class_)
         payload["enrollment_cancellation_deadline"] = deadline.isoformat() if deadline else None
         payload["enrollment_cancellation_will_generate_credit"] = _has_approved_payment(enrollment)
@@ -1076,6 +1078,113 @@ def delete_my_account():
 def get_actividades():
     actividades = Actividades.query.all()
     return jsonify([{"id": ac.id, "name": ac.name} for ac in actividades]), 200
+
+
+@app.route("/api/users", methods=["GET"])
+def get_users():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    if current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para listar usuarios"}), 403
+
+    users = User.query.order_by(
+        case(
+            (User.role == "admin", 1),
+            (User.role == "employee", 2),
+            (User.role == "client", 3),
+            else_=4
+        ),
+        User.apellido,
+        User.username
+    ).all()
+    return jsonify([
+        {
+            "id": u.id,
+            "username": u.username,
+            "apellido": u.apellido,
+            "email": u.email,
+            "dni": u.dni,
+            "telefono": u.telefono,
+            "role": u.role
+        } for u in users
+    ]), 200
+
+
+@app.route("/api/admin/reportes/usuarios/<int:user_id>/detalles", methods=["GET"])
+def get_user_details(user_id):
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos"}), 403
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    enrollments_data = []
+    
+    explicit_enrollments = Enrollment.query.filter_by(user_id=user.id).all()
+    explicit_map = {enr.class_id: enr for enr in explicit_enrollments}
+    
+    # Filtramos las inscripciones mensuales
+    monthly_enrollments = [enr for enr in explicit_enrollments if enr.tipo == ENROLLMENT_TYPE_MONTHLY and enr.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]]
+
+    for enr in explicit_enrollments:
+        class_obj = enr.class_
+        if not class_obj: continue
+        
+        enrollments_data.append({
+            "id": enr.id,
+            "actividad": class_obj.actividad.name if class_obj.actividad else class_obj.name,
+            "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj.fecha_hora else None,
+            "tipo": enr.tipo,
+            "estado_inscripcion": enr.estado,
+            "estado_clase": class_obj.estado,
+            "requiere_reembolso": enr.requiere_reembolso,
+            "estado_pago": enr.payment_status,
+            "monto_total": enr.total_amount,
+            "saldo": enr.remaining_amount
+        })
+
+    # Agregamos las clases implícitas del mes
+    for enr in monthly_enrollments:
+        class_obj = enr.class_
+        if not class_obj or not class_obj.fecha_hora: continue
+        
+        last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
+        month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, last_day, 23, 59, 59)
+        
+        implicit_classes = Class.query.filter(
+            Class.id_actividad == class_obj.id_actividad,
+            Class.fecha_hora > class_obj.fecha_hora,
+            Class.fecha_hora <= month_end
+        ).all()
+
+        for ic in implicit_classes:
+            if ic.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and ic.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                if ic.id in explicit_map:
+                    continue
+                
+                enrollments_data.append({
+                    "id": f"implicit_{ic.id}_{enr.id}",
+                    "actividad": ic.actividad.name if ic.actividad else ic.name,
+                    "fecha_hora": ic.fecha_hora.isoformat(),
+                    "tipo": "Mensual",
+                    "estado_inscripcion": enr.estado,
+                    "estado_clase": ic.estado,
+                    "requiere_reembolso": False,
+                    "estado_pago": enr.payment_status,
+                    "monto_total": 0,
+                    "saldo": 0
+                })
+
+    enrollments_data.sort(key=lambda x: x["fecha_hora"] if x["fecha_hora"] else "", reverse=True)
+
+    return jsonify({
+        "user": user.to_dict(),
+        "enrollments": enrollments_data
+    }), 200
 
 
 @app.route("/api/users", methods=["POST"])
@@ -1985,6 +2094,14 @@ def cancelar_clase_staff(clase_id):
         return jsonify({"error": "Esta clase ya fue cancelada"}), 400
 
     current_datetime = _current_discount_datetime()
+
+    # Obtenemos los usuarios que realmente estaban activos (no cancelados previamente)
+    active_user_ids = {
+        enr.user_id for enr in Enrollment.query.filter_by(class_id=clase_id).filter(
+            Enrollment.estado.notin_([Enrollment.STATUS_CANCELLED, "Cancelada", "cancelled"])
+        ).all()
+    }
+
     cancellation = cancellation_service.cancel_class(class_obj, current_datetime)
 
     try:
@@ -1994,12 +2111,29 @@ def cancelar_clase_staff(clase_id):
         logger.exception("[Cancelaciones] error class_id=%s", clase_id)
         return jsonify({"error": "Error interno al procesar la cancelación", "details": str(err)}), 500
 
-    emails_sent = 0
-    for user, cancelled_class, credit in cancellation["email_jobs"]:
-        if send_class_cancelled_email(user, cancelled_class, credit_generated=credit is not None):
-            emails_sent += 1
-        if credit and send_credit_generated_email(user, cancelled_class, credit):
-            emails_sent += 1
+    # Filtramos los correos solo para los usuarios que estaban activos
+    valid_email_jobs = [
+        (u.id, c.id, cred.id if cred else None)
+        for u, c, cred in cancellation.get("email_jobs", [])
+        if u.id in active_user_ids
+    ]
+
+    def send_emails_async(app_obj, jobs):
+        with app_obj.app_context():
+            for uid, cid, cred_id in jobs:
+                u = User.query.get(uid)
+                c = Class.query.get(cid)
+                cred = Credit.query.get(cred_id) if cred_id else None
+                if not u or not c:
+                    continue
+                send_class_cancelled_email(u, c, credit_generated=cred is not None)
+                if cred:
+                    send_credit_generated_email(u, c, cred)
+
+    # Enviamos los correos en un hilo de fondo para que no demore la respuesta del servidor
+    from flask import current_app
+    app_obj = current_app._get_current_object()
+    threading.Thread(target=send_emails_async, args=(app_obj, valid_email_jobs)).start()
 
     return jsonify({
         "message": f"Clase '{class_obj.name}' cancelada exitosamente. El turno fue liberado en el calendario.",
@@ -2008,7 +2142,7 @@ def cancelar_clase_staff(clase_id):
         "estado": Class.STATUS_CANCELLED,
         "credits_created": cancellation["credits_created"],
         "notifications_created": cancellation["notifications_created"],
-        "emails_sent": emails_sent,
+        "emails_sent": len(valid_email_jobs),
     }), 200
 
 
@@ -2055,6 +2189,59 @@ def update_notification_message():
 
 
 # ─── Rutas API: Pasarela de Pagos (Mercado Pago) ──────────────────────────────
+
+@app.route("/api/payments/history", methods=["GET"])
+def get_payment_history():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    # Los clientes ven su propio historial. Admins/empleados ven todos.
+    if current_user.role == "client":
+        payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.created_at.desc()).all()
+    else:
+        payments = Payment.query.order_by(Payment.created_at.desc()).all()
+
+    return jsonify({"payments": [p.to_dict() for p in payments]}), 200
+
+
+@app.route("/api/admin/enrollments/payments", methods=["GET"])
+def get_admin_payment_enrollments():
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos"}), 403
+
+    # El reporte necesita todos los pagos aprobados para generar gráficos y tablas.
+    payments = Payment.query.filter(Payment.status == Payment.STATUS_APPROVED).order_by(Payment.created_at.desc()).all()
+    
+    payload = []
+    for p in payments:
+        payment_dict = p.to_dict()
+        user = p.user
+        if user:
+            payment_dict['user_username'] = user.username
+            payment_dict['user_apellido'] = user.apellido
+            payment_dict['user_email'] = user.email
+            payment_dict['user'] = {
+                "username": user.username,
+                "apellido": user.apellido,
+                "email": user.email
+            }
+            
+            act_name = "-"
+            class_obj = None
+            if p.enrollment and p.enrollment.class_:
+                class_obj = p.enrollment.class_
+            elif getattr(p, "class_", None):
+                class_obj = p.class_
+            if class_obj:
+                act_name = class_obj.actividad.name if getattr(class_obj, "actividad", None) else class_obj.name
+            payment_dict['actividad'] = act_name
+
+        payload.append(payment_dict)
+
+    return jsonify({"payments": payload}), 200
+
 
 @app.route("/api/payments/create", methods=["POST"])
 def create_payment():
@@ -2415,299 +2602,27 @@ def mercado_pago_webhook():
     query = request.args.to_dict()
     logger.info("[MercadoPago Webhook] query=%s payload=%s", query, payload)
 
-    topic = query.get("topic") or query.get("type") or payload.get("topic") or payload.get("type")
-    data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
-    mercado_pago_payment_id = (
-        query.get("id")
-        or query.get("data.id")
-        or data.get("id")
-        or payload.get("id")
-    )
+    topic = query.get("topic") or query.get("type") or payload.get("type")
 
-    if topic == "merchant_order":
-        return jsonify({"message": "merchant order notification ignored"}), 200
-    if topic and topic != "payment":
-        return jsonify({"message": "notification ignored"}), 200
-    if not mercado_pago_payment_id:
-        return jsonify({"message": "payment id missing"}), 200
+    if topic in ["payment", "merchant_order"]:
+        payment_id = query.get("data.id") or query.get("id") or (payload.get("data") or {}).get("id")
+        if payment_id:
+            mp_payment = _mercado_pago_payment_response(payment_id)
+            if mp_payment:
+                payment = _payment_from_mercado_pago_response(mp_payment)
+                if payment:
+                    current_datetime = _current_discount_datetime()
+                    _apply_mercado_pago_status(
+                        payment,
+                        mp_payment.get("status"),
+                        mp_payment.get("status_detail"),
+                        payment_id,
+                        current_datetime,
+                    )
+                    db.session.commit()
 
-    mp_payment = _mercado_pago_payment_response(mercado_pago_payment_id)
-    if not mp_payment:
-        return jsonify({"message": "payment not available yet"}), 200
-
-    payment = _payment_from_mercado_pago_response(mp_payment)
-    if not payment:
-        logger.error(
-            "[MercadoPago Webhook] payment_no_encontrado mp_payment_id=%s external_reference=%s preference_id=%s",
-            mercado_pago_payment_id,
-            mp_payment.get("external_reference"),
-            mp_payment.get("preference_id"),
-        )
-        return jsonify({"message": "local payment not found"}), 200
-
-    redirect_status, _message = _apply_mercado_pago_status(
-        payment,
-        mp_payment.get("status"),
-        mp_payment.get("status_detail"),
-        mercado_pago_payment_id,
-        _current_discount_datetime(),
-    )
-    db.session.commit()
-    logger.info(
-        "[MercadoPago Webhook] payment_id=%s mp_payment_id=%s status=%s notification_status=%s",
-        payment.id,
-        mercado_pago_payment_id,
-        payment.status,
-        redirect_status,
-    )
-    return jsonify({"message": "payment updated", "payment_id": payment.id, "status": payment.status}), 200
-
-
-@app.route("/api/payments/history", methods=["GET"])
-def payment_history():
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-
-    if current_user.role != "client":
-        return jsonify({"payments": []}), 200
-
-    current_datetime = _current_discount_datetime()
-    enrollments = Enrollment.query.filter_by(user_id=current_user.id).all()
-    changed = False
-    for enrollment in enrollments:
-        changed = _restore_future_expired_enrollment_if_needed(enrollment, current_datetime) or changed
-        changed = _expire_enrollment_if_needed(enrollment, current_datetime) or changed
-        changed = payment_service.recompute_enrollment_payment_state(enrollment, current_datetime) or changed
-
-    if changed:
-        db.session.commit()
-
-    payments = (
-        Payment.query
-        .filter_by(user_id=current_user.id)
-        .order_by(Payment.created_at.desc())
-        .all()
-    )
-    payments = payment_service.visible_payment_history(payments)
-
-    return jsonify({"payments": [_payment_payload(payment, current_datetime) for payment in payments]}), 200
-
-
-@app.route("/api/admin/enrollments/payments", methods=["GET"])
-def admin_payment_enrollments():
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-    if current_user.role not in ["admin", "employee"]:
-        return jsonify({"error": "No tienes permisos para consultar pagos"}), 403
-
-    current_datetime = _current_discount_datetime()
-    enrollments = (
-        Enrollment.query
-        .join(User, Enrollment.user_id == User.id)
-        .order_by(Enrollment.id.desc())
-        .all()
-    )
-
-    payload = []
-    changed = False
-    for enrollment in enrollments:
-        changed = payment_service.recompute_enrollment_payment_state(enrollment, current_datetime) or changed
-        if float(enrollment.remaining_amount or 0) <= 0:
-            continue
-        item = _enrollment_payload(enrollment, current_datetime)
-        item["user"] = enrollment.user.to_dict() if enrollment.user else None
-        payload.append(item)
-
-    if changed:
-        db.session.commit()
-
-    return jsonify({"enrollments": payload}), 200
-
-
-@app.route("/api/admin/reportes/pagos", methods=["GET"])
-def get_pagos_reporte():
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-    if current_user.role != "admin":
-        return jsonify({"error": "No tienes permisos"}), 403
-
-    current_datetime = _current_discount_datetime()
-    payments = Payment.query.filter_by(status="approved").all()
-    
-    payload = []
-    for p in payments:
-        item = p.to_dict()
-        if p.user:
-            item["user"] = {"username": p.user.username, "apellido": p.user.apellido}
-        if p.enrollment and p.enrollment.class_:
-            class_obj = p.enrollment.class_
-            actividad_name = class_obj.actividad.name if class_obj.actividad else class_obj.name
-            item["actividad"] = actividad_name
-            item["estado_inscripcion"] = p.enrollment.estado
-            item["estado_clase"] = class_obj.estado
-            item["requiere_reembolso"] = getattr(p.enrollment, 'requiere_reembolso', False)
-        
-        payload.append(item)
-
-    enrollments = Enrollment.query.all()
-    changed = False
-    for enr in enrollments:
-        changed = payment_service.recompute_enrollment_payment_state(enr, current_datetime) or changed
-        
-        # Identificar si la inscripción está cancelada para ignorar la deuda
-        is_cancelled = str(enr.estado).lower() in ["cancelada", "cancelled"]
-        
-        if float(enr.remaining_amount or 0) > 0 and not is_cancelled:
-            class_obj = enr.class_
-            actividad_name = class_obj.actividad.name if class_obj and class_obj.actividad else (class_obj.name if class_obj else "-")
-            payload.append({
-                "id": f"enr_{enr.id}",
-                "created_at": enr.created_at.isoformat() if enr.created_at else None,
-                "user": {"username": enr.user.username, "apellido": enr.user.apellido} if enr.user else None,
-                "actividad": actividad_name,
-                "payment_method": "-",
-                "payment_type": "pending_enrollment",
-                "final_amount": enr.remaining_amount,
-                "status": "pending_payment",
-                "estado_inscripcion": enr.estado,
-                "estado_clase": class_obj.estado if class_obj else None,
-                "requiere_reembolso": getattr(enr, 'requiere_reembolso', False)
-            })
-
-    if changed:
-        db.session.commit()
-
-    payload.sort(key=lambda x: x.get("created_at") or "", reverse=True)
-
-    return jsonify({"payments": payload}), 200
-
-
-@app.route("/api/admin/reportes/usuarios", methods=["GET"])
-def get_usuarios_reporte():
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-    if current_user.role != "admin":
-        return jsonify({"error": "No tienes permisos"}), 403
-
-    users = User.query.all()
-    # Ordenar primero admins, luego employees, por último clients
-    role_order = {"admin": 1, "employee": 2, "client": 3}
-    users_sorted = sorted(users, key=lambda u: (role_order.get(u.role, 4), u.apellido or "", u.username or ""))
-
-    payload = []
-    for u in users_sorted:
-        payload.append({
-            "id": u.id,
-            "username": u.username,
-            "apellido": u.apellido,
-            "email": u.email,
-            "dni": u.dni,
-            "telefono": u.telefono,
-            "role": u.role
-        })
-
-    return jsonify({"users": payload}), 200
-
-
-@app.route("/api/admin/reportes/usuarios/<int:target_user_id>/detalles", methods=["GET"])
-def get_usuario_detalles(target_user_id):
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-    if current_user.role != "admin":
-        return jsonify({"error": "No tienes permisos"}), 403
-
-    target_user = User.query.get_or_404(target_user_id)
-    enrollments = Enrollment.query.filter_by(user_id=target_user_id).order_by(Enrollment.id.desc()).all()
-    
-    enrollment_data = []
-    for enr in enrollments:
-        class_obj = enr.class_
-        actividad_name = class_obj.actividad.name if class_obj.actividad else class_obj.name
-
-        enrollment_data.append({
-            "id": enr.id,
-            "class_name": class_obj.name,
-            "actividad": actividad_name,
-            "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj.fecha_hora else None,
-            "estado_pago": enr.payment_status,
-            "estado_inscripcion": enr.estado,
-            "estado_clase": class_obj.estado,
-            "requiere_reembolso": enr.requiere_reembolso,
-            "tipo": enr.tipo,
-            "monto_total": enr.total_amount,
-            "saldo": enr.remaining_amount
-        })
-    
-    return jsonify({"user": target_user.to_dict(), "enrollments": enrollment_data}), 200
-
-
-@app.route("/api/enrollments/<int:enrollment_id>/manual-payment", methods=["POST"])
-def register_manual_payment(enrollment_id):
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-    if current_user.role not in ["admin", "employee"]:
-        return jsonify({"error": "No tienes permisos para registrar pagos"}), 403
-
-    enrollment = Enrollment.query.get(enrollment_id)
-    if not enrollment:
-        return jsonify({"error": "Inscripción no encontrada"}), 404
-    if enrollment.estado in [Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED]:
-        return jsonify({"error": "No se puede registrar un pago sobre una inscripción cerrada"}), 400
-
-    data = request.get_json() or {}
-    payment_method = data.get("payment_method", Payment.METHOD_CASH)
-    payment_type = data.get("payment_type", PAYMENT_TYPE_BALANCE)
-    notes = data.get("notes")
-
-    if payment_method not in [Payment.METHOD_CASH, Payment.METHOD_TRANSFER, Payment.METHOD_CARD]:
-        return jsonify({"error": "Método presencial inválido"}), 400
-    if payment_type not in [PAYMENT_TYPE_FULL, PAYMENT_TYPE_BALANCE]:
-        return jsonify({"error": "Tipo de pago presencial inválido"}), 400
-
-    try:
-        amount = round(float(data.get("amount", 0)), 2)
-    except (TypeError, ValueError):
-        return jsonify({"error": "El monto debe ser numérico"}), 400
-
-    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
-    remaining_amount = round(float(enrollment.remaining_amount or 0), 2)
-    if amount <= 0:
-        return jsonify({"error": "El monto debe ser mayor a cero"}), 400
-    if amount > remaining_amount + 0.01:
-        return jsonify({"error": "El pago supera el saldo pendiente"}), 400
-
-    payment = Payment(
-        user_id=enrollment.user_id,
-        enrollment_id=enrollment.id,
-        class_id=enrollment.class_id,
-        product_type=_payment_type_for_enrollment(enrollment),
-        payment_type=payment_type,
-        payment_method=payment_method,
-        amount=amount,
-        discount_percentage=0,
-        final_amount=amount,
-        registered_by_user_id=current_user.id,
-        notes=notes,
-        status=Payment.STATUS_APPROVED,
-    )
-    db.session.add(payment)
-    db.session.flush()
-    db.session.expire(enrollment, ["payments"])
-    payment_service.recompute_enrollment_payment_state(enrollment, _current_discount_datetime())
-    db.session.commit()
-
-    return jsonify({
-        "message": "Pago presencial registrado",
-        "payment": payment.to_dict(),
-        "enrollment": _enrollment_payload(enrollment, _current_discount_datetime()),
-    }), 201
+    return jsonify({"status": "ok"}), 200
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=True, port=5000)

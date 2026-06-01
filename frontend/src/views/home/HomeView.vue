@@ -6,6 +6,11 @@
 -->
 <template>
   <div class="home-container">
+    <div v-if="user" class="welcome-box">
+      <h2>¡Hola, {{ formatName(user.apellido, user.username) }}!</h2>
+      <p>Bienvenido de nuevo a SiempreGym</p>
+    </div>
+
     <div v-if="roleHelpers.hasAnyRole(['admin', 'employee'])" class="role-badge">
       Estás navegando como: <strong>{{ roleHelpers.isAdmin() ? 'Administrador' : 'Empleado' }}</strong>
     </div>
@@ -27,6 +32,11 @@ import { roleHelpers } from '../../utils/roleHelpers'
 // Estado reactivo del componente
 const user = ref(null)      // contendrá el objeto usuario cuando se cargue
 const loading = ref(true)   // indica si la petición al backend está en curso
+
+function formatName(apellido, nombre) {
+  const formatWord = (w) => (w ? w.toString().toLowerCase().replace(/\b\w/g, l => l.toUpperCase()) : '');
+  return `${formatWord(nombre)} ${formatWord(apellido)}`.trim();
+}
 
 // Cuando el componente se monta, solicitamos al backend los datos del usuario actual
 onMounted(async () => {
@@ -68,6 +78,20 @@ onMounted(async () => {
 .role-badge strong {
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.welcome-box {
+  text-align: center;
+  margin-top: 2rem;
+  color: #572c57;
+}
+.welcome-box h2 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+.welcome-box p {
+  color: #8a6a8a;
+  font-size: 1.1rem;
 }
 
 img {

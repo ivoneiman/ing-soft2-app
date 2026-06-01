@@ -93,42 +93,63 @@
           </ul>
         </template>
         
-        <div class="enrollment-options" v-if="!selectedClassFull">
-          <h4>Tipo de inscripción</h4>
-          <label class="radio-label">
-            <input type="radio" :value="TIPO_SUELTA" v-model="enrollmentType" />
-            <span class="radio-text">Clase Individual (Solo {{ selectedDateLabel }})</span>
-          </label>
-          <label class="radio-label" :class="{ disabled: !isMensualAvailable }">
-            <input type="radio" :value="TIPO_MENSUAL" v-model="enrollmentType" :disabled="!isMensualAvailable" />
-            <span class="radio-text">Clase Mensual (Todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes en este horario)</span>
-            <span v-if="checkingMensual" class="status-note">Comprobando...</span>
-            <span v-else-if="!isMensualAvailable" class="status-note error-text">(Sin cupo en todos los días)</span>
-          </label>
+        <div v-if="isAlreadyEnrolled" class="selection-summary" style="margin-top: 1rem; padding: 1rem; background-color: #ecfdf3; border-radius: 8px; border-left: 4px solid #12b76a;">
+          <span class="radio-text" style="font-size: 0.95rem; color: #065f46;"><strong>Ya te encuentras inscripto a esta clase</strong></span>
+          
         </div>
 
-        <div class="selection-summary" v-if="selectedClassFull">
-          <span class="radio-text">Esta clase no posee cupo disponible en este momento, pero puede inscribirse en la lista de espera. Al inscribirse, le notificaremos vía mail si se liberó un cupo para usted.</span>
+        <div class="selection-summary" v-else-if="selectedClassFull" style="margin-top: 1rem; padding: 1rem; background-color: #fef2f2; border-radius: 8px; border-left: 4px solid #b91c1c;">
+          <span class="radio-text" style="font-size: 0.95rem; color: #7f1d1d;"><strong>Clase sin cupo:</strong> podés anotarte en la lista de espera. Te notificaremos vía mail si se libera un lugar.</span>
+        </div>
+
+        <div v-if="!isAlreadyEnrolled" style="display: flex; gap: 1rem; margin-top: 1.5rem; align-items: flex-start;">
+          <div style="flex: 1; text-align: center;">
+            <button
+              type="button"
+              class="activity-btn"
+              style="width: 100%; height: 100%; padding: 1rem;"
+              :class="{ active: enrollmentType === TIPO_SUELTA && hasSelectedType }"
+              @click="selectType(TIPO_SUELTA)"
+            >
+              {{ selectedClassFull ? 'A la espera (Individual)' : 'Inscripción Individual' }}
+            </button>
+            <small style="color: #6b7280; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
+              (Solo {{ selectedDateLabel }})
+            </small>
+          </div>
+
+          <div style="flex: 1; text-align: center;">
+            <button
+              type="button"
+              class="activity-btn"
+              style="width: 100%; height: 100%; padding: 1rem;"
+              :class="{ active: enrollmentType === TIPO_MENSUAL && hasSelectedType }"
+              :disabled="(!isMensualAvailable && !selectedClassFull) || checkingMensual"
+              @click="selectType(TIPO_MENSUAL)"
+            >
+              {{ selectedClassFull ? 'A la espera (Mensual)' : 'Inscripción Mensual' }}
+            </button>
+            <small v-if="checkingMensual" style="color: #8a6a8a; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
+              Comprobando disponibilidad...
+            </small>
+            <small v-else-if="!isMensualAvailable && !selectedClassFull" style="color: #b91c1c; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
+              Sin cupo para todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes
+            </small>
+            <small v-else style="color: #6b7280; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
+              (Todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes en este horario)
+            </small>
+          </div>
         </div>
 
         <button
-          v-if="!selectedClassFull"
+          v-if="hasSelectedType && !isAlreadyEnrolled"
           type="button"
           class="btn-inscribe"
-          :disabled="isSubmittingEnrollment || checkingMensual"
-          @click="handleEnrollment"
-        >
-          {{ isSubmittingEnrollment ? 'Creando inscripción...' : 'Inscribirse' }}
-        </button>
-
-        <button
-          v-if="selectedClassFull"
-          type="button"
-          class="btn-inscribe"
+          style="margin-top: 1.5rem;"
           :disabled="isSubmittingEnrollment"
           @click="handleEnrollment"
         >
-          {{ isSubmittingEnrollment ? 'Enviando a lista de espera...' : 'inscribirse a lista de espera' }}
+          {{ isSubmittingEnrollment ? (selectedClassFull ? 'Enviando a lista de espera...' : 'Creando inscripción...') : (selectedClassFull ? 'Confirmar inscripción a lista de espera' : 'Confirmar Inscripción') }}
         </button>
       </section>
 
@@ -143,7 +164,7 @@ import { ref, computed, onMounted, onActivated } from "vue";
 import { useRouter } from "vue-router";
 import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
 import { PAYMENT_TAB } from "../../constants/payments";
-import { createEnrollment, getActivities, getCatalogAvailability, getCatalogDays } from "../../services/api";
+import { createEnrollment, getActivities, getCatalogAvailability, getCatalogDays, getMyClasses } from "../../services/api";
 import { ENROLLMENT_TYPE } from "../../constants/statuses";
 import { formatLongDate } from "../../utils/formatters";
 
@@ -162,6 +183,7 @@ const enabledDateKeys = ref([]);
 const fullCount = ref(0);
 const loadingDays = ref(false);
 const loadingSlots = ref(false);
+const myEnrolledClasses = ref([]);
 const isSubmittingEnrollment = ref(false);
 const error = ref("");
 const successMessage = ref("");
@@ -173,6 +195,7 @@ const TIPO_MENSUAL = ENROLLMENT_TYPE?.MONTHLY || 'Mensual';
 const enrollmentType = ref(TIPO_SUELTA);
 const checkingMensual = ref(false);
 const isMensualAvailable = ref(false);
+const hasSelectedType = ref(false);
 
 const getWeekdayName = (date) => {
   if (!date) return "";
@@ -196,6 +219,11 @@ const selectedClass = computed(() =>
 
 const selectedClassFull = computed(() => selectedClass.value && selectedClass.value.available_spots === 0);
 
+const isAlreadyEnrolled = computed(() => {
+  if (!selectedClass.value) return false;
+  return myEnrolledClasses.value.some(c => c.class_id === selectedClass.value.id);
+});
+
 const calendarEnabledKeys = computed(() => {
   if (!selectedActivityId.value || loadingDays.value) return undefined;
   return enabledDateKeys.value;
@@ -206,6 +234,15 @@ function toDateKey(date) {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+async function loadMyClasses() {
+  try {
+    const res = await getMyClasses();
+    myEnrolledClasses.value = res.data?.classes || [];
+  } catch (err) {
+    console.error("Error al cargar mis clases", err);
+  }
 }
 
 async function loadActivities() {
@@ -223,6 +260,7 @@ function selectActivity(id) {
   selectedDate.value = null;
   selectedClassId.value = "";
   enrollmentType.value = TIPO_SUELTA;
+  hasSelectedType.value = false;
   checkingMensual.value = false;
   isMensualAvailable.value = false;
   availableSlots.value = [];
@@ -258,6 +296,7 @@ async function onDateSelected(date) {
   selectedDate.value = date;
   selectedClassId.value = "";
   enrollmentType.value = TIPO_SUELTA;
+  hasSelectedType.value = false;
   availableSlots.value = [];
   fullCount.value = 0;
   if (!date || !selectedActivityId.value) return;
@@ -295,6 +334,7 @@ async function onDateSelected(date) {
 async function onSlotSelected(slot) {
   selectedClassId.value = slot.id;
   enrollmentType.value = TIPO_SUELTA;
+  hasSelectedType.value = false;
   
   if (!selectedDate.value) return;
   
@@ -335,6 +375,11 @@ async function onSlotSelected(slot) {
   } finally {
     checkingMensual.value = false;
   }
+}
+
+function selectType(type) {
+  enrollmentType.value = type;
+  hasSelectedType.value = true;
 }
 
 async function handleEnrollment() {
@@ -384,12 +429,14 @@ async function handleEnrollment() {
 
 onMounted(() => {
   loadActivities();
+  loadMyClasses();
 });
 
 onActivated(() => {
   if (selectedActivityId.value) {
     const now = new Date();
     loadMonthDays(now.getFullYear(), now.getMonth() + 1);
+    loadMyClasses();
   }
 });
 
@@ -474,6 +521,15 @@ onActivated(() => {
   background: #f6ea98;
   color: #9f5f91;
   box-shadow: 0 4px 15px rgba(87, 44, 87, 0.25);
+}
+
+.activity-btn:disabled {
+  background-color: #f3f4f6 !important;
+  color: #9ca3af !important;
+  border-color: #e5e7eb !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 /* Grid horizontal para calendario y horarios */
@@ -632,8 +688,12 @@ onActivated(() => {
 }
 
 .btn-inscribe:disabled {
-  cursor: wait;
-  opacity: 0.65;
+  background-color: #e5e7eb !important;
+  color: #9ca3af !important;
+  border-color: #e5e7eb !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .waitlist-note {

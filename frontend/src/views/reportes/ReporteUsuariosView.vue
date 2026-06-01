@@ -29,16 +29,14 @@
             <th>Rol</th>
             <th>Apellido y Nombre</th>
             <th>Email</th>
-            <th>DNI</th>
             <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="user in filteredUsers" :key="user.id">
             <td><span :class="['role-pill', user.role]">{{ roleLabel(user.role) }}</span></td>
-            <td class="bold">{{ user.apellido }} {{ user.username }}</td>
+            <td class="bold">{{ formatName(user.apellido, user.username) }}</td>
             <td>{{ user.email }}</td>
-            <td>{{ user.dni || '-' }}</td>
             <td>
               <button class="table-action secondary" @click="openUserProfile(user.id)">
                 Información del perfil
@@ -64,7 +62,7 @@
           <div class="profile-details">
             <div class="detail-group">
               <label>Nombre Completo</label>
-              <p>{{ selectedUser.user.apellido }} {{ selectedUser.user.username }}</p>
+              <p>{{ formatName(selectedUser.user.apellido, selectedUser.user.username) }}</p>
             </div>
             <div class="detail-group">
               <label>Rol asignado</label>
@@ -147,16 +145,32 @@ const isLoading = ref(false);
 const searchQuery = ref('');
 
 const filteredUsers = computed(() => {
-  if (!searchQuery.value) return users.value;
-  const query = searchQuery.value.toLowerCase().trim();
-  return users.value.filter(user => {
-    const fullName = `${user.username || ''} ${user.apellido || ''}`.toLowerCase();
-    const reversedName = `${user.apellido || ''} ${user.username || ''}`.toLowerCase();
+  let result = [...users.value];
+
+  if (searchQuery.value) {
+    const query = searchQuery.value.toLowerCase().trim();
+    result = result.filter(user => {
+      const fullName = `${user.username || ''} ${user.apellido || ''}`.toLowerCase();
+      const reversedName = `${user.apellido || ''} ${user.username || ''}`.toLowerCase();
+      
+      return fullName.includes(query) ||
+             reversedName.includes(query) ||
+             (user.email && user.email.toLowerCase().includes(query)) ||
+             (user.dni && user.dni.toLowerCase().includes(query));
+    });
+  }
+
+  // Ordenar por jerarquía de rol, y luego alfabéticamente por apellido
+  const roleOrder = { admin: 1, employee: 2, client: 3 };
+  
+  return result.sort((a, b) => {
+    const roleA = roleOrder[a.role] || 4;
+    const roleB = roleOrder[b.role] || 4;
+    if (roleA !== roleB) return roleA - roleB;
     
-    return fullName.includes(query) ||
-           reversedName.includes(query) ||
-           (user.email && user.email.toLowerCase().includes(query)) ||
-           (user.dni && user.dni.toLowerCase().includes(query));
+    const apA = (a.apellido || '').trim();
+    const apB = (b.apellido || '').trim();
+    return apA.localeCompare(apB, 'es', { sensitivity: 'base' });
   });
 });
 
@@ -179,11 +193,16 @@ function paymentStatusLabel(status) {
   return labels[status] || status;
 }
 
+function formatName(apellido, nombre) {
+  const formatWord = (w) => (w ? w.toString().toLowerCase().replace(/\b\w/g, l => l.toUpperCase()) : '');
+  return `${formatWord(apellido)} ${formatWord(nombre)}`.trim();
+}
+
 async function loadUsers() {
   isLoading.value = true;
   try {
-    const response = await axios.get(`${baseURL}/admin/reportes/usuarios`, { withCredentials: true });
-    users.value = response.data.users || [];
+    const response = await axios.get(`${baseURL}/users`, { withCredentials: true });
+    users.value = response.data || [];
   } catch (err) {
     console.error("Error cargando directorio de usuarios:", err);
   } finally {
@@ -268,12 +287,24 @@ onMounted(() => {
   width: 100%;
   border-collapse: collapse;
   color: #4a3a4a;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-.users-table th, .users-table td {
-  padding: 12px;
+.users-table th {
+  padding: 14px 12px;
+  border-bottom: 2px solid #e8dce8;
+  text-align: left;
+  color: #572c57;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.users-table td {
+  padding: 14px 12px;
   border-bottom: 1px solid #e8dce8;
   text-align: left;
+  font-size: 0.95rem;
+  vertical-align: middle;
 }
 
 .search-container {
@@ -299,7 +330,6 @@ onMounted(() => {
   opacity: 0.6;
   background-color: #fafafa;
 }
-.users-table th { color: #572c57; }
 .bold { font-weight: 700; }
 
 .role-pill {
@@ -330,6 +360,7 @@ onMounted(() => {
 .profile-modal {
   background: #fff; border-radius: 12px; width: 100%; max-width: 800px;
   max-height: 90vh; overflow-y: auto;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .modal-header {

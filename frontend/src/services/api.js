@@ -15,6 +15,10 @@ export function crearUsuario({ username, apellido, email, dni, telefono, passwor
   return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password, role }, REQUEST_CONFIG);
 }
 
+export function getUsers() {
+  return axios.get(`${API_URL}/users`, REQUEST_CONFIG);
+}
+
 export function login({ email, password, remember }) {
   return axios.post(
     `${API_URL}/login`,
@@ -145,6 +149,13 @@ export function createClass({
       cupoMaximo,
       tipo,
     },
+    REQUEST_CONFIG
+  );
+}
+
+export function getMyClasses() {
+  return axios.get(
+    `${API_URL}/classes/my`,
     REQUEST_CONFIG
   );
 }
