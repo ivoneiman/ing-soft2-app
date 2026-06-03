@@ -1354,10 +1354,17 @@ def get_my_classes():
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
 
-    now = datetime.now()
+    current_datetime = _current_discount_datetime()
+    now = current_datetime.replace(tzinfo=None) if getattr(current_datetime, "tzinfo", None) else current_datetime
 
     # 1. Traer inscripciones directas
     explicit_enrollments = Enrollment.query.filter_by(user_id=current_user.id).all()
+    state_changed = False
+    for enr in explicit_enrollments:
+        state_changed = payment_service.recompute_enrollment_payment_state(enr, current_datetime) or state_changed
+    if state_changed:
+        db.session.commit()
+
     explicit_map = {enr.class_id: enr for enr in explicit_enrollments}
     
     # 2. Filtrar mensuales para desglosar el resto de sus clases implícitas
@@ -1382,9 +1389,12 @@ def get_my_classes():
             "actividad": class_obj.actividad.name if class_obj.actividad else class_obj.name,
             "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj.fecha_hora else None,
             "estado_inscripcion": enr.estado,
+            "estado_pago": enr.payment_status,
+            "payment_status": enr.payment_status,
             "estado_clase": class_obj.estado,
             "tipo": enr.tipo,
             "enrollment_id": enr.id,
+            "has_approved_payment": _has_approved_payment(enr),
             "is_implicit": False
         })
 
@@ -1417,9 +1427,13 @@ def get_my_classes():
                     "actividad": ic.actividad.name if ic.actividad else ic.name,
                     "fecha_hora": ic.fecha_hora.isoformat(),
                     "estado_inscripcion": enr.estado,
+                    "estado_pago": enr.payment_status,
+                    "payment_status": enr.payment_status,
                     "estado_clase": ic.estado,
                     "tipo": "Mensual",
                     "enrollment_id": None,
+                    "parent_enrollment_id": enr.id,
+                    "has_approved_payment": _has_approved_payment(enr),
                     "is_implicit": True
                 })
 

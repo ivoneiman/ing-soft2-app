@@ -110,6 +110,7 @@
 import { ref, computed, onMounted } from 'vue';
 import axios from 'axios';
 import { formatDateTime } from '../../utils/formatters';
+import { CLASS_STATUS, ENROLLMENT_STATUS } from '../../constants/statuses';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -155,18 +156,18 @@ const monthlyGroups = computed(() => {
 });
 
 function isCancelled(cls) {
-  return String(cls.estado_inscripcion || '').toLowerCase() === 'cancelada' || String(cls.estado_clase || '').toLowerCase() === 'cancelada';
+  return cls.estado_inscripcion === ENROLLMENT_STATUS.CANCELLED || cls.estado_clase === CLASS_STATUS.CANCELLED;
 }
 
 function statusClass(cls) {
   if (isCancelled(cls)) return 'cancelled';
-  if (cls.estado_inscripcion === 'Activa' || cls.estado_inscripcion === 'PAID') return 'paid';
+  if (cls.estado_inscripcion === ENROLLMENT_STATUS.PAID) return 'paid';
   return 'pending';
 }
 
 function statusLabel(cls) {
   if (isCancelled(cls)) return 'Cancelada';
-  if (cls.estado_inscripcion === 'Activa' || cls.estado_inscripcion === 'PAID') return 'Confirmada';
+  if (cls.estado_inscripcion === ENROLLMENT_STATUS.PAID) return 'Confirmada';
   return 'Pendiente';
 }
 

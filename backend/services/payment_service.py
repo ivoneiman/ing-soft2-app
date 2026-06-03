@@ -68,6 +68,8 @@ except ModuleNotFoundError:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_FRONTEND_PAYMENTS_URL = "https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app/pagos"
+
 
 def configured_amount(name, default):
     try:
@@ -535,7 +537,7 @@ def payment_error_message(status_detail):
 
 
 def frontend_payments_url(status, message=None):
-    url = f"{os.getenv('FRONTEND_PAYMENTS_URL', 'http://localhost:5173/pagos')}?status={status}"
+    url = f"{os.getenv('FRONTEND_PAYMENTS_URL', DEFAULT_FRONTEND_PAYMENTS_URL)}?status={status}"
     if message:
         url = f"{url}&message={quote(message)}"
     return url

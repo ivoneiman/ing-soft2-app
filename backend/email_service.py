@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_EMAIL_FROM = "onboarding@resend.dev"
-DEFAULT_GYM_SITE_URL = "http://localhost:5173"
+DEFAULT_GYM_SITE_URL = "https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app"
 
 
 def _email_from():
