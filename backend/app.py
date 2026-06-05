@@ -927,7 +927,12 @@ def admin_login_request():
     session["admin_login_code"] = code
     session["admin_login_code_expires_at"] = (datetime.utcnow() + timedelta(minutes=5)).timestamp()
 
-    send_admin_login_code(user, code)
+    if not send_admin_login_code(user, code):
+        session.pop("admin_login_email", None)
+        session.pop("admin_login_code", None)
+        session.pop("admin_login_code_expires_at", None)
+        return jsonify({"error": "No se pudo enviar el código de verificación por email"}), 500
+
     return jsonify({"message": "Se envió un código de verificación al email"}), 200
 
 
