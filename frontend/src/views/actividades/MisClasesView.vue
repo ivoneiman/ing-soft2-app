@@ -37,19 +37,26 @@
                   <dt>Fecha y Hora</dt>
                   <dd>{{ formatDateTime(cls.fecha_hora) }}</dd>
                 </div>
+                <div v-if="cls.room">
+                  <dt>Salón</dt>
+                  <dd>{{ cls.room }}</dd>
+                </div>
                 <div>
                   <dt>Tipo de Reserva</dt>
                   <dd>{{ cls.tipo }}</dd>
                 </div>
               </dl>
 
-              <div class="card-actions" v-if="!isCancelled(cls) && cls.estado_clase !== 'Cancelada'">
+              <div class="card-actions" v-if="!isCancelled(cls)">
                 <button class="cancel-button" @click="confirmCancel(cls)" :disabled="isCancelling === cls.class_id">
                   {{ isCancelling === cls.class_id ? 'Cancelando...' : 'Dar de baja' }}
                 </button>
               </div>
-              <div class="card-actions" v-else-if="cls.estado_clase === 'Cancelada'">
+              <div class="card-actions" v-else-if="isClassCancelledByGym(cls)">
                 <p class="text-danger small">El gimnasio canceló esta clase.</p>
+              </div>
+              <div class="card-actions" v-else>
+                <p class="text-danger small">Te diste de baja de este turno.</p>
               </div>
             </article>
           </div>
@@ -70,19 +77,26 @@
               <dt>Fecha y Hora</dt>
               <dd>{{ formatDateTime(cls.fecha_hora) }}</dd>
             </div>
+            <div v-if="cls.room">
+              <dt>Salón</dt>
+              <dd>{{ cls.room }}</dd>
+            </div>
             <div>
               <dt>Tipo de Reserva</dt>
               <dd>{{ cls.tipo }}</dd>
             </div>
           </dl>
 
-          <div class="card-actions" v-if="!isCancelled(cls) && cls.estado_clase !== 'Cancelada'">
+          <div class="card-actions" v-if="!isCancelled(cls)">
             <button class="cancel-button" @click="confirmCancel(cls)" :disabled="isCancelling === cls.class_id">
               {{ isCancelling === cls.class_id ? 'Cancelando...' : 'Dar de baja' }}
             </button>
           </div>
-          <div class="card-actions" v-else-if="cls.estado_clase === 'Cancelada'">
+          <div class="card-actions" v-else-if="isClassCancelledByGym(cls)">
             <p class="text-danger small">El gimnasio canceló esta clase.</p>
+          </div>
+          <div class="card-actions" v-else>
+            <p class="text-danger small">Te diste de baja de este turno.</p>
           </div>
         </article>
       </div>
@@ -156,7 +170,14 @@ const monthlyGroups = computed(() => {
 });
 
 function isCancelled(cls) {
-  return cls.estado_inscripcion === ENROLLMENT_STATUS.CANCELLED || cls.estado_clase === CLASS_STATUS.CANCELLED;
+  const isEnrCancelled = String(cls.estado_inscripcion).toLowerCase() === 'cancelada' || String(cls.estado_inscripcion).toLowerCase() === 'cancelled';
+  const isClsCancelled = String(cls.estado_clase).toLowerCase() === 'cancelada' || String(cls.estado_clase).toLowerCase() === 'cancelled';
+  return isEnrCancelled || isClsCancelled || cls.estado_inscripcion === ENROLLMENT_STATUS.CANCELLED || cls.estado_clase === CLASS_STATUS.CANCELLED;
+}
+
+function isClassCancelledByGym(cls) {
+  const isClsCancelled = String(cls.estado_clase).toLowerCase() === 'cancelada' || String(cls.estado_clase).toLowerCase() === 'cancelled';
+  return isClsCancelled || cls.estado_clase === CLASS_STATUS.CANCELLED;
 }
 
 function statusClass(cls) {

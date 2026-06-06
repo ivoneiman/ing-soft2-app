@@ -43,4 +43,5 @@ def class_slot_payload(class_obj, enrolled_count):
         "is_full": is_full,
         "estado": clase_estado,
         "descuento": class_obj.descuento,
+        "room": getattr(class_obj, "room", None),
     }

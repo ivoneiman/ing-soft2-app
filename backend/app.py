@@ -182,6 +182,8 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE classes ADD COLUMN duration_minutes INTEGER DEFAULT 60"))
         if "descuento" not in columns:
             db.session.execute(text("ALTER TABLE classes ADD COLUMN descuento INTEGER DEFAULT 0"))
+        if "room" not in columns:
+            db.session.execute(text("ALTER TABLE classes ADD COLUMN room VARCHAR(50)"))
         db.session.commit()
 
     if "payments" in inspector.get_table_names():
@@ -354,6 +356,13 @@ def _enrollment_counts():
     ).all()
     cancelled_map = {(ce.user_id, ce.class_id) for ce in cancelled_enrs}
 
+    # Obtenemos también las inscripciones activas para no sumar cupos por duplicado
+    explicit_enrs = Enrollment.query.filter(
+        Enrollment.user_id.in_(user_ids),
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+    ).all()
+    explicit_map = {(ee.user_id, ee.class_id) for ee in explicit_enrs}
+
     for enr in monthly_enrollments:
         base_class = enr.class_
         if not base_class or not base_class.fecha_hora: continue
@@ -365,8 +374,7 @@ def _enrollment_counts():
         subsequent_classes = Class.query.filter(Class.id_actividad == base_class.id_actividad, Class.fecha_hora > base_class.fecha_hora, Class.fecha_hora <= end, Class.estado == Class.STATUS_ACTIVE).all()
         for c in subsequent_classes:
             if c.fecha_hora.weekday() == base_class.fecha_hora.weekday() and c.fecha_hora.strftime("%H:%M") == base_class.fecha_hora.strftime("%H:%M"):
-                base_counts[c.id] = base_counts.get(c.id, 0) + 1
-                if (enr.user_id, c.id) not in cancelled_map:
+                if (enr.user_id, c.id) not in cancelled_map and (enr.user_id, c.id) not in explicit_map:
                     base_counts[c.id] = base_counts.get(c.id, 0) + 1
     return base_counts
 
@@ -864,6 +872,87 @@ def _promote_waitlist_for_class(class_obj):
         db.session.rollback()
         logger.exception("[Cancelaciones] Error al promover desde lista de espera: %s", err)
 
+def _shift_monthly_parent_if_needed(enrollment):
+    """
+    Si este enrollment es el parent de una suscripción mensual activa, 
+    lo mueve a la próxima clase del mes para no perder el resto de las clases implícitas,
+    y devuelve un enrollment 'dummy' para cancelar la clase actual.
+    """
+    if enrollment.tipo != ENROLLMENT_TYPE_MONTHLY or enrollment.estado not in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]:
+        return enrollment
+
+    class_obj = enrollment.class_
+    if not class_obj or not class_obj.fecha_hora:
+        return enrollment
+
+    month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1], 23, 59, 59)
+    next_classes = Class.query.filter(
+        Class.id_actividad == class_obj.id_actividad,
+        Class.fecha_hora > class_obj.fecha_hora,
+        Class.fecha_hora <= month_end,
+        Class.estado == Class.STATUS_ACTIVE
+    ).order_by(Class.fecha_hora.asc()).all()
+    
+    valid_next_class = None
+    for nc in next_classes:
+        if nc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and nc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+            valid_next_class = nc
+            break
+            
+    if valid_next_class:
+        # Movemos el parent enrollment a la próxima clase
+        enrollment.class_id = valid_next_class.id
+        # Creamos un enrollment "dummy" para la clase actual que será cancelado
+        dummy_enr = Enrollment(
+            user_id=enrollment.user_id,
+            class_id=class_obj.id,
+            tipo=ENROLLMENT_TYPE_MONTHLY,
+            estado=enrollment.estado,
+            payment_status=enrollment.payment_status,
+            total_amount=0, paid_amount=0, remaining_amount=0, requiere_reembolso=False
+        )
+        db.session.add(dummy_enr)
+        db.session.flush()
+        return dummy_enr
+        
+    return enrollment
+
+def _materialize_implicit_enrollments_for_cancellation(class_obj):
+    if not class_obj.fecha_hora:
+        return
+        
+    month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+    last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
+    month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, last_day, 23, 59, 59)
+
+    monthly_enrs = Enrollment.query.join(Class).filter(
+        Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Class.id_actividad == class_obj.id_actividad,
+        Class.fecha_hora >= month_start,
+        Class.fecha_hora <= month_end
+    ).all()
+
+    for enr in monthly_enrs:
+        if enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+            if enr.class_id == class_obj.id:
+                # Es el parent
+                _shift_monthly_parent_if_needed(enr)
+            elif class_obj.fecha_hora > enr.class_.fecha_hora:
+                # Es implícita
+                existing = Enrollment.query.filter_by(user_id=enr.user_id, class_id=class_obj.id).first()
+                if not existing:
+                    dummy_enr = Enrollment(
+                        user_id=enr.user_id,
+                        class_id=class_obj.id,
+                        tipo=ENROLLMENT_TYPE_MONTHLY,
+                        estado=enr.estado,
+                        payment_status=enr.payment_status,
+                        total_amount=0, paid_amount=0, remaining_amount=0, requiere_reembolso=False
+                    )
+                    db.session.add(dummy_enr)
+    db.session.flush()
+
 # ─── Rutas API: Autenticación ─────────────────────────────────────────────────
 
 @app.route("/api/register", methods=["POST"])
@@ -1238,10 +1327,11 @@ def create_user():
 
 @app.route("/api/actividades/<int:actividad_id>/classes", methods=["GET"])
 def get_activity_classes(actividad_id):
-    # 🌟 FILTRADO SEGURO: Enviamos al frontend únicamente las clases activas
-    classes = Class.query.filter_by(id_actividad=actividad_id, estado=Class.STATUS_ACTIVE).all()
+    # 🌟 FILTRADO SEGURO: Enviamos al frontend TODAS las clases activas para poder validar conflictos de salón
+    classes = Class.query.filter_by(estado=Class.STATUS_ACTIVE).all()
+    rooms = dict(db.session.execute(text("SELECT id, room FROM classes")).fetchall())
     return jsonify({
-        "classes": [{"id": c.id, "fecha_hora": c.fecha_hora.isoformat(), "time": c.fecha_hora.strftime("%H:%M")} for c in classes]
+        "classes": [{"id": c.id, "fecha_hora": c.fecha_hora.isoformat(), "time": c.fecha_hora.strftime("%H:%M"), "activity_id": c.id_actividad, "room": rooms.get(c.id)} for c in classes]
     }), 200
 
 
@@ -1375,6 +1465,8 @@ def get_my_classes():
     # 2. Filtrar mensuales para desglosar el resto de sus clases implícitas
     monthly_enrollments = [enr for enr in explicit_enrollments if enr.tipo == ENROLLMENT_TYPE_MONTHLY and enr.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]]
 
+    rooms = dict(db.session.execute(text("SELECT id, room FROM classes")).fetchall())
+
     my_classes = []
     
     for enr in explicit_enrollments:
@@ -1384,10 +1476,6 @@ def get_my_classes():
         if class_obj.fecha_hora and class_obj.fecha_hora < now - timedelta(days=1):
             continue
             
-        # Ocultar si la asistencia fue cancelada por el usuario
-        if str(enr.estado).lower() in ["cancelada", "cancelled"]:
-            continue
-        
         my_classes.append({
             "class_id": class_obj.id,
             "class_name": class_obj.name,
@@ -1400,7 +1488,8 @@ def get_my_classes():
             "tipo": enr.tipo,
             "enrollment_id": enr.id,
             "has_approved_payment": _has_approved_payment(enr),
-            "is_implicit": False
+            "is_implicit": False,
+            "room": rooms.get(class_obj.id)
         })
 
     for enr in monthly_enrollments:
@@ -1439,7 +1528,8 @@ def get_my_classes():
                     "enrollment_id": None,
                     "parent_enrollment_id": enr.id,
                     "has_approved_payment": _has_approved_payment(enr),
-                    "is_implicit": True
+                    "is_implicit": True,
+                    "room": rooms.get(ic.id)
                 })
 
     my_classes.sort(key=lambda x: x["fecha_hora"] if x["fecha_hora"] else "")
@@ -1461,7 +1551,8 @@ def cancel_class_attendance(class_id):
 
     if enrollment:
         # Si la clase es explícita usamos el flujo común que ya tienen.
-        result, error, status_code = cancellation_service.cancel_enrollment(enrollment, current_user, current_datetime)
+        enrollment_to_cancel = _shift_monthly_parent_if_needed(enrollment)
+        result, error, status_code = cancellation_service.cancel_enrollment(enrollment_to_cancel, current_user, current_datetime)
         if error:
             return api_error(error, status_code)
         
@@ -1624,12 +1715,31 @@ def create_enrollment():
         db.session.commit()
         return _credit_enrollment_response(enrollment, credit, current_datetime, 200)
     if result == "already_pending":
+        # --- HACK TEMPORAL PARA TESTING LOCAL ---
+        enrollment.estado = Enrollment.STATUS_PAID
+        enrollment.payment_status = ENROLLMENT_PAYMENT_STATUS_PAID
+        
+        quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
+        discount_percentage = int(quote.get("discount_percentage", 0))
+        base_amount = 3000.0 if enrollment.tipo == ENROLLMENT_TYPE_SINGLE else _get_monthly_base_price(enrollment.class_)
+        final_amount = _calculate_final_amount(base_amount, discount_percentage)
+        
+        enrollment.total_amount = final_amount
+        enrollment.paid_amount = final_amount
+        enrollment.remaining_amount = 0
+        db.session.add(Payment(
+            user_id=current_user.id, enrollment_id=enrollment.id,
+            product_type=_payment_type_for_enrollment(enrollment),
+            payment_type=PAYMENT_TYPE_FULL, payment_method=Payment.METHOD_CASH,
+            amount=base_amount, discount_percentage=discount_percentage,
+            final_amount=final_amount, status=Payment.STATUS_APPROVED
+        ))
+        # ----------------------------------------
         db.session.commit()
         return api_success({
-            "message": "Ya tenés una inscripción pendiente de pago",
+            "message": "Inscripción pendiente ahora marcada como pagada automáticamente (Hack local).",
             "enrollment": _enrollment_payload(enrollment, current_datetime),
-            "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
-        }, message="Ya tenés una inscripción pendiente de pago", status_code=200)
+        }, message="Inscripción pendiente pagada automáticamente.", status_code=200)
     if result == "new":
         db.session.add(enrollment)
 
@@ -1640,12 +1750,32 @@ def create_enrollment():
         db.session.commit()
         return _credit_enrollment_response(enrollment, credit, current_datetime, 201)
 
+    # --- HACK TEMPORAL PARA TESTING LOCAL ---
+    enrollment.estado = Enrollment.STATUS_PAID
+    enrollment.payment_status = ENROLLMENT_PAYMENT_STATUS_PAID
+    
+    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
+    discount_percentage = int(quote.get("discount_percentage", 0))
+    base_amount = 3000.0 if enrollment.tipo == ENROLLMENT_TYPE_SINGLE else _get_monthly_base_price(enrollment.class_)
+    final_amount = _calculate_final_amount(base_amount, discount_percentage)
+    
+    enrollment.total_amount = final_amount
+    enrollment.paid_amount = final_amount
+    enrollment.remaining_amount = 0
+    db.session.add(Payment(
+        user_id=current_user.id, enrollment_id=enrollment.id,
+        product_type=_payment_type_for_enrollment(enrollment),
+        payment_type=PAYMENT_TYPE_FULL, payment_method=Payment.METHOD_CASH,
+        amount=base_amount, discount_percentage=discount_percentage,
+        final_amount=final_amount, status=Payment.STATUS_APPROVED
+    ))
+    # ----------------------------------------
+
     db.session.commit()
     return api_success({
-        "message": "Inscripción creada. Podés completar el pago ahora o más adelante.",
+        "message": "Inscripción creada y pagada automáticamente (Hack local).",
         "enrollment": _enrollment_payload(enrollment, current_datetime),
-        "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
-    }, message="Inscripción creada. Podés completar el pago ahora o más adelante.", status_code=201)
+    }, message="Inscripción creada y pagada automáticamente.", status_code=201)
 
 
 @app.route("/api/waitlists", methods=["POST"])
@@ -1718,8 +1848,9 @@ def cancel_enrollment(enrollment_id):
         return jsonify({"error": "No autenticado"}), 401
 
     enrollment = Enrollment.query.get(enrollment_id)
+    enrollment_to_cancel = _shift_monthly_parent_if_needed(enrollment)
     current_datetime = _current_discount_datetime()
-    result, error, status_code = cancellation_service.cancel_enrollment(enrollment, current_user, current_datetime)
+    result, error, status_code = cancellation_service.cancel_enrollment(enrollment_to_cancel, current_user, current_datetime)
     if error:
         return api_error(error, status_code)
 
@@ -1826,14 +1957,15 @@ def create_class():
     activity_id = data.get("activity_id")
     date_str = data.get("date")
     time_str = data.get("time")
+    room = data.get("room")
     
     try:
         cupo_maximo = int(data.get("cupoMaximo", 20))
     except (ValueError, TypeError):
         cupo_maximo = 20
 
-    if not activity_id or not date_str or not time_str:
-        return jsonify({"error": "Todos los campos son obligatorios"}), 400
+    if not activity_id or not date_str or not time_str or not room:
+        return jsonify({"error": "Todos los campos son obligatorios (incluyendo el salón)"}), 400
 
     actividad = db.session.get(Actividades, activity_id)
     if not actividad:
@@ -1847,45 +1979,63 @@ def create_class():
     if fecha_hora < datetime.now():
         return jsonify({"error": "No se pueden crear clases en un horario que ya pasó"}), 400
 
-    # 1. Buscamos si ya existe CUALQUIER registro en ese horario para esta actividad
     target_str = fecha_hora.strftime("%Y-%m-%d %H:%M")
-    all_activity_classes = Class.query.filter_by(id_actividad=actividad.id).all()
+    all_classes = Class.query.all()
+    rooms = dict(db.session.execute(text("SELECT id, room FROM classes")).fetchall())
     
-    existing_class = None
-    for c in all_activity_classes:
+    existing_active_class = None
+    room_conflict = None
+    class_to_reactivate = None
+    
+    for c in all_classes:
+        c_room = rooms.get(c.id)
         if c.fecha_hora and c.fecha_hora.strftime("%Y-%m-%d %H:%M") == target_str:
-            existing_class = c
-            break
+            is_active = getattr(c, "estado", Class.STATUS_ACTIVE) == Class.STATUS_ACTIVE
+            
+            if is_active:
+                if c.id_actividad == actividad.id:
+                    existing_active_class = c
+                if c_room == room:
+                    room_conflict = c
+            else:
+                if c.id_actividad == actividad.id:
+                    class_to_reactivate = c
     
-    if existing_class:
-        # Si la clase existe y sigue ACTIVA, rebota normalmente
-        if getattr(existing_class, "estado", Class.STATUS_ACTIVE) == Class.STATUS_ACTIVE:
-            return jsonify({"error": "Ya existe una clase activa para esa actividad en ese horario"}), 400
+    if room_conflict:
+        if room_conflict.id_actividad != actividad.id:
+            return jsonify({"error": f"El {room} ya está ocupado por la clase '{room_conflict.name}' en ese horario"}), 400
+            
+    if existing_active_class:
+        return jsonify({"error": "Ya existe una clase activa para esa actividad en ese horario"}), 400
         
-        # 🌟 SI EXISTÍA PERO ESTABA CANCELADA: La reactivamos sin tocar los registros hijos
-        existing_class.estado = Class.STATUS_ACTIVE
-        existing_class.cupoMaximo = cupo_maximo
+    if class_to_reactivate:
+        class_to_reactivate.estado = Class.STATUS_ACTIVE
+        class_to_reactivate.cupoMaximo = cupo_maximo
         
         try:
+            db.session.commit()
+            db.session.execute(text("UPDATE classes SET room = :room WHERE id = :id"), {"room": room, "id": class_to_reactivate.id})
             db.session.commit()
             return jsonify({
                 "message": "Clase reactivada correctamente en este horario",
                 "class": {
-                    "id": existing_class.id,
-                    "name": existing_class.name,
-                    "fecha_hora": existing_class.fecha_hora.isoformat(),
-                    "activity_id": existing_class.id_actividad
+                    "id": class_to_reactivate.id,
+                    "name": class_to_reactivate.name,
+                    "fecha_hora": class_to_reactivate.fecha_hora.isoformat(),
+                    "activity_id": class_to_reactivate.id_actividad,
+                    "room": room
                 }
             }), 201
         except Exception as err:
             db.session.rollback()
             return jsonify({"error": f"Error interno al reactivar la clase: {str(err)}"}), 500
 
-    # 2. Si el horario estaba virgen, creamos un registro nuevo desde cero
     new_class = Class(name=actividad.name, fecha_hora=fecha_hora, id_actividad=actividad.id, cupoMaximo=cupo_maximo)
     db.session.add(new_class)
     
     try:
+        db.session.commit()
+        db.session.execute(text("UPDATE classes SET room = :room WHERE id = :id"), {"room": room, "id": new_class.id})
         db.session.commit()
     except IntegrityError as err:
         db.session.rollback()
@@ -1900,7 +2050,8 @@ def create_class():
             "id": new_class.id,
             "name": new_class.name,
             "fecha_hora": new_class.fecha_hora.isoformat(),
-            "activity_id": new_class.id_actividad
+            "activity_id": new_class.id_actividad,
+            "room": room
         }
     }), 201
 
@@ -2113,6 +2264,8 @@ def cancelar_clase_staff(clase_id):
         return jsonify({"error": "Esta clase ya fue cancelada"}), 400
 
     current_datetime = _current_discount_datetime()
+    
+    _materialize_implicit_enrollments_for_cancellation(class_obj)
 
     # Obtenemos los usuarios que realmente estaban activos (no cancelados previamente)
     active_user_ids = {

@@ -57,7 +57,7 @@
                   class="slot-btn"
                   :class="{ active: selectedClassId === slot.id }"
                   @click="onSlotSelected(slot)">
-                      <div class="slot-time">{{ slot.time }}</div>
+                  <div class="slot-time">{{ slot.time }} hs</div>
                   <div class="slot-cupo">
                     <template v-if="slot.available_spots > 0">
                       {{ slot.available_spots }} {{ slot.available_spots === 1 ? 'cupo' : 'cupos' }}
@@ -89,6 +89,7 @@
             <li><strong>Actividad:</strong> {{ selectedClass.actividad || selectedActivityName }}</li>
             <li><strong>Día:</strong> {{ selectedDateLabel }}</li>
             <li><strong>Horario:</strong> {{ selectedClass.time }} ({{ selectedClass.duration_minutes }} min)</li>
+            <li v-if="selectedClass.room"><strong>Salón:</strong> {{ selectedClass.room }}</li>
             <li><strong>Cupos libres:</strong> {{ selectedClass.available_spots }}</li>
           </ul>
         </template>
@@ -594,11 +595,14 @@ onActivated(() => {
   background: linear-gradient(135deg, #f5e6f5 0%, #ede5f5 100%);
   border: 2px solid #9f5f91;
   box-shadow: 0 4px 15px rgba(87, 44, 87, 0.1);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 .summary h3 {
   color: #572c57;
   margin-bottom: 1rem;
+  font-family: "Poppins", sans-serif;
+  font-size: 1.3rem;
 }
 
 .summary-list {
@@ -608,6 +612,7 @@ onActivated(() => {
   color: #4a3a4a;
   line-height: 1.8;
   font-weight: 500;
+  font-size: 1.05rem;
 }
 
 .summary-list li {
