@@ -1721,32 +1721,10 @@ def create_enrollment():
         db.session.commit()
         return _credit_enrollment_response(enrollment, credit, current_datetime, 200)
     if result == "already_pending":
-        # --- HACK TEMPORAL PARA TESTING LOCAL ---
-        enrollment.estado = Enrollment.STATUS_PAID
-        enrollment.payment_status = ENROLLMENT_PAYMENT_STATUS_PAID
-        
-        quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
-        discount_percentage = int(quote.get("discount_percentage", 0))
-        base_amount = 3000.0 if enrollment.tipo == ENROLLMENT_TYPE_SINGLE else _get_monthly_base_price(enrollment.class_)
-        final_amount = _calculate_final_amount(base_amount, discount_percentage)
-        
-        enrollment.total_amount = final_amount
-        enrollment.paid_amount = final_amount
-        enrollment.remaining_amount = 0
-        db.session.add(Payment(
-            user_id=current_user.id, enrollment_id=enrollment.id,
-            product_type=_payment_type_for_enrollment(enrollment),
-            payment_type=PAYMENT_TYPE_FULL, payment_method=Payment.METHOD_CASH,
-            amount=base_amount, discount_percentage=discount_percentage,
-            final_amount=final_amount, status=Payment.STATUS_APPROVED
-        ))
-        # ----------------------------------------
         db.session.commit()
         return api_success({
-            "message": "Inscripción pendiente ahora marcada como pagada automáticamente (Hack local).",
             "message": "Ya tenés una inscripción pendiente de pago",
             "enrollment": _enrollment_payload(enrollment, current_datetime),
-        }, message="Inscripción pendiente pagada automáticamente.", status_code=200)
             "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
         }, message="Ya tenés una inscripción pendiente de pago", status_code=200)
     if result == "new":
@@ -1759,33 +1737,10 @@ def create_enrollment():
         db.session.commit()
         return _credit_enrollment_response(enrollment, credit, current_datetime, 201)
 
-    # --- HACK TEMPORAL PARA TESTING LOCAL ---
-    enrollment.estado = Enrollment.STATUS_PAID
-    enrollment.payment_status = ENROLLMENT_PAYMENT_STATUS_PAID
-    
-    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
-    discount_percentage = int(quote.get("discount_percentage", 0))
-    base_amount = 3000.0 if enrollment.tipo == ENROLLMENT_TYPE_SINGLE else _get_monthly_base_price(enrollment.class_)
-    final_amount = _calculate_final_amount(base_amount, discount_percentage)
-    
-    enrollment.total_amount = final_amount
-    enrollment.paid_amount = final_amount
-    enrollment.remaining_amount = 0
-    db.session.add(Payment(
-        user_id=current_user.id, enrollment_id=enrollment.id,
-        product_type=_payment_type_for_enrollment(enrollment),
-        payment_type=PAYMENT_TYPE_FULL, payment_method=Payment.METHOD_CASH,
-        amount=base_amount, discount_percentage=discount_percentage,
-        final_amount=final_amount, status=Payment.STATUS_APPROVED
-    ))
-    # ----------------------------------------
-
     db.session.commit()
     return api_success({
-        "message": "Inscripción creada y pagada automáticamente (Hack local).",
         "message": "Inscripción creada. Podés completar el pago ahora o más adelante.",
         "enrollment": _enrollment_payload(enrollment, current_datetime),
-    }, message="Inscripción creada y pagada automáticamente.", status_code=201)
         "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
     }, message="Inscripción creada. Podés completar el pago ahora o más adelante.", status_code=201)
 
