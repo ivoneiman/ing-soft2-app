@@ -918,9 +918,15 @@ def admin_login_request():
     if not email or not password:
         return jsonify({"error": "Debe ingresar email y contraseña"}), 400
 
-    user = User.query.filter_by(email=email, role="admin").first()
-    if not user or not user.check_password(password):
-        return jsonify({"error": "Credenciales incorrectas o no corresponde a un administrador"}), 401
+    user = User.query.filter_by(email=email).first()
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 401
+        
+    if not user.check_password(password):
+        return jsonify({"error": "Contraseña incorrecta"}), 401
+        
+    if user.role != "admin":
+        return jsonify({"error": "El usuario no es administrador"}), 403
 
     code = f"{random.randint(0, 999999):06d}"
     session["admin_login_email"] = email
@@ -948,7 +954,7 @@ def admin_login_verify():
         return jsonify({"error": "No hay un código pendiente. Solicitá uno primero."}), 400
 
     if email != pending_email or code != pending_code:
-        return jsonify({"error": "Código incorrecto o email no coincide"}), 401
+        return jsonify({"error": "Código incorrecto"}), 401
 
     if datetime.utcnow().timestamp() > expires_at:
         session.pop("admin_login_email", None)
