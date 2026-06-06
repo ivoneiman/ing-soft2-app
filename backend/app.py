@@ -1744,8 +1744,11 @@ def create_enrollment():
         db.session.commit()
         return api_success({
             "message": "Inscripción pendiente ahora marcada como pagada automáticamente (Hack local).",
+            "message": "Ya tenés una inscripción pendiente de pago",
             "enrollment": _enrollment_payload(enrollment, current_datetime),
         }, message="Inscripción pendiente pagada automáticamente.", status_code=200)
+            "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
+        }, message="Ya tenés una inscripción pendiente de pago", status_code=200)
     if result == "new":
         db.session.add(enrollment)
 
@@ -1780,8 +1783,11 @@ def create_enrollment():
     db.session.commit()
     return api_success({
         "message": "Inscripción creada y pagada automáticamente (Hack local).",
+        "message": "Inscripción creada. Podés completar el pago ahora o más adelante.",
         "enrollment": _enrollment_payload(enrollment, current_datetime),
     }, message="Inscripción creada y pagada automáticamente.", status_code=201)
+        "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
+    }, message="Inscripción creada. Podés completar el pago ahora o más adelante.", status_code=201)
 
 
 @app.route("/api/waitlists", methods=["POST"])
