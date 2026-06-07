@@ -897,8 +897,10 @@ def _shift_monthly_parent_if_needed(enrollment):
     valid_next_class = None
     for nc in next_classes:
         if nc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and nc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
-            valid_next_class = nc
-            break
+            existing_enr = Enrollment.query.filter_by(user_id=enrollment.user_id, class_id=nc.id).first()
+            if not existing_enr:
+                valid_next_class = nc
+                break
             
     if valid_next_class:
         # Movemos el parent enrollment a la próxima clase
@@ -1773,6 +1775,23 @@ def create_enrollment():
         }, message="Ya tenés una inscripción pendiente de pago", status_code=200)
     if result == "new":
         db.session.add(enrollment)
+        if data.get("tipo") == ENROLLMENT_TYPE_MONTHLY:
+            month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1], 23, 59, 59)
+            subsequent_classes = Class.query.filter(
+                Class.id_actividad == class_obj.id_actividad,
+                Class.fecha_hora > class_obj.fecha_hora,
+                Class.fecha_hora <= month_end
+            ).all()
+            for ic in subsequent_classes:
+                if ic.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and ic.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                    cancelled_enrs = Enrollment.query.filter_by(
+                        user_id=current_user.id,
+                        class_id=ic.id
+                    ).filter(
+                        Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED, "Cancelada", "cancelled"])
+                    ).all()
+                    for ce in cancelled_enrs:
+                        db.session.delete(ce)
 
     db.session.flush()
     credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_datetime)
