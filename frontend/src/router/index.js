@@ -41,6 +41,7 @@ const routes = [
         path: "",
         name: "Home",
         component: HomeView,
+        meta: { requiresAuth: true }
       },
       {
         path: "actividades",
@@ -52,6 +53,7 @@ const routes = [
         path: "sobre-nosotros",
         name: "SobreNosotros",
         component: SobreNosotrosView,
+        meta: { requiresAuth: true }
       },
       {
         path: "configuracion",
