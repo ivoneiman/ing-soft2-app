@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 import random
 import time
 import threading
@@ -968,6 +969,15 @@ def register():
     if not username or not email or not password:
         return jsonify({"error": "Todos los campos son obligatorios"}), 400
 
+    if len(password) < 6:
+        return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
+
+    if not re.search(r'[A-Z]', password):
+        return jsonify({"error": "La contraseña debe incluir al menos una letra mayúscula"}), 400
+
+    if not re.search(r'[^a-zA-Z0-9]', password):
+        return jsonify({"error": "La contraseña debe incluir al menos un símbolo especial (?, !, \", #, etc.)"}), 400
+
     existing_user = User.query.filter_by(email=email).first()
     if existing_user:
         return jsonify({"error": "El email ya está registrado"}), 400
@@ -1311,6 +1321,12 @@ def create_user():
 
     if len(password) < 6:
         return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
+
+    if not re.search(r'[A-Z]', password):
+        return jsonify({"error": "La contraseña debe incluir al menos una letra mayúscula"}), 400
+
+    if not re.search(r'[^a-zA-Z0-9]', password):
+        return jsonify({"error": "La contraseña debe incluir al menos un símbolo especial (?, !, \", #, etc.)"}), 400
 
     existing_email = User.query.filter_by(email=email).first()
     if existing_email:
