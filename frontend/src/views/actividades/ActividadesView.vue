@@ -103,7 +103,7 @@
           <span class="radio-text" style="font-size: 0.95rem; color: #7f1d1d;"><strong>Clase sin cupo:</strong> podés anotarte en la lista de espera. Te notificaremos vía mail si se libera un lugar.</span>
         </div>
 
-        <div v-if="!isAlreadyEnrolled || selectedClassFull" style="display: flex; gap: 1rem; margin-top: 1.5rem; align-items: flex-start;">
+        <div v-if="!isAlreadyEnrolled || isWaitlistAction" style="display: flex; gap: 1rem; margin-top: 1.5rem; align-items: flex-start;">
           <div style="flex: 1; text-align: center;">
             <button
               type="button"
@@ -125,16 +125,16 @@
               class="activity-btn"
               style="width: 100%; height: 100%; padding: 1rem;"
               :class="{ active: enrollmentType === TIPO_MENSUAL && hasSelectedType }"
-              :disabled="(!isMensualAvailable && !selectedClassFull) || checkingMensual"
+              :disabled="checkingMensual"
               @click="selectType(TIPO_MENSUAL)"
             >
-              {{ selectedClassFull ? 'A la espera (Mensual)' : 'Inscripción Mensual' }}
+              {{ (!isMensualAvailable || selectedClassFull) ? 'A la espera (Mensual)' : 'Inscripción Mensual' }}
             </button>
             <small v-if="checkingMensual" style="color: #8a6a8a; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
               Comprobando disponibilidad...
             </small>
             <small v-else-if="!isMensualAvailable && !selectedClassFull" style="color: #b91c1c; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
-              Sin cupo para todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes
+              Sin cupo mensual (lista de espera)
             </small>
             <small v-else style="color: #6b7280; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
               (Todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes en este horario)
@@ -143,14 +143,14 @@
         </div>
 
         <button
-          v-if="hasSelectedType && (!isAlreadyEnrolled || selectedClassFull)"
+          v-if="hasSelectedType && (!isAlreadyEnrolled || isWaitlistAction)"
           type="button"
           class="btn-inscribe"
           style="margin-top: 1.5rem;"
           :disabled="isSubmittingEnrollment"
           @click="handleEnrollment"
         >
-          {{ isSubmittingEnrollment ? (selectedClassFull ? 'Enviando a lista de espera...' : 'Creando inscripción...') : (selectedClassFull ? 'Confirmar inscripción a lista de espera' : 'Confirmar Inscripción') }}
+          {{ isSubmittingEnrollment ? (isWaitlistAction ? 'Enviando a lista de espera...' : 'Creando inscripción...') : (isWaitlistAction ? 'Confirmar inscripción a lista de espera' : 'Confirmar Inscripción') }}
         </button>
       </section>
 
@@ -220,13 +220,20 @@ const selectedClass = computed(() =>
 
 const selectedClassFull = computed(() => selectedClass.value && selectedClass.value.available_spots === 0);
 
+const isWaitlistAction = computed(() => {
+  if (!selectedClass.value) return false;
+  if (enrollmentType.value === TIPO_MENSUAL && !isMensualAvailable.value) return true;
+  if (selectedClassFull.value) return true;
+  return false;
+});
+
 const isAlreadyEnrolled = computed(() => {
   if (!selectedClass.value) return false;
-  return myEnrolledClasses.value.some(c => 
-    c.class_id === selectedClass.value.id && 
-    c.estado_inscripcion !== 'cancelled' && 
-    c.estado_inscripcion !== 'Cancelada'
-  );
+  return myEnrolledClasses.value.some(c => {
+    if (c.class_id !== selectedClass.value.id) return false;
+    const estado = (c.estado_inscripcion || '').toLowerCase();
+    return !estado.includes('cancel');
+  });
 });
 
 const calendarEnabledKeys = computed(() => {
@@ -394,7 +401,7 @@ async function handleEnrollment() {
   error.value = "";
   successMessage.value = "";
   try {
-    const isWaitlist = selectedClassFull.value;
+    const isWaitlist = isWaitlistAction.value;
     const waitlistType = isWaitlist
       ? (enrollmentType.value === TIPO_MENSUAL ? 'monthly' : 'individual')
       : undefined;
@@ -439,9 +446,41 @@ async function handleEnrollment() {
       },
     });
   } catch (err) {
-    error.value = err.response?.data?.error || "No se pudo crear la inscripción.";
+    if (err.response && err.response.status === 409) {
+      const mensajeError = err.response.data.error;
+      
+      // Si el error menciona la lista de espera (no hay cupo mensual) y no es un error de duplicado/conflicto
+      if (mensajeError.includes("lista de espera") && !mensajeError.includes("Ya estás anotado") && !mensajeError.includes("Usted esta inscripto")) {
+        const quiereListaEspera = confirm(`${mensajeError}\n\n¿Deseas unirte a la lista de espera mensual ahora?`);
+        if (quiereListaEspera) {
+          await unirseListaEspera(selectedClass.value.id, enrollmentType.value === TIPO_MENSUAL ? 'monthly' : 'individual');
+          return; // Terminamos la ejecución para que `finally` no cierre estados antes de tiempo
+        }
+      }
+      error.value = mensajeError;
+    } else {
+      error.value = err.response?.data?.error || "No se pudo crear la inscripción.";
+    }
   } finally {
     isSubmittingEnrollment.value = false;
+  }
+}
+
+async function unirseListaEspera(claseId, waitlistType) {
+  try {
+    const res = await createEnrollment({
+      class_id: claseId,
+      tipo: enrollmentType.value,
+      waitlist: true,
+      waitlist_type: waitlistType,
+    });
+    
+    successMessage.value = res.data?.message || "Te agregamos a la lista de espera.";
+    error.value = "";
+    selectedClassId.value = "";
+    await onDateSelected(selectedDate.value);
+  } catch (err) {
+    error.value = err.response?.data?.error || "Error al anotarse en la lista de espera.";
   }
 }
 

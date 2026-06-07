@@ -821,17 +821,59 @@ def _promote_waitlist_for_class(class_obj):
         # Unir dando prioridad a los mensuales
         waitlist_entries = waitlist_entries_monthly + waitlist_entries_individual
 
+        if not waitlist_entries:
+            return
+
+        enrollment_map = _enrollment_counts()
+
         promoted = False
         for next_in_waitlist in waitlist_entries:
             user_to_promote = next_in_waitlist.user
 
+            target_class = class_obj
+            monthly_classes = []
+            if next_in_waitlist.type == WAITLIST_TYPE_MONTHLY:
+                now = datetime.now()
+                month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+                last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
+                month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, last_day, 23, 59, 59)
+                monthly_classes = Class.query.filter(
+                    Class.id_actividad == class_obj.id_actividad,
+                    Class.fecha_hora >= month_start,
+                    Class.fecha_hora <= month_end,
+                    Class.estado == Class.STATUS_ACTIVE
+                ).order_by(Class.fecha_hora.asc()).all()
+                
+                all_have_capacity = True
+                first_future_class = None
+                for mc in monthly_classes:
+                    if mc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                        if mc.fecha_hora > now:
+                            if first_future_class is None:
+                                first_future_class = mc
+                            
+                            enrolled_count = enrollment_map.get(mc.id, 0)
+                            if enrolled_count >= (mc.cupoMaximo or 20):
+                                all_have_capacity = False
+                                break
+                
+                if not all_have_capacity or first_future_class is None:
+                    continue
+                    
+                target_class = first_future_class
+
             existing_enr = Enrollment.query.filter_by(
                 user_id=user_to_promote.id,
-                class_id=class_obj.id
+                class_id=target_class.id
             ).first()
 
             if existing_enr and existing_enr.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]:
-                db.session.delete(next_in_waitlist)
+                if next_in_waitlist.type == WAITLIST_TYPE_MONTHLY:
+                    for mc in monthly_classes:
+                        if mc.fecha_hora.weekday() == target_class.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == target_class.fecha_hora.strftime("%H:%M"):
+                            WaitlistEntry.query.filter_by(user_id=user_to_promote.id, class_id=mc.id, type=WAITLIST_TYPE_MONTHLY).delete()
+                else:
+                    db.session.delete(next_in_waitlist)
                 continue
             
             new_tipo = ENROLLMENT_TYPE_MONTHLY if next_in_waitlist.type == WAITLIST_TYPE_MONTHLY else ENROLLMENT_TYPE_SINGLE
@@ -848,14 +890,20 @@ def _promote_waitlist_for_class(class_obj):
             else:
                 new_enrollment = Enrollment(
                     user_id=user_to_promote.id,
-                    class_id=class_obj.id,
+                    class_id=target_class.id,
                     tipo=new_tipo,
                     estado=Enrollment.STATUS_PENDING_PAYMENT,
                 )
                 db.session.add(new_enrollment)
             
-            db.session.delete(next_in_waitlist)
-            notification_service.create_waitlist_promotion_notification(user_to_promote, class_obj)
+            if next_in_waitlist.type == WAITLIST_TYPE_MONTHLY:
+                for mc in monthly_classes:
+                    if mc.fecha_hora.weekday() == target_class.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == target_class.fecha_hora.strftime("%H:%M"):
+                        WaitlistEntry.query.filter_by(user_id=user_to_promote.id, class_id=mc.id, type=WAITLIST_TYPE_MONTHLY).delete()
+            else:
+                db.session.delete(next_in_waitlist)
+                
+            notification_service.create_waitlist_promotion_notification(user_to_promote, target_class)
             db.session.commit()
 
             other_pending_enrollments = Enrollment.query.filter(
@@ -863,7 +911,7 @@ def _promote_waitlist_for_class(class_obj):
                 Enrollment.id != new_enrollment.id,
                 Enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT,
             ).all()
-            send_waitlist_promotion_email(user_to_promote, class_obj, new_enrollment, other_pending_enrollments)
+            send_waitlist_promotion_email(user_to_promote, target_class, new_enrollment, other_pending_enrollments)
             promoted = True
             break
             
@@ -1684,13 +1732,8 @@ def create_enrollment():
     ).all()
 
     if data.get("waitlist") or data.get("waitlist_type"):
-        existing_waitlist = WaitlistEntry.query.filter_by(
-            user_id=current_user.id,
-            class_id=class_obj.id
-        ).first()
-        if existing_waitlist:
-            return api_error("Ya estás en la lista de espera de esta clase", 400)
-
+        waitlist_type = data.get("waitlist_type", WAITLIST_TYPE_INDIVIDUAL)
+        
         existing_enr = Enrollment.query.filter_by(
             user_id=current_user.id,
             class_id=class_obj.id
@@ -1718,20 +1761,69 @@ def create_enrollment():
                             "enrollment_id": enr.id,
                         }, message="Esta clase ya está cubierta por tu suscripción mensual.", status_code=200)
 
-        waitlist_type = data.get("waitlist_type", WAITLIST_TYPE_INDIVIDUAL)
-        waitlist_entry, waitlist_error = waitlist_service.add_waitlist_entry(
-            current_user,
-            class_obj,
-            waitlist_type,
-        )
-        if waitlist_error:
+        if waitlist_type == WAITLIST_TYPE_MONTHLY:
+            user_other_enrs = Enrollment.query.join(Class).filter(
+                Enrollment.user_id == current_user.id,
+                Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+                Class.id_actividad == class_obj.id_actividad,
+                Class.fecha_hora >= month_start,
+                Class.fecha_hora <= month_end,
+                Class.id != class_obj.id
+            ).all()
+            for enr in user_other_enrs:
+                if enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                    return api_error("Usted esta inscripto a otras clases de esta actividad en este horario. Anotese a la lista de espera individual", 409)
+
+            expected_count = 0
+            for day in range(1, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1] + 1):
+                if datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, day).weekday() == class_obj.fecha_hora.weekday():
+                    expected_count += 1
+
+            month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+            month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1], 23, 59, 59)
+            monthly_classes = Class.query.filter(
+                Class.id_actividad == class_obj.id_actividad,
+                Class.fecha_hora >= month_start,
+                Class.fecha_hora <= month_end,
+                Class.estado == Class.STATUS_ACTIVE
+            ).all()
+
+            actual_count = sum(1 for mc in monthly_classes if mc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"))
+            if actual_count < expected_count:
+                return api_error("No están generadas todas las clases del mes para este horario. No es posible anotarse mensualmente.", 409)
+
+            added_entries = []
+            for mc in monthly_classes:
+                if mc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                    existing_wl = WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=mc.id).first()
+                    if not existing_wl:
+                        entry = WaitlistEntry(user_id=current_user.id, class_id=mc.id, type=waitlist_type)
+                        db.session.add(entry)
+                        added_entries.append(entry)
+            
+            if not added_entries:
+                return api_error("Ya estás anotado en la lista de espera para esta clase", 409)
+
             db.session.commit()
-            return api_error(waitlist_error, 409)
-        db.session.commit()
-        return api_success({
-            "message": "Te agregamos a la lista de espera",
-            "waitlist": waitlist_entry.to_dict(),
-        }, message="Te agregamos a la lista de espera", status_code=201)
+            return api_success({
+                "message": "Te agregamos a la lista de espera",
+                "waitlist": added_entries[0].to_dict(),
+            }, message="Te agregamos a la lista de espera", status_code=201)
+        else:
+            existing_waitlist = WaitlistEntry.query.filter_by(
+                user_id=current_user.id,
+                class_id=class_obj.id
+            ).first()
+            if existing_waitlist:
+                return api_error("Ya estás anotado en la lista de espera para esta clase", 409)
+
+            entry = WaitlistEntry(user_id=current_user.id, class_id=class_obj.id, type=waitlist_type)
+            db.session.add(entry)
+            db.session.commit()
+            return api_success({
+                "message": "Te agregamos a la lista de espera",
+                "waitlist": entry.to_dict(),
+            }, message="Te agregamos a la lista de espera", status_code=201)
 
     for enr in existing_monthly_enrs:
         if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
@@ -1746,6 +1838,38 @@ def create_enrollment():
                         return api_error("Esta clase ya está cubierta por tu suscripción mensual.", 409)
 
     enrollment_map = _enrollment_counts()
+
+    if data.get("tipo") == ENROLLMENT_TYPE_MONTHLY:
+        expected_count = 0
+        for day in range(1, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1] + 1):
+            if datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, day).weekday() == class_obj.fecha_hora.weekday():
+                expected_count += 1
+                
+        month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+        month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1], 23, 59, 59)
+        all_monthly_classes = Class.query.filter(
+            Class.id_actividad == class_obj.id_actividad,
+            Class.fecha_hora >= month_start,
+            Class.fecha_hora <= month_end,
+            Class.estado == Class.STATUS_ACTIVE
+        ).all()
+        
+        actual_count = sum(1 for mc in all_monthly_classes if mc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"))
+        if actual_count < expected_count:
+            return api_error("No están generadas todas las clases del mes para este horario. No es posible anotarse mensualmente.", 409)
+
+        month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1], 23, 59, 59)
+        monthly_classes = Class.query.filter(
+            Class.id_actividad == class_obj.id_actividad,
+            Class.fecha_hora >= class_obj.fecha_hora,
+            Class.fecha_hora <= month_end,
+            Class.estado == Class.STATUS_ACTIVE
+        ).all()
+        for mc in monthly_classes:
+            if mc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                enrolled_count = enrollment_map.get(mc.id, 0)
+                if enrolled_count >= (mc.cupoMaximo or 20):
+                    return api_error("No hay cupo disponible de forma mensual para todas las clases de este mes. Puedes anotarte en la lista de espera.", 409)
 
     # Eliminar de la lista de espera si se estaba inscribiendo con éxito
     WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=class_obj.id).delete()
@@ -1852,13 +1976,6 @@ def create_waitlist_entry():
     if not class_obj:
         return api_error("Clase no encontrada", 404)
         
-    existing_waitlist = WaitlistEntry.query.filter_by(
-        user_id=current_user.id,
-        class_id=class_obj.id
-    ).first()
-    if existing_waitlist:
-        return api_error("Ya estás en la lista de espera de esta clase", 400)
-
     existing_enr = Enrollment.query.filter_by(
         user_id=current_user.id,
         class_id=class_obj.id
@@ -1909,15 +2026,69 @@ def create_waitlist_entry():
                         }, message="Esta clase ya está cubierta por tu suscripción mensual.", status_code=200)
 
     waitlist_type = data.get("type", WAITLIST_TYPE_INDIVIDUAL)
-    entry, error = waitlist_service.add_waitlist_entry(current_user, class_obj, waitlist_type)
-    if error:
-        return api_error(error, 400)
+    if waitlist_type == WAITLIST_TYPE_MONTHLY:
+        user_other_enrs = Enrollment.query.join(Class).filter(
+            Enrollment.user_id == current_user.id,
+            Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+            Class.id_actividad == class_obj.id_actividad,
+            Class.fecha_hora >= month_start,
+            Class.fecha_hora <= month_end,
+            Class.id != class_obj.id
+        ).all()
+        for enr in user_other_enrs:
+            if enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                return api_error("Usted esta inscripto a otras clases de esta actividad en este horario. Anotese a la lista de espera individual", 409)
 
-    db.session.commit()
-    return api_success({
-        "message": "Te agregamos a la lista de espera",
-        "waitlist": entry.to_dict(),
-    }, message="Te agregamos a la lista de espera", status_code=201)
+        expected_count = 0
+        for day in range(1, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1] + 1):
+            if datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, day).weekday() == class_obj.fecha_hora.weekday():
+                expected_count += 1
+
+        month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+        month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1], 23, 59, 59)
+        monthly_classes = Class.query.filter(
+            Class.id_actividad == class_obj.id_actividad,
+            Class.fecha_hora >= month_start,
+            Class.fecha_hora <= month_end,
+            Class.estado == Class.STATUS_ACTIVE
+        ).all()
+
+        actual_count = sum(1 for mc in monthly_classes if mc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"))
+        if actual_count < expected_count:
+            return api_error("No están generadas todas las clases del mes para este horario. No es posible anotarse mensualmente.", 409)
+
+        added_entries = []
+        for mc in monthly_classes:
+            if mc.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and mc.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                existing_wl = WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=mc.id).first()
+                if not existing_wl:
+                    entry = WaitlistEntry(user_id=current_user.id, class_id=mc.id, type=waitlist_type)
+                    db.session.add(entry)
+                    added_entries.append(entry)
+        
+        if not added_entries:
+            return api_error("Ya estás anotado en la lista de espera para esta clase", 409)
+
+        db.session.commit()
+        return api_success({
+            "message": "Te agregamos a la lista de espera",
+            "waitlist": added_entries[0].to_dict(),
+        }, message="Te agregamos a la lista de espera", status_code=201)
+    else:
+        existing_waitlist = WaitlistEntry.query.filter_by(
+            user_id=current_user.id,
+            class_id=class_obj.id
+        ).first()
+        if existing_waitlist:
+            return api_error("Ya estás anotado en la lista de espera para esta clase", 409)
+
+        entry = WaitlistEntry(user_id=current_user.id, class_id=class_obj.id, type=waitlist_type)
+        db.session.add(entry)
+        db.session.commit()
+        return api_success({
+            "message": "Te agregamos a la lista de espera",
+            "waitlist": entry.to_dict(),
+        }, message="Te agregamos a la lista de espera", status_code=201)
 
 
 @app.route("/api/enrollments/<int:enrollment_id>/cancel", methods=["POST"])

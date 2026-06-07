@@ -531,6 +531,44 @@ def main():
         #     legacy_names=["Yoga Junio 25"]
         # )
 
+        print("   Creando clases de Yoga para Julio (pruebas de lista de espera mensual)...")
+        year = today.year
+        class_jul2 = create_test_class(
+            "Yoga - 2 Julio (Jueves)",
+            datetime(year, 7, 2, 7, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Julio 2"]
+        )
+        class_jul9 = create_test_class(
+            "Yoga - 9 Julio (Jueves)",
+            datetime(year, 7, 9, 7, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Julio 9"]
+        )
+        class_jul16 = create_test_class(
+            "Yoga - 16 Julio (Jueves) - 1 Espacio Libre",
+            datetime(year, 7, 16, 7, 0),
+            actividad1,
+            cupo_maximo=2,
+            legacy_names=["Yoga Julio 16"]
+        )
+        class_jul23 = create_test_class(
+            "Yoga - 23 Julio (Jueves)",
+            datetime(year, 7, 23, 7, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Julio 23"]
+        )
+        class_jul30 = create_test_class(
+            "Yoga - 30 Julio (Jueves)",
+            datetime(year, 7, 30, 7, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Julio 30"]
+        )
+
         db.session.commit()
         print()
 
@@ -564,6 +602,13 @@ def main():
             payment_date = today - timedelta(days=(i * 4))
             ensure_payment(enr, Payment.STATUS_APPROVED, created_at=payment_date)
             
+        print("   Ocupando 1 lugar en la clase de Yoga del 16 de Julio para dejar un solo espacio libre...")
+        dummy_julio = create_test_user(
+            username="AlumnoJulio", apellido="Dummy", email="dummy_julio@test.com",
+            password="password123", dni="99999999", telefono="11111111", role="client"
+        )
+        ensure_enrollment(dummy_julio, class_jul16, estado=Enrollment.STATUS_PAID, tipo="Suelta")
+
         db.session.commit()
         print()
 
