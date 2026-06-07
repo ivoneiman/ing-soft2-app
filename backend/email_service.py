@@ -4,11 +4,10 @@ import random
 from html import escape
 from pathlib import Path
 
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-try:
-    import resend
-except ModuleNotFoundError:
-    resend = None
 
 try:
     from models import SystemSetting
@@ -18,13 +17,10 @@ except ModuleNotFoundError:
 
 load_dotenv(Path(__file__).with_name(".env"))
 
-if resend:
-    resend.api_key = os.getenv("RESEND_API_KEY")
-
 logger = logging.getLogger(__name__)
 
 
-DEFAULT_EMAIL_FROM = "onboarding@resend.dev"
+DEFAULT_EMAIL_FROM = "noreply@siempregym.com"
 DEFAULT_GYM_SITE_URL = "https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app"
 
 
@@ -46,23 +42,30 @@ def _has_valid_email(user):
 
 
 def _send_email(to_email, subject, html):
-    if not resend:
-        logger.warning("[Email] SDK resend no instalado. Email omitido para %s", to_email)
+    smtp_server = os.getenv("SMTP_SERVER", "smtp.gmail.com")
+    smtp_port = int(os.getenv("SMTP_PORT", 587))
+    smtp_username = os.getenv("SMTP_USERNAME")
+    smtp_password = os.getenv("SMTP_PASSWORD")
+    email_from = _email_from()
+
+    if not smtp_username or not smtp_password:
+        logger.warning("[Email] Credenciales SMTP no configuradas. Email omitido para %s", to_email)
         return False
 
-    if not resend.api_key:
-        logger.warning("[Email] RESEND_API_KEY no configurada. Email omitido para %s", to_email)
-        return False
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = email_from
+    msg["To"] = to_email
+
+    part = MIMEText(html, "html")
+    msg.attach(part)
 
     try:
-        response = resend.Emails.send({
-            "from": _email_from(),
-            "to": [to_email],
-            "subject": subject,
-            "html": html,
-        })
-        email_id = response.get("id") if isinstance(response, dict) else None
-        logger.info("[Email] Email enviado correctamente a %s. resend_id=%s", to_email, email_id)
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_username, smtp_password)
+            server.sendmail(email_from, to_email, msg.as_string())
+        logger.info("[Email] Email enviado correctamente a %s", to_email)
         return True
     except Exception:
         logger.exception("[Email] Error enviando email a %s", to_email)
