@@ -1683,6 +1683,56 @@ def create_enrollment():
         Class.fecha_hora <= month_end
     ).all()
 
+    if data.get("waitlist") or data.get("waitlist_type"):
+        existing_waitlist = WaitlistEntry.query.filter_by(
+            user_id=current_user.id,
+            class_id=class_obj.id
+        ).first()
+        if existing_waitlist:
+            return api_error("Ya estás en la lista de espera de esta clase", 400)
+
+        existing_enr = Enrollment.query.filter_by(
+            user_id=current_user.id,
+            class_id=class_obj.id
+        ).filter(
+            Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+        ).first()
+
+        if existing_enr:
+            return api_success({
+                "message": "Ya estás inscripto en esta clase",
+                "redirect_to_payment": True,
+                "enrollment_id": existing_enr.id,
+            }, message="Ya estás inscripto en esta clase", status_code=200)
+
+        for enr in existing_monthly_enrs:
+            if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+                if class_obj.fecha_hora >= enr.class_.fecha_hora:
+                    is_cancelled = Enrollment.query.filter_by(
+                        user_id=current_user.id, class_id=class_obj.id
+                    ).filter(Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, "Cancelada", "cancelled"])).first()
+                    if not is_cancelled:
+                        return api_success({
+                            "message": "Esta clase ya está cubierta por tu suscripción mensual.",
+                            "redirect_to_payment": True,
+                            "enrollment_id": enr.id,
+                        }, message="Esta clase ya está cubierta por tu suscripción mensual.", status_code=200)
+
+        waitlist_type = data.get("waitlist_type", WAITLIST_TYPE_INDIVIDUAL)
+        waitlist_entry, waitlist_error = waitlist_service.add_waitlist_entry(
+            current_user,
+            class_obj,
+            waitlist_type,
+        )
+        if waitlist_error:
+            db.session.commit()
+            return api_error(waitlist_error, 409)
+        db.session.commit()
+        return api_success({
+            "message": "Te agregamos a la lista de espera",
+            "waitlist": waitlist_entry.to_dict(),
+        }, message="Te agregamos a la lista de espera", status_code=201)
+
     for enr in existing_monthly_enrs:
         if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
             if data.get("tipo") == ENROLLMENT_TYPE_MONTHLY:
@@ -1735,31 +1785,6 @@ def create_enrollment():
         db.session.commit()
         return api_error("Ya estás inscripto y pagaste esta clase", 409)
     if result == "full":
-        if data.get("waitlist") or data.get("waitlist_type"):
-            existing_enr = Enrollment.query.filter_by(
-                user_id=current_user.id,
-                class_id=class_obj.id
-            ).filter(
-                Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
-            ).first()
-
-            if existing_enr:
-                return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
-
-            waitlist_type = data.get("waitlist_type", WAITLIST_TYPE_INDIVIDUAL)
-            waitlist_entry, waitlist_error = waitlist_service.add_waitlist_entry(
-                current_user,
-                class_obj,
-                waitlist_type,
-            )
-            if waitlist_error:
-                db.session.commit()
-                return api_error(waitlist_error, 409)
-            db.session.commit()
-            return api_success({
-                "message": "Te agregamos a la lista de espera",
-                "waitlist": waitlist_entry.to_dict(),
-            }, message="Te agregamos a la lista de espera", status_code=201)
         db.session.commit()
         return api_error("No quedan cupos disponibles para esta clase", 409)
     if result == "credit_used":
@@ -1827,6 +1852,27 @@ def create_waitlist_entry():
     if not class_obj:
         return api_error("Clase no encontrada", 404)
         
+    existing_waitlist = WaitlistEntry.query.filter_by(
+        user_id=current_user.id,
+        class_id=class_obj.id
+    ).first()
+    if existing_waitlist:
+        return api_error("Ya estás en la lista de espera de esta clase", 400)
+
+    existing_enr = Enrollment.query.filter_by(
+        user_id=current_user.id,
+        class_id=class_obj.id
+    ).filter(
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+    ).first()
+
+    if existing_enr:
+        return api_success({
+            "message": "Ya estás inscripto en esta clase",
+            "redirect_to_payment": True,
+            "enrollment_id": existing_enr.id,
+        }, message="Ya estás inscripto en esta clase", status_code=200)
+
     # 🌟 NUEVA VALIDACIÓN: Verificar si ya tiene una inscripción mensual que cubra esta clase en el mismo mes
     month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
     last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
@@ -1845,24 +1891,22 @@ def create_waitlist_entry():
         if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
             waitlist_type = data.get("type", WAITLIST_TYPE_INDIVIDUAL)
             if waitlist_type == WAITLIST_TYPE_MONTHLY:
-                return api_error("Ya te encuentras inscripto mensualmente en este horario, por lo que no necesitas unirte a la lista de espera.", 409)
+                return api_success({
+                    "message": "Ya te encuentras inscripto mensualmente en este horario",
+                    "redirect_to_payment": True,
+                    "enrollment_id": enr.id,
+                }, message="Ya te encuentras inscripto mensualmente en este horario", status_code=200)
             elif class_obj.fecha_hora >= enr.class_.fecha_hora:
                     # Verificar si canceló explícitamente esta clase
                     is_cancelled = Enrollment.query.filter_by(
                         user_id=current_user.id, class_id=class_obj.id
                     ).filter(Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, "Cancelada", "cancelled"])).first()
                     if not is_cancelled:
-                        return api_error("Esta clase ya está cubierta por tu suscripción mensual.", 409)
-
-    existing_enr = Enrollment.query.filter_by(
-        user_id=current_user.id,
-        class_id=class_obj.id
-    ).filter(
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
-    ).first()
-
-    if existing_enr:
-        return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
+                        return api_success({
+                            "message": "Esta clase ya está cubierta por tu suscripción mensual.",
+                            "redirect_to_payment": True,
+                            "enrollment_id": enr.id,
+                        }, message="Esta clase ya está cubierta por tu suscripción mensual.", status_code=200)
 
     waitlist_type = data.get("type", WAITLIST_TYPE_INDIVIDUAL)
     entry, error = waitlist_service.add_waitlist_entry(current_user, class_obj, waitlist_type)

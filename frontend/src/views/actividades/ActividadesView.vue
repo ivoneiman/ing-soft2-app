@@ -103,7 +103,7 @@
           <span class="radio-text" style="font-size: 0.95rem; color: #7f1d1d;"><strong>Clase sin cupo:</strong> podés anotarte en la lista de espera. Te notificaremos vía mail si se libera un lugar.</span>
         </div>
 
-        <div v-if="!isAlreadyEnrolled" style="display: flex; gap: 1rem; margin-top: 1.5rem; align-items: flex-start;">
+        <div v-if="!isAlreadyEnrolled || selectedClassFull" style="display: flex; gap: 1rem; margin-top: 1.5rem; align-items: flex-start;">
           <div style="flex: 1; text-align: center;">
             <button
               type="button"
@@ -143,7 +143,7 @@
         </div>
 
         <button
-          v-if="hasSelectedType && !isAlreadyEnrolled"
+          v-if="hasSelectedType && (!isAlreadyEnrolled || selectedClassFull)"
           type="button"
           class="btn-inscribe"
           style="margin-top: 1.5rem;"
@@ -404,6 +404,19 @@ async function handleEnrollment() {
       waitlist: isWaitlist,
       waitlist_type: waitlistType,
     });
+    
+    if (res.data?.redirect_to_payment) {
+      const enrollmentId = res.data?.enrollment_id;
+      router.push({
+        path: "/pagos",
+        query: {
+          tab: PAYMENT_TAB.PENDING,
+          ...(enrollmentId ? { enrollment_id: enrollmentId } : {}),
+        },
+      });
+      return;
+    }
+
     if (res.data?.credit_used) {
       successMessage.value = res.data?.message || "Inscripción realizada utilizando crédito";
       selectedClassId.value = "";
