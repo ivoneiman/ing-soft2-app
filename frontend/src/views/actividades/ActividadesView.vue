@@ -222,7 +222,11 @@ const selectedClassFull = computed(() => selectedClass.value && selectedClass.va
 
 const isAlreadyEnrolled = computed(() => {
   if (!selectedClass.value) return false;
-  return myEnrolledClasses.value.some(c => c.class_id === selectedClass.value.id);
+  return myEnrolledClasses.value.some(c => 
+    c.class_id === selectedClass.value.id && 
+    c.estado_inscripcion !== 'cancelled' && 
+    c.estado_inscripcion !== 'Cancelada'
+  );
 });
 
 const calendarEnabledKeys = computed(() => {

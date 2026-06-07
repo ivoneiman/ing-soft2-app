@@ -1686,20 +1686,48 @@ def create_enrollment():
             if data.get("tipo") == ENROLLMENT_TYPE_MONTHLY:
                 return api_error("Ya te encuentras inscripto mensualmente en este horario y día de la semana para el mes actual.", 409)
             elif class_obj.fecha_hora >= enr.class_.fecha_hora:
-                return api_error("Esta clase ya está cubierta por tu suscripción mensual.", 409)
+                    # Verificar si canceló explícitamente esta clase
+                    is_cancelled = Enrollment.query.filter_by(
+                        user_id=current_user.id, class_id=class_obj.id
+                    ).filter(Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, "Cancelada", "cancelled"])).first()
+                    if not is_cancelled:
+                        return api_error("Esta clase ya está cubierta por tu suscripción mensual.", 409)
 
     enrollment_map = _enrollment_counts()
 
     # Eliminar de la lista de espera si se estaba inscribiendo con éxito
     WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=class_obj.id).delete()
 
-    enrollment, result = enrollment_service.create_or_reopen_enrollment(
-        current_user,
-        class_obj,
-        data.get("tipo"),
-        enrollment_map,
-        current_datetime,
-    )
+    existing_cancelled = Enrollment.query.filter_by(
+        user_id=current_user.id,
+        class_id=class_obj.id
+    ).filter(
+        Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED, "Cancelada", "cancelled"])
+    ).first()
+
+    if existing_cancelled:
+        enrolled_count = enrollment_map.get(class_obj.id, 0)
+        if enrolled_count >= (class_obj.cupoMaximo or 20):
+            result = "full"
+            enrollment = existing_cancelled
+        else:
+            existing_cancelled.estado = Enrollment.STATUS_PENDING_PAYMENT
+            existing_cancelled.tipo = data.get("tipo", ENROLLMENT_TYPE_SINGLE)
+            existing_cancelled.requiere_reembolso = False
+            existing_cancelled.total_amount = 0
+            existing_cancelled.paid_amount = 0
+            existing_cancelled.remaining_amount = 0
+            existing_cancelled.payment_status = ENROLLMENT_PAYMENT_STATUS_PENDING
+            enrollment = existing_cancelled
+            result = "new"
+    else:
+        enrollment, result = enrollment_service.create_or_reopen_enrollment(
+            current_user,
+            class_obj,
+            data.get("tipo"),
+            enrollment_map,
+            current_datetime,
+        )
 
     if result == "already_paid":
         db.session.commit()
@@ -1800,7 +1828,12 @@ def create_waitlist_entry():
             if waitlist_type == WAITLIST_TYPE_MONTHLY:
                 return api_error("Ya te encuentras inscripto mensualmente en este horario, por lo que no necesitas unirte a la lista de espera.", 409)
             elif class_obj.fecha_hora >= enr.class_.fecha_hora:
-                return api_error("Esta clase ya está cubierta por tu suscripción mensual.", 409)
+                    # Verificar si canceló explícitamente esta clase
+                    is_cancelled = Enrollment.query.filter_by(
+                        user_id=current_user.id, class_id=class_obj.id
+                    ).filter(Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, "Cancelada", "cancelled"])).first()
+                    if not is_cancelled:
+                        return api_error("Esta clase ya está cubierta por tu suscripción mensual.", 409)
 
     existing_enr = Enrollment.query.filter_by(
         user_id=current_user.id,
