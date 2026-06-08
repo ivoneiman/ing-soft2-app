@@ -1639,7 +1639,7 @@ def cancel_class_attendance(class_id):
 
         # LÓGICA FINAL PRODUCCIÓN: Si hubo shift, enrollment_to_cancel es un registro vacío para cancelar.
         # Miramos si la inscripción original ("enrollment") tenía los pagos reales aprobados.
-        if not credit and is_shifted and enrollment.estado == Enrollment.STATUS_PAID:
+        if not credit and is_shifted and (enrollment.estado == Enrollment.STATUS_PAID or _has_approved_payment(enrollment)):
             credit = _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
             if credit:
                 credit.enrollment_id = enrollment_to_cancel.id
@@ -1670,7 +1670,7 @@ def cancel_class_attendance(class_id):
         parent_enr = None
         for enr in implicit_enrs:
             if enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
-                if class_obj.fecha_hora > enr.class_.fecha_hora:
+                if class_obj.id != enr.class_id:
                     parent_enr = enr
                     break
         
@@ -1691,7 +1691,7 @@ def cancel_class_attendance(class_id):
         credit = None
         credit_generated = False
         
-        if parent_enr.estado == Enrollment.STATUS_PAID:
+        if parent_enr.estado == Enrollment.STATUS_PAID or _has_approved_payment(parent_enr):
             # LÓGICA FINAL PRODUCCIÓN: Validamos usando el parent original que tiene el pago aprobado en DB
             credit = _generate_credit_for_paid_enrollment(parent_enr, class_obj, current_datetime)
             if credit:
