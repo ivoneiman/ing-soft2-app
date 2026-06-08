@@ -548,7 +548,7 @@ def main():
             legacy_names=["Yoga Julio 9"]
         )
         class_jul16 = create_test_class(
-            "Yoga - 16 Julio (Jueves) - 1 Espacio Libre",
+            "Yoga - 16 Julio (Jueves) - 1 Espacio ",
             datetime(year, 7, 16, 7, 0),
             actividad1,
             cupo_maximo=2,
