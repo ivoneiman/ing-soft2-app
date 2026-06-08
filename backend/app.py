@@ -885,7 +885,7 @@ def _promote_waitlist_for_class(class_obj):
                 existing_enr.total_amount = 0
                 existing_enr.paid_amount = 0
                 existing_enr.remaining_amount = 0
-                existing_enr.payment_status = Enrollment.PAYMENT_STATUS_PENDING
+                existing_enr.payment_status = ENROLLMENT_PAYMENT_STATUS_PENDING
                 new_enrollment = existing_enr
             else:
                 new_enrollment = Enrollment(
@@ -2128,7 +2128,13 @@ def cancel_enrollment(enrollment_id):
         return jsonify({"error": "No autenticado"}), 401
 
     enrollment = Enrollment.query.get(enrollment_id)
+    
+    # Guardamos referencia para saber si hubo shift
+    original_enrollment_id = enrollment.id
+    
     enrollment_to_cancel = _shift_monthly_parent_if_needed(enrollment)
+    is_shifted = enrollment_to_cancel.id != original_enrollment_id
+    
     current_datetime = _current_discount_datetime()
     result, error, status_code = cancellation_service.cancel_enrollment(enrollment_to_cancel, current_user, current_datetime)
     if error:
@@ -2136,6 +2142,16 @@ def cancel_enrollment(enrollment_id):
 
     class_obj = result["class"]
     credit = result["credit"]
+    credit_generated = result.get("credit_generated")
+
+    # LÓGICA FINAL PRODUCCIÓN: Compensar el shift si tenía pago para que devuelva créditos desde la pestaña "Pagos"
+    if not credit and is_shifted and (enrollment.estado == Enrollment.STATUS_PAID or _has_approved_payment(enrollment)):
+        credit = _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
+        if credit:
+            credit.enrollment_id = enrollment_to_cancel.id
+            credit_generated = True
+            result["credit"] = credit
+            result["credit_generated"] = True
 
     refund_message = False
     if enrollment_to_cancel.tipo == ENROLLMENT_TYPE_SINGLE and result.get("credit_generated"):
@@ -2165,7 +2181,7 @@ def cancel_enrollment(enrollment_id):
     else:
         message = (
             "Tu inscripción fue cancelada correctamente. Se generó un crédito para futuras reservas."
-            if result["credit_generated"]
+            if result.get("credit_generated")
             else "Tu inscripción fue cancelada correctamente."
         )
     return api_success({
@@ -2173,7 +2189,7 @@ def cancel_enrollment(enrollment_id):
         "enrollment_id": enrollment.id,
         "estado": enrollment.estado,
         "payment_status": enrollment.payment_status,
-        "credit_generated": result["credit_generated"],
+        "credit_generated": result.get("credit_generated"),
         "credit": credit_service.credit_payload(credit, current_datetime) if credit else None,
         "email_sent": email_sent,
         "pending_payments_expired": result["pending_payments_expired"],
