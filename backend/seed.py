@@ -490,7 +490,7 @@ def main():
             legacy_names=["Pilates Limitado"]
         )
 
-        print("   Creando clase de prueba para cupos (19/20)...")
+        print("   Creando Clase de prueba para cupos (19/20)...")
         class_19_cupos = create_test_class(
             "Yoga - Prueba Cupos (19/20)",
             at_app_time(today + timedelta(days=8), 19),
