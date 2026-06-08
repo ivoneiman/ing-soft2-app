@@ -1637,13 +1637,16 @@ def cancel_class_attendance(class_id):
         credit = result.get("credit")
         credit_generated = result.get("credit_generated")
 
-        # LÓGICA FINAL PRODUCCIÓN: Si hubo shift, enrollment_to_cancel es un registro vacío para cancelar.
-        # Miramos si la inscripción original ("enrollment") tenía los pagos reales aprobados.
+        # LÓGICA FINAL PRODUCCIÓN: Compensar el shift si tenía pago aprobado.
         if not credit and is_shifted and (enrollment.estado == Enrollment.STATUS_PAID or _has_approved_payment(enrollment)):
             credit = _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
             if credit:
                 credit.enrollment_id = enrollment_to_cancel.id
                 credit_generated = True
+                result["credit_generated"] = True
+                result["credit"] = credit
+                # IMPORTANTE: Avisar visualmente en la campanita del usuario
+                notification_service.create_enrollment_cancellation_credit_notification(enrollment_to_cancel, class_obj)
         
         if enrollment_to_cancel.tipo == ENROLLMENT_TYPE_SINGLE and credit_generated:
             if credit:
@@ -1692,11 +1695,12 @@ def cancel_class_attendance(class_id):
         credit_generated = False
         
         if parent_enr.estado == Enrollment.STATUS_PAID or _has_approved_payment(parent_enr):
-            # LÓGICA FINAL PRODUCCIÓN: Validamos usando el parent original que tiene el pago aprobado en DB
             credit = _generate_credit_for_paid_enrollment(parent_enr, class_obj, current_datetime)
             if credit:
                 credit.enrollment_id = enrollment.id
                 credit_generated = True
+                # IMPORTANTE: Avisar visualmente en la campanita del usuario
+                notification_service.create_enrollment_cancellation_credit_notification(enrollment, class_obj)
 
     try:
         db.session.commit()
@@ -2152,6 +2156,8 @@ def cancel_enrollment(enrollment_id):
             credit_generated = True
             result["credit"] = credit
             result["credit_generated"] = True
+            # IMPORTANTE: Avisar visualmente en la campanita del usuario
+            notification_service.create_enrollment_cancellation_credit_notification(enrollment_to_cancel, class_obj)
 
     refund_message = False
     if enrollment_to_cancel.tipo == ENROLLMENT_TYPE_SINGLE and result.get("credit_generated"):
