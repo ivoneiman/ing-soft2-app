@@ -1621,6 +1621,7 @@ def cancel_class_attendance(class_id):
     current_datetime = _current_discount_datetime()
     enrollment = Enrollment.query.filter_by(user_id=current_user.id, class_id=class_id).first()
 
+    refund_message = False
     if enrollment:
         # Si la clase es explícita usamos el flujo común que ya tienen.
         enrollment_to_cancel = _shift_monthly_parent_if_needed(enrollment)
@@ -1630,6 +1631,14 @@ def cancel_class_attendance(class_id):
         
         credit = result.get("credit")
         credit_generated = result.get("credit_generated")
+        
+        if enrollment_to_cancel.tipo == ENROLLMENT_TYPE_SINGLE and credit_generated:
+            if credit:
+                db.session.delete(credit)
+            credit = None
+            credit_generated = False
+            refund_message = True
+            enrollment_to_cancel.requiere_reembolso = True
     else:
         # Es una clase mensual implícita: debemos "materializarla" para poder cancelarla y liberar el cupo de ese día
         month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
@@ -1685,10 +1694,13 @@ def cancel_class_attendance(class_id):
     if credit:
         email_sent = send_credit_generated_email(enrollment.user, class_obj, credit)
 
-    message = (
-        "Te diste de baja del turno correctamente. Se te generó un crédito para futuras reservas."
-        if credit_generated else "Te diste de baja del turno correctamente."
-    )
+    if refund_message:
+        message = "Te diste de baja del turno correctamente. El dinero abonado será devuelto a tu cuenta de Mercado Pago."
+    else:
+        message = (
+            "Te diste de baja del turno correctamente. Se te generó un crédito para futuras reservas."
+            if credit_generated else "Te diste de baja del turno correctamente."
+        )
     
     return api_success({
         "message": message, "class_id": class_obj.id, "credit_generated": credit_generated,
@@ -2107,6 +2119,16 @@ def cancel_enrollment(enrollment_id):
     class_obj = result["class"]
     credit = result["credit"]
 
+    refund_message = False
+    if enrollment_to_cancel.tipo == ENROLLMENT_TYPE_SINGLE and result.get("credit_generated"):
+        if credit:
+            db.session.delete(credit)
+        credit = None
+        result["credit"] = None
+        result["credit_generated"] = False
+        refund_message = True
+        enrollment_to_cancel.requiere_reembolso = True
+
     try:
         db.session.commit()
     except Exception as err:
@@ -2120,11 +2142,14 @@ def cancel_enrollment(enrollment_id):
 
     _promote_waitlist_for_class(class_obj)
 
-    message = (
-        "Tu inscripción fue cancelada correctamente. Se generó un crédito para futuras reservas."
-        if result["credit_generated"]
-        else "Tu inscripción fue cancelada correctamente."
-    )
+    if refund_message:
+        message = "Tu inscripción fue cancelada correctamente. El dinero abonado será devuelto a tu cuenta de Mercado Pago."
+    else:
+        message = (
+            "Tu inscripción fue cancelada correctamente. Se generó un crédito para futuras reservas."
+            if result["credit_generated"]
+            else "Tu inscripción fue cancelada correctamente."
+        )
     return api_success({
         "message": message,
         "enrollment_id": enrollment.id,
