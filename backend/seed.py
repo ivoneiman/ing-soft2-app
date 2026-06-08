@@ -499,37 +499,43 @@ def main():
             legacy_names=["Yoga Prueba 19 Cupos"]
         )
 
-        # COMENTADAS: Clases de Yoga para Junio
-        # print("   Creando clases de Yoga para Junio (pruebas de lista de espera mensual)...")
-        # year = today.year
-        # create_test_class(
-        #     "Yoga - 4 Junio (1 Cupo)",
-        #     datetime(year, 6, 4, 10, 0),
-        #     actividad1,
-        #     cupo_maximo=1,
-        #     legacy_names=["Yoga Junio 4"]
-        # )
-        # create_test_class(
-        #     "Yoga - 11 Junio",
-        #     datetime(year, 6, 11, 10, 0),
-        #     actividad1,
-        #     cupo_maximo=20,
-        #     legacy_names=["Yoga Junio 11"]
-        # )
-        # create_test_class(
-        #     "Yoga - 18 Junio",
-        #     datetime(year, 6, 18, 10, 0),
-        #     actividad1,
-        #     cupo_maximo=20,
-        #     legacy_names=["Yoga Junio 18"]
-        # )
-        # create_test_class(
-        #     "Yoga - 25 Junio",
-        #     datetime(year, 6, 25, 10, 0),
-        #     actividad1,
-        #     cupo_maximo=20,
-        #     legacy_names=["Yoga Junio 25"]
-        # )
+        print("   Creando clases de Yoga para Junio (1 x semana, 20 cupos)...")
+        year = today.year
+        create_test_class(
+            "Yoga - 2 Junio (Martes)",
+            datetime(year, 6, 2, 10, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Junio 2"]
+        )
+        create_test_class(
+            "Yoga - 9 Junio (Martes)",
+            datetime(year, 6, 9, 10, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Junio 9"]
+        )
+        create_test_class(
+            "Yoga - 16 Junio (Martes)",
+            datetime(year, 6, 16, 10, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Junio 16"]
+        )
+        create_test_class(
+            "Yoga - 23 Junio (Martes)",
+            datetime(year, 6, 23, 10, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Junio 23"]
+        )
+        create_test_class(
+            "Yoga - 30 Junio (Martes)",
+            datetime(year, 6, 30, 10, 0),
+            actividad1,
+            cupo_maximo=20,
+            legacy_names=["Yoga Junio 30"]
+        )
 
         print("   Creando clases de Yoga para Julio (pruebas de lista de espera mensual)...")
         year = today.year
