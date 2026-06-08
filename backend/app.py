@@ -1623,14 +1623,27 @@ def cancel_class_attendance(class_id):
 
     refund_message = False
     if enrollment:
+        # Guardamos referencia para saber si la inscripción mensual se movió (shift)
+        original_enrollment_id = enrollment.id
+
         # Si la clase es explícita usamos el flujo común que ya tienen.
         enrollment_to_cancel = _shift_monthly_parent_if_needed(enrollment)
+        is_shifted = enrollment_to_cancel.id != original_enrollment_id
+        
         result, error, status_code = cancellation_service.cancel_enrollment(enrollment_to_cancel, current_user, current_datetime)
         if error:
             return api_error(error, status_code)
         
         credit = result.get("credit")
         credit_generated = result.get("credit_generated")
+
+        # LÓGICA FINAL PRODUCCIÓN: Si hubo shift, enrollment_to_cancel es un registro vacío para cancelar.
+        # Miramos si la inscripción original ("enrollment") tenía los pagos reales aprobados.
+        if not credit and is_shifted and enrollment.estado == Enrollment.STATUS_PAID:
+            credit = _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
+            if credit:
+                credit.enrollment_id = enrollment_to_cancel.id
+                credit_generated = True
         
         if enrollment_to_cancel.tipo == ENROLLMENT_TYPE_SINGLE and credit_generated:
             if credit:
@@ -1673,13 +1686,17 @@ def cancel_class_attendance(class_id):
             total_amount=0, paid_amount=0, remaining_amount=0, requiere_reembolso=False
         )
         db.session.add(enrollment)
+        db.session.flush()
         
         credit = None
         credit_generated = False
         
         if parent_enr.estado == Enrollment.STATUS_PAID:
-            credit = _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
-            credit_generated = True
+            # LÓGICA FINAL PRODUCCIÓN: Validamos usando el parent original que tiene el pago aprobado en DB
+            credit = _generate_credit_for_paid_enrollment(parent_enr, class_obj, current_datetime)
+            if credit:
+                credit.enrollment_id = enrollment.id
+                credit_generated = True
 
     try:
         db.session.commit()
@@ -1955,11 +1972,12 @@ def create_enrollment():
                         db.session.delete(ce)
 
     db.session.flush()
-    credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_datetime)
-    if credit:
-        _consume_credit_for_enrollment(credit, enrollment, current_datetime)
-        db.session.commit()
-        return _credit_enrollment_response(enrollment, credit, current_datetime, 201)
+    if enrollment.tipo != ENROLLMENT_TYPE_MONTHLY:
+        credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_datetime)
+        if credit:
+            _consume_credit_for_enrollment(credit, enrollment, current_datetime)
+            db.session.commit()
+            return _credit_enrollment_response(enrollment, credit, current_datetime, 201)
 
     db.session.commit()
     return api_success({
