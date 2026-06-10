@@ -15,6 +15,10 @@ export function crearUsuario({ username, apellido, email, dni, telefono, passwor
   return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password, role }, REQUEST_CONFIG);
 }
 
+export function getUsers() {
+  return axios.get(`${API_URL}/users`, REQUEST_CONFIG);
+}
+
 export function login({ email, password, remember }) {
   return axios.post(
     `${API_URL}/login`,
@@ -23,10 +27,10 @@ export function login({ email, password, remember }) {
   );
 }
 
-export function adminLoginRequest({ email }) {
+export function adminLoginRequest({ email, password }) {
   return axios.post(
     `${API_URL}/admin-login/request`,
-    { email },
+    { email, password },
     REQUEST_CONFIG
   );
 }
@@ -49,6 +53,21 @@ export function logout() {
 
 export function getCurrentUser() {
   return axios.get(
+    `${API_URL}/me`,
+    REQUEST_CONFIG
+  );
+}
+
+export function updateProfile({ username, apellido, telefono, dni }) {
+  return axios.put(
+    `${API_URL}/me`,
+    { username, apellido, telefono, dni },
+    REQUEST_CONFIG
+  );
+}
+
+export function deleteAccount() {
+  return axios.delete(
     `${API_URL}/me`,
     REQUEST_CONFIG
   );
@@ -130,6 +149,13 @@ export function createClass({
       cupoMaximo,
       tipo,
     },
+    REQUEST_CONFIG
+  );
+}
+
+export function getMyClasses() {
+  return axios.get(
+    `${API_URL}/classes/my`,
     REQUEST_CONFIG
   );
 }

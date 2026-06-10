@@ -187,11 +187,13 @@ def create_or_reopen_enrollment(current_user, class_obj, tipo, enrollment_map, c
             return enrollment, "already_paid"
 
         if enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
-            credit = available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_dt)
-            if credit:
-                consume_credit_for_enrollment(credit, enrollment, current_dt)
-                enrollment._used_credit = credit
-                return enrollment, "credit_used"
+            # Identación corregida para evitar que Python se rompa
+            if enrollment.tipo != ENROLLMENT_TYPE_MONTHLY:
+                credit = available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_dt)
+                if credit:
+                    consume_credit_for_enrollment(credit, enrollment, current_dt)
+                    enrollment._used_credit = credit
+                    return enrollment, "credit_used"
             return enrollment, "already_pending"
 
         if enrollment.estado in ENROLLMENT_REOPENABLE_STATUSES:

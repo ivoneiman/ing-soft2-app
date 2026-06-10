@@ -2,7 +2,7 @@
   <div class="catalog-view">
     <header class="catalog-header">
       <h1>Crear Nuevas Clases</h1>
-      <p class="lead">Seleccioná actividad, día y horario. Se generarán clases para todos los días de ese mes.</p>
+      <p class="lead">Seleccioná actividad, día y horario para generar las clases de todo el mes.</p>
     </header>
 
     <div class="catalog-card">
@@ -54,23 +54,47 @@
               </button>
             </div>
             <p v-if="availableSlots.length === 0" class="info-box">
-              No hay horarios disponibles para todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes.
+              No hay horarios disponibles para los {{ getWeekdayName(selectedDate).toLowerCase() }} de este mes.
             </p>
           </template>
+        </section>
+
+        <!-- Paso 4: Salón -->
+        <section v-if="selectedSlot" class="selection-col" style="grid-column: 1 / -1;">
+          <h2 class="step-title"><span class="step-num">4</span> Salón</h2>
+          <div class="slots-grid" style="grid-template-columns: repeat(3, 1fr);">
+            <button
+              v-for="room in ['Sala 1', 'Sala 2', 'Sala 3']"
+              :key="room"
+              type="button"
+              class="slot-btn"
+              :class="{ active: selectedRoom === room }"
+              :disabled="!isRoomAvailable(room)"
+              @click="onRoomSelected(room)">
+              <div class="slot-time">{{ room }}</div>
+              <div style="font-size: 0.8rem; font-weight: normal; margin-top: 4px;" v-if="!isRoomAvailable(room)">(Ocupado)</div>
+            </button>
+          </div>
         </section>
       </div>
 
       <!-- Resumen de creación -->
-      <section v-if="selectedSlot" class="summary">
+      <section v-if="selectedRoom" class="summary">
         <h3>Tu selección</h3>
         <ul class="summary-list">
           <li><strong>Actividad:</strong> {{ selectedActivityName }}</li>
-          <li><strong>Días a crear:</strong> Todos los {{ getWeekdayName(selectedDate) }} del mes</li>
+          <li><strong>Salón:</strong> {{ selectedRoom }}</li>
+          <li><strong>Días a crear:</strong> Todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes</li>
           <li><strong>Horario:</strong> {{ selectedSlot }}</li>
         </ul>
-        <button type="button" class="btn-inscribe" @click="submitForm">
-          Generar Clases del Mes
-        </button>
+        <div style="text-align: center; margin-top: 1rem;">
+          <button type="button" class="btn-inscribe" :disabled="isMonthlyDisabled" @click="submitForm">
+            Generar Clases del Mes
+          </button>
+          <small v-if="isMonthlyDisabled" style="color: #6b7280; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
+            Para crear todo el mes, seleccione un día del 1 al 7.
+          </small>
+        </div>
       </section>
 
       <p v-if="successMessage" class="success">{{ successMessage }}</p>
@@ -83,6 +107,7 @@
 import { ref, reactive, computed, onMounted } from "vue";
 import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
 import { getActivities, createClass, getActivityClasses } from "@/services/api.js";
+import axios from "axios";
 
 const actividades = ref([]);
 const form = reactive({
@@ -92,9 +117,14 @@ const form = reactive({
 
 const selectedDate = ref(null);
 const selectedSlot = ref("");
+const selectedRoom = ref("");
 const errorMessage = ref("");
 const successMessage = ref("");
 const occupiedClasses = ref([]);
+
+const isMonthlyDisabled = computed(() => {
+  return selectedDate.value && selectedDate.value.getDate() > 7;
+});
 
 const selectedActivityName = computed(() => {
   const actividad = actividades.value.find((item) => item.id === Number(form.activity_id));
@@ -126,6 +156,7 @@ const selectActivity = (id) => {
   loadOccupiedClasses();
   selectedDate.value = null;
   selectedSlot.value = "";
+  selectedRoom.value = "";
   successMessage.value = "";
   errorMessage.value = "";
 };
@@ -153,18 +184,34 @@ const targetDatesForSelectedDay = computed(() => {
   return dates;
 });
 
-// Identifica qué horarios ya están ocupados en CUALQUIERA de esos días del mes
+// Identifica qué horarios ya están 100% ocupados (misma actividad o 3 salones ocupados)
 const occupiedSlotsForMonth = computed(() => {
   if (!selectedDate.value) return [];
   const targets = targetDatesForSelectedDay.value;
-  const occupied = new Set();
+  const completelyOccupiedSlots = new Set();
+  const allSlots = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
 
-  targets.forEach(fechaStr => {
-    const classesForDate = occupiedClasses.value.filter(c => c.fecha_hora && c.fecha_hora.startsWith(fechaStr));
-    classesForDate.forEach(c => occupied.add(c.time));
+  allSlots.forEach(slot => {
+     let sameActivityConflict = false;
+     const usedRooms = new Set();
+
+     targets.forEach(fechaStr => {
+        const classesAtSlot = occupiedClasses.value.filter(c => 
+          c.fecha_hora && c.fecha_hora.startsWith(fechaStr) && c.time === slot
+        );
+        
+        classesAtSlot.forEach(c => {
+           if (c.activity_id === Number(form.activity_id)) sameActivityConflict = true;
+           if (c.room) usedRooms.add(c.room);
+        });
+     });
+
+     if (sameActivityConflict || usedRooms.size >= 3) {
+        completelyOccupiedSlots.add(slot);
+     }
   });
 
-  return Array.from(occupied);
+  return Array.from(completelyOccupiedSlots);
 });
 
 const availableSlots = computed(() => {
@@ -172,10 +219,34 @@ const availableSlots = computed(() => {
   const weekday = selectedDate.value.getDay();
   if (weekday === 0) return []; // Domingos sin clase
   
-  const allSlots = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
+  const allSlots = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
   const occupied = occupiedSlotsForMonth.value;
   
-  return allSlots.filter(slot => !occupied.includes(slot));
+  const now = new Date();
+  const isToday = selectedDate.value.getFullYear() === now.getFullYear() &&
+                  selectedDate.value.getMonth() === now.getMonth() &&
+                  selectedDate.value.getDate() === now.getDate();
+
+  return allSlots.filter(slot => {
+    if (occupied.includes(slot)) return false;
+    
+    const [hour, minute] = slot.split(':').map(Number);
+
+    if (isToday) {
+      const currentHours = now.getHours();
+      const currentMinutes = now.getMinutes();
+      if (hour < currentHours || (hour === currentHours && minute <= currentMinutes)) {
+        return false;
+      }
+    }
+
+    // Verificar que al menos una de las clases que se van a generar con este horario sea en el futuro
+    return targetDatesForSelectedDay.value.some(fechaStr => {
+      const [year, month, day] = fechaStr.split('-');
+      const slotDate = new Date(year, Number(month) - 1, day, hour, minute);
+      return slotDate > now;
+    });
+  });
 });
 
 const loadActivities = async () => {
@@ -208,12 +279,32 @@ const handleDateSelected = (date) => {
 
   selectedDate.value = date;
   selectedSlot.value = "";
+  selectedRoom.value = "";
   errorMessage.value = "";
   successMessage.value = "";
 };
 
 const onSlotSelected = (slot) => {
   selectedSlot.value = slot;
+  selectedRoom.value = "";
+  successMessage.value = "";
+  errorMessage.value = "";
+};
+
+const isRoomAvailable = (room) => {
+  if (!selectedDate.value || !selectedSlot.value) return false;
+  const targets = targetDatesForSelectedDay.value;
+
+  return !occupiedClasses.value.some(c => 
+    c.fecha_hora && 
+    targets.some(t => c.fecha_hora.startsWith(t)) && 
+    c.time === selectedSlot.value && 
+    c.room === room
+  );
+};
+
+const onRoomSelected = (room) => {
+  selectedRoom.value = room;
   successMessage.value = "";
   errorMessage.value = "";
 };
@@ -226,34 +317,43 @@ const submitForm = async () => {
   if (!form.activity_id) missing.push("actividad");
   if (!selectedDate.value) missing.push("fecha");
   if (!selectedSlot.value) missing.push("hora");
+  if (!selectedRoom.value) missing.push("salón");
 
   if (missing.length > 0) {
     errorMessage.value = `Por favor seleccione ${missing.join(", ")}.`;
     return;
   }
 
+  if (selectedDate.value.getDate() > 7) {
+    errorMessage.value = "Para crear las clases de todo el mes, debes seleccionar un día de la primera semana (del 1 al 7).";
+    return;
+  }
+
   try {
-    const targetDates = targetDatesForSelectedDay.value;
+    let targetDates = targetDatesForSelectedDay.value;
 
     // Comprobar conflictos por si acaso antes de crear
     const conflicts = targetDates.filter(fechaStr =>
-      occupiedClasses.value.some(c => c.fecha_hora && c.fecha_hora.startsWith(fechaStr) && c.time === selectedSlot.value)
+      occupiedClasses.value.some(c => c.fecha_hora && c.fecha_hora.startsWith(fechaStr) && c.time === selectedSlot.value && (c.activity_id === Number(form.activity_id) || c.room === selectedRoom.value))
     );
 
     if (conflicts.length > 0) {
-      errorMessage.value = `Ya existen clases para la misma actividad en estas fechas: ${conflicts.join(', ')}.`;
+      errorMessage.value = `Conflicto de actividad o salón en estas fechas: ${conflicts.join(', ')}.`;
       return;
     }
 
     const createdDates = [];
+    const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+    
     for (const fechaStr of targetDates) {
       try {
-        await createClass({
+        await axios.post(`${baseURL}/classes`, {
           activity_id: Number(form.activity_id),
           date: fechaStr,
           time: selectedSlot.value,
+          room: selectedRoom.value,
           cupoMaximo: form.cupoMaximo,
-        });
+        }, { withCredentials: true });
         createdDates.push(fechaStr);
       } catch (err) {
         console.error("Fallo al crear la clase para la fecha:", fechaStr, err);
@@ -262,6 +362,7 @@ const submitForm = async () => {
 
     successMessage.value = createdDates.length > 0 ? `Clases generadas con éxito para las fechas: ${createdDates.join(' | ')}.` : 'No se crearon clases.';
     selectedSlot.value = '';
+    selectedRoom.value = '';
     await loadOccupiedClasses();
   } catch (error) {
     errorMessage.value = error.response?.data?.error || "Error general al crear las clases.";
@@ -433,6 +534,15 @@ const submitForm = async () => {
 .btn-inscribe {
   width: 100%;
   transition: all 0.3s ease;
+}
+
+.btn-inscribe:disabled {
+  background-color: #e5e7eb !important;
+  color: #9ca3af !important;
+  border-color: #e5e7eb !important;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .mt-4 {

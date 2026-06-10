@@ -83,7 +83,7 @@ def check_backend_structure():
         "backend/models.py": "Modelos SQLAlchemy",
         "backend/seed.py": "Script de datos de prueba",
         "backend/requirements.txt": "Dependencias Python",
-        ".env": "Variables de entorno",
+        "backend/.env": "Variables de entorno",
     }
     
     all_exist = True

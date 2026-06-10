@@ -97,7 +97,7 @@ Variables principales:
 
 - `SECRET_KEY`: clave utilizada por Flask para sesiones.
 - `SQLALCHEMY_DATABASE_URI`: URL de conexión a la base de datos. Por defecto se usa SQLite.
-- `CORS_ORIGINS`: origen permitido para el frontend local.
+- `CORS_ORIGINS`: orígenes permitidos para el frontend local y el deploy de develop.
 - `ENVIRONMENT`: entorno de ejecución, por ejemplo `development`.
 - `FLASK_DEBUG`: activa o desactiva el modo debug en desarrollo.
 - `MERCADOPAGO_PUBLIC_KEY`: clave pública de Mercado Pago.
@@ -109,7 +109,8 @@ Variables principales:
 - `PAYMENT_FAILURE_URL`: override opcional de retorno para pagos fallidos.
 - `PAYMENT_PENDING_URL`: override opcional de retorno para pagos pendientes.
 - `MERCADOPAGO_NOTIFICATION_URL`: override opcional del webhook para confirmar pagos automáticamente.
-- `FRONTEND_PAYMENTS_URL`: URL del frontend donde se muestra el resultado del pago.
+- `FRONTEND_PAYMENTS_URL`: URL del frontend donde se muestra el resultado del pago. Para develop: `https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app/pagos`.
+- `GYM_SITE_URL`: URL base del frontend para links en emails. Para develop: `https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app`.
 - `RESEND_API_KEY`: API key de Resend para envío de emails.
 - `EMAIL_FROM`: remitente utilizado en emails transaccionales.
 - `APP_TIMEZONE`: zona horaria usada para fechas y reglas de descuento.
@@ -133,7 +134,8 @@ Flujo recomendado con Cloudflare Tunnel:
 
 ```env
 PUBLIC_BACKEND_URL=https://tu-url.trycloudflare.com
-FRONTEND_PAYMENTS_URL=http://localhost:5173/pagos
+FRONTEND_PAYMENTS_URL=https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app/pagos
+GYM_SITE_URL=https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app
 ```
 
 Con `PUBLIC_BACKEND_URL`, el backend arma automáticamente:

@@ -1,11 +1,11 @@
 <template>
   <div class="gestion-clases-container">
-    <h1 class="titulo-principal">MONITOREO Y CANCELACIÓN DE CLASES</h1>
-    <p class="descripcion-panel">Panel de control exclusivo para la baja de turnos y asignación de créditos.</p>
+    <h1 class="titulo-principal">INFORMACIÓN DE CLASES</h1>
+    <p class="descripcion-panel">Panel de control para visualizar, monitorear y gestionar tus clases.</p>
 
     <div class="tarjeta-oscura-tabla">
       <div class="tabla-encabezado">
-        <h2 class="subtitulo-seccion" style="margin: 0; border: none; padding: 0;">Buscar Clase a Cancelar</h2>
+        <h2 class="subtitulo-seccion" style="margin: 0; border: none; padding: 0;">Seleccionar Clase</h2>
         <button @click="cargarClases" class="btn-refrescar">Actualizar lista</button>
       </div>
 

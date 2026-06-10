@@ -5,7 +5,16 @@
   en curso muestra "Cargando usuario..."; si no hay sesión redirige al login.
 -->
 <template>
-  <div>
+  <div class="home-container">
+    <div v-if="user" class="welcome-box">
+      <h2>¡Hola, {{ formatName(user.apellido, user.username) }}!</h2>
+      <p>Bienvenido de nuevo a SiempreGym</p>
+    </div>
+
+    <div v-if="roleHelpers.hasAnyRole(['admin', 'employee'])" class="role-badge">
+      Estás navegando como: <strong>{{ roleHelpers.isAdmin() ? 'Administrador' : 'Empleado' }}</strong>
+    </div>
+
     <Hero />
   </div>
 </template>
@@ -17,11 +26,17 @@ import { ref, onMounted } from 'vue'
 import Hero from '../../components/hero/Hero.vue'
 // `getCurrentUser` obtiene los datos del usuario autenticado; `logout` cierra la sesión
 import { getCurrentUser } from '../../services/api'
+import { roleHelpers } from '../../utils/roleHelpers'
 // `useRouter` permite navegar programáticamente entre rutas
 
 // Estado reactivo del componente
 const user = ref(null)      // contendrá el objeto usuario cuando se cargue
 const loading = ref(true)   // indica si la petición al backend está en curso
+
+function formatName(apellido, nombre) {
+  const formatWord = (w) => (w ? w.toString().toLowerCase().replace(/\b\w/g, l => l.toUpperCase()) : '');
+  return `${formatWord(nombre)} ${formatWord(apellido)}`.trim();
+}
 
 // Cuando el componente se monta, solicitamos al backend los datos del usuario actual
 onMounted(async () => {
@@ -42,6 +57,43 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+.home-container {
+  position: relative;
+}
+
+.role-badge {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background-color: #f6ea98;
+  color: #572c57;
+  padding: 12px 24px;
+  border-radius: 50px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+}
+
+.role-badge strong {
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.welcome-box {
+  text-align: center;
+  margin-top: 2rem;
+  color: #572c57;
+}
+.welcome-box h2 {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+.welcome-box p {
+  color: #8a6a8a;
+  font-size: 1.1rem;
+}
+
 img {
   max-width: 300px;
   height: auto;

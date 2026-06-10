@@ -43,8 +43,8 @@
 
       <div class="field">
         <label for="password">Contraseña</label>
-        <input id="password" v-model="form.password" type="password" placeholder="Mínimo 6 caracteres" />
-        <small class="hint">Debe tener al menos 6 caracteres</small>
+        <input id="password" v-model="form.password" type="password" placeholder="Mínimo 6 caracteres, 1 mayúscula y 1 símbolo" />
+        <small class="hint">Debe tener al menos 6 caracteres, 1 mayúscula y 1 símbolo especial (?, !, ", #, etc.)</small>
       </div>
 
       <div v-if="error" class="msg error">{{ error }}</div>
@@ -89,8 +89,15 @@ onMounted(() => {
 })
 
 function validarPassword(password) {
-  if (password.length < 6)
+  if (password.length < 6) {
     return 'La contraseña debe tener al menos 6 caracteres'
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'La contraseña debe incluir al menos una letra mayúscula'
+  }
+  if (!/[^a-zA-Z0-9]/.test(password)) {
+    return 'La contraseña debe incluir al menos un símbolo especial (?, !, ", #, etc.)'
+  }
   return null
 }
 

@@ -5,44 +5,54 @@
   También muestra un enlace a la vista de registro.
 -->
 <template>
-  <div class="login-container">
-    <h2>Iniciar sesión</h2>
-    <div class="mode-buttons">
-      <button type="button" class="mode-button" :class="{ active: mode === 'password' }" @click="setMode('password')">
-        Login normal
-      </button>
-      <button type="button" class="mode-button" :class="{ active: mode === 'admin-code' }" @click="setMode('admin-code')">
-        Administrador por código
-      </button>
+  <div class="login-page">
+    <div class="login-card">
+      
+      <div class="brand-header">
+        <img src="/logo-con-aura.png" alt="SiempreGym Logo" class="brand-logo" />
+      </div>
+
+        <h2>Bienvenido de nuevo</h2>
+        <p class="subtitle">Iniciá sesión para continuar</p>
+
+        <div class="mode-buttons">
+          <button type="button" class="mode-button" :class="{ active: mode === 'password' }" @click="setMode('password')">
+            Login normal
+          </button>
+          <button type="button" class="mode-button" :class="{ active: mode === 'admin-code' }" @click="setMode('admin-code')">
+            Administrador por código
+          </button>
+        </div>
+
+        <form @submit.prevent="onSubmit" class="login-form">
+          <div class="input-group">
+            <label for="email">Email</label>
+            <input id="email" v-model="email" type="email" placeholder="tu@email.com" :disabled="mode === 'admin-code' && codeSent" required />
+          </div>
+
+          <div class="input-group" v-if="mode === 'password' || mode === 'admin-code'">
+            <label for="password">Contraseña</label>
+            <input id="password" v-model="password" type="password" placeholder="••••••••" :disabled="mode === 'admin-code' && codeSent" required />
+          </div>
+
+          <div class="input-group" v-if="mode === 'admin-code' && codeSent">
+            <label for="code">Código de verificación</label>
+            <input id="code" v-model="code" type="text" maxlength="6" placeholder="123456" required />
+          </div>
+
+          <button type="submit" class="btn-submit" :disabled="loading">
+            {{ mode === 'admin-code' ? (codeSent ? 'Verificar código' : 'Recibir código') : 'Ingresar' }}
+          </button>
+          <div v-if="error" class="msg error">{{ error }}</div>
+          <div v-if="info" class="msg info">{{ info }}</div>
+        </form>
+        
+        <!-- Enlace a la vista de registro.-->
+        <p class="link-text" v-if="mode === 'password'">
+          ¿No tenés cuenta?
+          <RouterLink to="/register">Crear cuenta</RouterLink>
+        </p>
     </div>
-
-    <form @submit.prevent="onSubmit">
-      <div>
-        <label for="email">Email:</label>
-        <input id="email" v-model="email" type="email" required />
-      </div>
-
-      <div v-if="mode === 'password'">
-        <label for="password">Contraseña:</label>
-        <input id="password" v-model="password" type="password" required />
-      </div>
-
-      <div v-if="mode === 'admin-code' && codeSent">
-        <label for="code">Código de verificación:</label>
-        <input id="code" v-model="code" type="text" maxlength="6" required />
-      </div>
-
-      <button type="submit" :disabled="loading">
-        {{ mode === 'admin-code' ? (codeSent ? 'Verificar código' : 'Solicitar código') : 'Ingresar' }}
-      </button>
-      <div v-if="error" class="error">{{ error }}</div>
-      <div v-if="info" class="info">{{ info }}</div>
-    </form>
-    <!-- Enlace a la vista de registro.-->
-    <p class="link-text" v-if="mode === 'password'">
-      ¿No tienes cuenta?
-      <RouterLink to="/register">Crear cuenta</RouterLink>
-    </p>
   </div>
 </template>
 
@@ -90,7 +100,11 @@ async function onSubmit() {
   try {
     if (mode.value === 'admin-code') {
       if (!codeSent.value) {
-        const ok = await authStore.adminLoginRequest(email.value)
+        if (!password.value.trim()) {
+          error.value = 'Debe completar la contraseña'
+          return
+        }
+        const ok = await authStore.adminLoginRequest(email.value, password.value)
         if (ok) {
           info.value = 'Se envió un código al email. Ingresalo a continuación.'
           codeSent.value = true
@@ -128,79 +142,219 @@ async function onSubmit() {
 </script>
 
 <style scoped>
-.login-container {
-  max-width: 400px;
-  margin: 2rem auto;
-  padding: 2rem;
-  border: 1px solid #eee;
+@import url('https://fonts.googleapis.com/css2?family=Anta&family=Anton&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..900;1,6..96,400..900&display=swap');
+
+.login-page {
+  min-height: calc(100vh - 60px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Imagen grande de fondo con un pequeño oscurecimiento/overlay morado */
+  background: linear-gradient(rgba(87, 44, 87, 0.7), rgba(87, 44, 87, 0.8)), url('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1470&auto=format&fit=crop') center/cover no-repeat fixed;
+  padding: 2rem 1rem;
+  font-family: 'Anta', sans-serif;
+}
+
+.login-card {
+  background: rgba(245, 245, 245, 0.95); /* #f5f5f5 con ligera transparencia */
+  border-radius: 20px;
+  padding: 5rem 2rem 2.5rem; /* Aumentamos el padding superior para dar espacio al logo */
+  width: 100%;
+  max-width: 380px; /* Cuadrado de login más chico */
+  box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  margin-top: 70px; /* Margen para que el logo no choque con el techo de la pantalla */
+}
+
+.brand-header {
+  position: absolute;
+  top: -70px; /* Lo sube justo a la mitad de su propia altura */
+  left: 50%;
+  transform: translateX(-50%); /* Lo centra perfectamente */
+  width: 140px;
+  height: 140px;
+  background: #f5f5f5;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+  padding: 15px;
+  border: 4px solid #ffffff; /* Borde blanco para resaltar el círculo */
+}
+
+.brand-logo {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain; /* Asegura que el logo no se deforme dentro del círculo */
+}
+
+.login-card h2 {
+  margin: 0 0 0.5rem 0;
+  color: #572c57;
+  font-size: 1.8rem;
+  text-align: center;
+}
+
+.subtitle {
+  color: #9f5f91;
+  margin-bottom: 2rem;
+  font-size: 1.05rem;
+  text-align: center;
+}
+
+.mode-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+  background: #e8dce8; /* Tono suave derivado del morado para la botonera */
+  padding: 0.35rem;
+  border-radius: 10px;
+}
+
+.mode-button {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  border: none;
+  background: transparent;
+  color: #572c57;
+  cursor: pointer;
   border-radius: 8px;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  transition: all 0.3s ease;
+}
+
+.mode-button.active {
+  background: #f6ea98;
+  color: #572c57;
+  box-shadow: 0 2px 8px rgba(87, 44, 87, 0.15);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.input-group label {
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  color: #572c57;
+  letter-spacing: 0.5px;
+}
+
+.input-group input {
+  padding: 0.85rem 1rem;
+  border: 1.5px solid #9f5f91;
+  border-radius: 8px;
+  font-size: 1.05rem;
+  transition: all 0.3s ease;
+  font-family: system-ui, -apple-system, sans-serif !important;
+  background: #ffffff;
+  color: #572c57;
+}
+
+.input-group input::placeholder {
+  font-family: system-ui, -apple-system, sans-serif !important;
+  color: #bfaabf;
+}
+
+.input-group input:focus {
+  outline: none;
+  border-color: #9f5f91;
+  box-shadow: 0 0 0 4px rgba(159, 95, 145, 0.15);
+}
+
+.input-group input:disabled {
+  background: #e8dce8;
+  cursor: not-allowed;
+}
+
+.btn-submit {
+  background: #572c57;
+  color: #f6ea98;
+  border: none;
+  padding: 0.9rem;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s, background 0.3s;
+  margin-top: 0.5rem;
+  font-family: 'Anta', sans-serif !important;
+}
+
+.btn-submit:hover:not(:disabled) {
+  background: #9f5f91;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(87, 44, 87, 0.3);
+}
+
+.btn-submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.msg {
+  padding: 0.8rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  text-align: center;
 }
 
 .error {
-  color: red;
-  margin-top: 1rem;
+  background: #f6ea98;
+  color: #572c57;
+  border: 1px solid #dcd181;
+  font-weight: bold;
 }
 
-  .info {
-    color: #0a6e10;
-    margin-top: 1rem;
-  }
-
-  .mode-buttons {
-    display: flex;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .mode-button {
-    flex: 1;
-    padding: 0.75rem 1rem;
-    border: 1px solid #ccc;
-    background: white;
-    cursor: pointer;
-    border-radius: 6px;
-  }
-
-  .mode-button.active {
-    border-color: #2f8fe2;
-    background: #eff6ff;
-  }
-
-/* ==========================================
-   MEDIA QUERIES - TABLET (1024px)
-   ========================================== */
-
-@media (max-width: 1024px) {
-  .login-container {
-    max-width: 350px;
-    margin: 1.5rem auto;
-    padding: 1.5rem;
-  }
+.info {
+  background: rgba(159, 95, 145, 0.15);
+  color: #572c57;
+  border: 1px solid #9f5f91;
 }
 
-/* ==========================================
-   MEDIA QUERIES - MOBILE (768px)
-   ========================================== */
-
-@media (max-width: 768px) {
-  .login-container {
-    max-width: 100%;
-    margin: 1rem;
-    padding: 1.5rem;
-    border: none;
-    border-radius: 12px;
-  }
+.link-text {
+  text-align: center;
+  margin-top: 2rem;
+  font-size: 1.05rem;
+  color: #572c57;
 }
 
-/* ==========================================
-   MEDIA QUERIES - PEQUEÑOS MÓVILES (480px)
-   ========================================== */
+.link-text a {
+  color: #9f5f91;
+  text-decoration: none;
+  margin-left: 0.3rem;
+}
+
+.link-text a:hover {
+  text-decoration: underline;
+  color: #572c57;
+}
+
+@media (max-width: 900px) {
+}
 
 @media (max-width: 480px) {
-  .login-container {
-    margin: 0.5rem;
+  .login-page {
     padding: 1rem;
+  }
+  .login-card {
+    padding: 4.5rem 1.5rem 2rem;
+    margin-top: 60px;
   }
 }
 </style>
