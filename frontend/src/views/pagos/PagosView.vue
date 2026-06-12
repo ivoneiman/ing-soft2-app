@@ -37,104 +37,169 @@
       </div>
 
       <template v-else>
-        <article
-          v-for="enrollment in pendingEnrollments"
-          :key="enrollment.id"
-          :class="['enrollment-card', { highlighted: String(route.query.enrollment_id) === String(enrollment.id) }]"
-        >
-          <div class="enrollment-main">
-            <div>
-              <p class="eyebrow">{{ enrollment.actividad || enrollment.class_name }}</p>
-              <h2>{{ enrollment.class_name }}</h2>
-            </div>
-            <span class="status-pill">{{ enrollmentStatusLabel(enrollment.estado) }}</span>
+        <div class="pending-summary">
+          <div>
+            <span>Inscripciones pendientes</span>
+            <strong>{{ pendingEnrollments.length }}</strong>
           </div>
-
-          <dl class="enrollment-details">
-            <div>
-              <dt>Fecha y hora</dt>
-              <dd>{{ formatDateTime(enrollment.fecha_hora) }}</dd>
-            </div>
-            <div>
-              <dt>Vencimiento</dt>
-              <dd>{{ formatDateTime(enrollment.expires_at) }}</dd>
-            </div>
-            <div>
-              <dt>Descuento aplicado</dt>
-              <dd>{{ Number(enrollment.discount_percentage || 0) }}%</dd>
-            </div>
-            <div>
-              <dt>Monto</dt>
-              <dd>{{ formatMoney(enrollment.final_amount) }}</dd>
-            </div>
-          </dl>
-
-          <section class="payment-summary">
-            <h3>Resumen</h3>
-            <dl>
-              <div>
-                <dt>Precio original</dt>
-                <dd>{{ formatMoney(enrollment.amount) }}</dd>
-              </div>
-              <div>
-                <dt>Total a pagar</dt>
-                <dd>{{ formatMoney(enrollment.final_amount) }}</dd>
-              </div>
-              <div>
-                <dt>Pagado</dt>
-                <dd>{{ formatMoney(enrollment.paid_amount) }}</dd>
-              </div>
-              <div>
-                <dt>Saldo</dt>
-                <dd>{{ formatMoney(enrollment.remaining_amount) }}</dd>
-              </div>
-            </dl>
-          </section>
-
-          <div class="payment-options">
-            <label>
-              <input v-model="selectedPaymentTypes[enrollment.id]" type="radio" :name="`payment-type-${enrollment.id}`" value="full" />
-              <span>Pagar completo</span>
-            </label>
-            <label v-if="Number(enrollment.paid_amount || 0) === 0 && enrollment.tipo !== 'Mensual'">
-              <input v-model="selectedPaymentTypes[enrollment.id]" type="radio" :name="`payment-type-${enrollment.id}`" value="deposit" />
-              <span>Reservar con seña</span>
-            </label>
+          <div>
+            <span>Total a pagar</span>
+            <strong>{{ formatMoney(pendingEnrollmentsTotal) }}</strong>
           </div>
+        </div>
 
-          <dl v-if="selectedPaymentType(enrollment) === 'deposit'" class="deposit-details">
-            <div>
-              <dt>Seña</dt>
-              <dd>{{ Number(enrollment.deposit_percentage || 0) }}%</dd>
-            </div>
-            <div>
-              <dt>Pagás ahora</dt>
-              <dd>{{ formatMoney(enrollment.deposit_amount) }}</dd>
-            </div>
-            <div>
-              <dt>Saldo restante</dt>
-              <dd>{{ formatMoney((enrollment.total_amount || enrollment.final_amount) - (enrollment.deposit_amount || 0)) }}</dd>
-            </div>
-          </dl>
+        <div class="table-container">
+          <table class="enrollments-table">
+            <thead>
+              <tr>
+                <th>Actividad</th>
+                <th>Horario</th>
+                <th>Tipo</th>
+                <th>Clases a pagar</th>
+                <th>Monto</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
 
-          <button
-            class="pay-button"
-            type="button"
-            :disabled="isSubmittingId === enrollment.id || !enrollment.is_payable"
-            @click="payNow(enrollment)"
-          >
-            {{ isSubmittingId === enrollment.id ? 'Redirigiendo...' : 'Pagar ahora' }}
-          </button>
-          <button
-            v-if="enrollment.is_cancelable"
-            class="secondary-button cancel-enrollment-button"
-            type="button"
-            :disabled="isCancellingId === enrollment.id"
-            @click="openCancelEnrollment(enrollment)"
-          >
-            {{ isCancellingId === enrollment.id ? 'Cancelando...' : 'Cancelar inscripción' }}
-          </button>
-        </article>
+            <tbody>
+              <template
+                v-for="enrollment in pendingEnrollments"
+                :key="enrollment.id"
+              >
+              <tr
+                :class="{ highlighted: String(route.query.enrollment_id) === String(enrollment.id) }"
+              >
+                <td data-label="Actividad">
+                  <strong>{{ enrollment.actividad || enrollment.class_name }}</strong>
+                  <small>{{ enrollment.class_name }}</small>
+                </td>
+
+                <td data-label="Horario">{{ formatSchedule(enrollment.fecha_hora) }}</td>
+
+                <td data-label="Tipo">{{ enrollmentTypeLabel(enrollment.tipo) }}</td>
+
+                <td data-label="Clases a pagar">{{ payableClassesLabel(enrollment) }}</td>
+
+                <td data-label="Monto">
+                  <strong>{{ formatMoney(enrollment.remaining_amount || enrollment.final_amount) }}</strong>
+                </td>
+
+                <td data-label="Acción">
+                  <div class="table-actions">
+                    <select
+                      v-model="selectedPaymentTypes[enrollment.id]"
+                      class="payment-type-select"
+                    >
+                      <option value="full">
+                        Pagar completo
+                      </option>
+
+                      <option
+                        v-if="Number(enrollment.paid_amount || 0) === 0 && enrollment.tipo !== 'Mensual'"
+                        value="deposit"
+                      >
+                        Reservar con seña
+                      </option>
+                    </select>
+
+                    <button
+                      class="pay-button"
+                      type="button"
+                      :disabled="isSubmittingId === enrollment.id || !enrollment.is_payable"
+                      @click="payNow(enrollment)"
+                    >
+                      {{
+                        isSubmittingId === enrollment.id
+                          ? 'Redirigiendo...'
+                          : 'Pagar'
+                      }}
+                    </button>
+
+                    <button
+                      class="detail-button"
+                      type="button"
+                      @click="toggleEnrollmentDetail(enrollment.id)"
+                    >
+                      {{ expandedEnrollmentId === enrollment.id ? 'Ocultar detalle' : 'Ver detalle' }}
+                    </button>
+
+                    <button
+                      v-if="enrollment.is_cancelable"
+                      class="secondary-button"
+                      type="button"
+                      :disabled="isCancellingId === enrollment.id"
+                      @click="openCancelEnrollment(enrollment)"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <tr
+                v-if="expandedEnrollmentId === enrollment.id"
+                class="enrollment-detail-row"
+              >
+                <td colspan="6">
+                  <div class="enrollment-detail-panel">
+                    <dl>
+                      <div>
+                        <dt>Fecha de inscripción</dt>
+                        <dd>{{ formatDateTime(enrollment.fecha_hora) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Vencimiento</dt>
+                        <dd>{{ formatDateTime(enrollment.expires_at) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Monto original</dt>
+                        <dd>{{ formatMoney(enrollment.amount) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Monto final</dt>
+                        <dd>{{ formatMoney(enrollment.final_amount) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Pagado</dt>
+                        <dd>{{ formatMoney(enrollment.paid_amount) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Saldo</dt>
+                        <dd>{{ formatMoney(enrollment.remaining_amount) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Estado</dt>
+                        <dd>
+                          <span class="status-pill compact">
+                            {{ enrollmentStatusLabel(enrollment.estado) }}
+                          </span>
+                        </dd>
+                      </div>
+                    </dl>
+
+                    <p class="calculation-note">
+                      El monto a pagar corresponde al saldo vigente de esta inscripción.
+                    </p>
+
+                    <dl
+                      v-if="selectedPaymentType(enrollment) === 'deposit'"
+                      class="deposit-details compact"
+                    >
+                      <div>
+                        <dt>Pagás ahora</dt>
+                        <dd>{{ formatMoney(enrollment.deposit_amount) }}</dd>
+                      </div>
+                      <div>
+                        <dt>Saldo restante</dt>
+                        <dd>{{ formatMoney((enrollment.total_amount || enrollment.final_amount) - (enrollment.deposit_amount || 0)) }}</dd>
+                      </div>
+                    </dl>
+                  </div>
+                </td>
+              </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
       </template>
     </section>
 
@@ -293,12 +358,16 @@ const credits = ref([]);
 const notifications = ref([]);
 const selectedPaymentTypes = ref({});
 const cancelEnrollmentTarget = ref(null);
+const expandedEnrollmentId = ref(null);
 
 const cancelEnrollmentId = computed(() => cancelEnrollmentTarget.value?.enrollment_id || cancelEnrollmentTarget.value?.id || null);
 const cancelEnrollmentWillGenerateCredit = computed(() => Boolean(
   cancelEnrollmentTarget.value?.cancellation_will_generate_credit
   || cancelEnrollmentTarget.value?.enrollment_cancellation_will_generate_credit
 ));
+const pendingEnrollmentsTotal = computed(() => pendingEnrollments.value.reduce((total, enrollment) => (
+  total + Number(enrollment.remaining_amount || enrollment.final_amount || 0)
+), 0));
 
 const returnMessage = computed(() => {
   if (PAYMENT_RETURN_MESSAGES[route.query.status]) return PAYMENT_RETURN_MESSAGES[route.query.status];
@@ -330,6 +399,32 @@ function creditStatusLabel(status) {
 function selectedPaymentType(enrollment) {
   if (Number(enrollment.paid_amount || 0) > 0) return 'balance';
   return selectedPaymentTypes.value[enrollment.id] || 'full';
+}
+
+function toggleEnrollmentDetail(enrollmentId) {
+  expandedEnrollmentId.value = expandedEnrollmentId.value === enrollmentId ? null : enrollmentId;
+}
+
+function enrollmentTypeLabel(type) {
+  if (type === 'Mensual') return 'Mensual';
+  return 'Individual';
+}
+
+function payableClassesLabel(enrollment) {
+  if (enrollment.tipo !== 'Mensual') return '1 clase';
+  const amount = Number(enrollment.amount || 0);
+  const classCount = amount > 0 ? Math.max(1, Math.round(amount / 3000)) : 0;
+  if (!classCount) return 'Plan mensual';
+  return `${classCount} ${classCount === 1 ? 'clase' : 'clases'}`;
+}
+
+function formatSchedule(dateTime) {
+  if (!dateTime) return '-';
+  const date = new Date(dateTime);
+  if (Number.isNaN(date.getTime())) return '-';
+  const weekday = new Intl.DateTimeFormat('es-AR', { weekday: 'long' }).format(date);
+  const time = new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit' }).format(date);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${time}`;
 }
 
 async function loadPendingEnrollments() {
@@ -463,6 +558,134 @@ watch(
 </script>
 
 <style scoped>
+
+.pending-summary {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pending-summary div {
+  background: #fff;
+  border: 2px solid #d0c0d0;
+  border-radius: 8px;
+  color: #4a3a4a;
+  padding: 1rem 1.25rem;
+}
+
+.pending-summary span {
+  color: #8a6a8a;
+  display: block;
+  font-family: "Poppins", sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 0.35rem;
+}
+
+.pending-summary strong {
+  color: #572c57;
+  display: block;
+  font-size: 1.5rem;
+  line-height: 1.1;
+}
+
+.table-container {
+  background: #fff;
+  border: 2px solid #d0c0d0;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+  overflow-x: auto;
+}
+
+.enrollments-table {
+  border-collapse: collapse;
+  color: #4a3a4a;
+  min-width: 820px;
+  width: 100%;
+}
+
+.enrollments-table th,
+.enrollments-table td {
+  border-bottom: 1px solid #e8dce8;
+  padding: 0.9rem 1rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.enrollments-table th {
+  background: #f8f0f8;
+  color: #572c57;
+  font-family: "Poppins", sans-serif;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.enrollments-table td small {
+  color: #8a6a8a;
+  display: block;
+  font-size: 0.85rem;
+  margin-top: 0.2rem;
+}
+
+.table-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  min-width: 260px;
+}
+
+.payment-type-select {
+  border: 1px solid #d0c0d0;
+  border-radius: 8px;
+  color: #4a3a4a;
+  font: inherit;
+  padding: 0.55rem 0.65rem;
+}
+
+.detail-button {
+  background: transparent;
+  border: 1px solid #d0c0d0;
+  color: #572c57;
+  padding: 0.55rem 0.75rem;
+}
+
+.highlighted {
+  background: #fff9d6;
+}
+
+.enrollment-detail-row td {
+  background: #fbf7fb;
+  padding: 0;
+}
+
+.enrollment-detail-panel {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+}
+
+.enrollment-detail-panel dl {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+}
+
+.enrollment-detail-panel dl div {
+  background: #fff;
+  border: 1px solid #e8dce8;
+  border-radius: 8px;
+  padding: 0.85rem;
+}
+
+.calculation-note {
+  color: #6b526b;
+  font-size: 0.92rem;
+  margin: 0;
+}
+
 .payments-view {
   padding: 24px;
   max-width: 1200px;
@@ -491,14 +714,11 @@ watch(
 }
 
 .payments-header h1,
-.history-section h2,
-.enrollment-card h2,
-.payment-summary h3 {
+.history-section h2 {
   margin: 0;
 }
 
-.payments-header p,
-.eyebrow {
+.payments-header p {
   margin: 0;
 }
 
@@ -526,15 +746,6 @@ watch(
   padding: 2rem;
   margin-bottom: 1.5rem;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
-}
-
-.enrollment-card {
-  background: #fff;
-  border: 2px solid #e8dce8;
-  border-radius: 12px;
-  color: #4a3a4a;
-  padding: 1.5rem;
-  margin-bottom: 1rem;
 }
 
 .return-message {
@@ -567,28 +778,6 @@ watch(
   gap: 1rem;
 }
 
-.enrollment-card.highlighted {
-  border-color: #9f5f91;
-  box-shadow: 0 0 0 3px rgba(87, 44, 87, 0.14);
-}
-
-.enrollment-main {
-  align-items: flex-start;
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.eyebrow {
-  color: #9f5f91;
-  font-family: "Poppins", sans-serif;
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 1px;
-  line-height: 1.2;
-  text-transform: uppercase;
-}
-
 .status-pill {
   background: #f6ea98;
   border-radius: 8px;
@@ -605,27 +794,6 @@ watch(
   padding: 0.35rem 0.55rem;
 }
 
-.enrollment-details,
-.payment-summary dl {
-  display: grid;
-  gap: 0.75rem;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 1.25rem 0;
-}
-
-.payment-summary dl {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-bottom: 0;
-}
-
-.enrollment-details div,
-.payment-summary div {
-  background: #f5e6f5;
-  border: 1px solid #d0c0d0;
-  border-radius: 10px;
-  padding: 1rem;
-}
-
 dt {
   color: #572c57;
   font-family: "Poppins", sans-serif;
@@ -640,34 +808,6 @@ dd {
   margin: 0;
 }
 
-.pay-button {
-  margin-top: 1rem;
-}
-
-.cancel-enrollment-button {
-  margin-left: 0.75rem;
-  margin-top: 1rem;
-}
-
-.payment-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  margin-top: 1rem;
-}
-
-.payment-options label {
-  align-items: center;
-  background: #fff9d6;
-  border: 1px solid #e8d36f;
-  border-radius: 8px;
-  color: #572c57;
-  display: inline-flex;
-  font-weight: 700;
-  gap: 0.5rem;
-  padding: 0.7rem 0.85rem;
-}
-
 .deposit-details {
   display: grid;
   gap: 0.75rem;
@@ -680,6 +820,11 @@ dd {
   border: 1px solid #b7e2c4;
   border-radius: 8px;
   padding: 0.9rem;
+}
+
+.deposit-details.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
 }
 
 .payments-table {
@@ -811,10 +956,13 @@ dd {
 
 @media (max-width: 760px) {
   .payments-header,
-  .enrollment-main,
   .payments-tabs,
   .notification-item {
     display: block;
+  }
+
+  .payments-view {
+    padding: 16px;
   }
 
   .payments-tabs button,
@@ -824,10 +972,91 @@ dd {
     margin-top: 0.75rem;
   }
 
-  .enrollment-details,
-  .payment-summary dl,
-  .deposit-details {
+  .pending-summary,
+  .enrollment-detail-panel dl,
+  .deposit-details,
+  .deposit-details.compact {
     grid-template-columns: 1fr;
+  }
+
+  .table-container {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    overflow: visible;
+  }
+
+  .enrollments-table,
+  .enrollments-table tbody,
+  .enrollments-table tr,
+  .enrollments-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .enrollments-table {
+    min-width: 0;
+  }
+
+  .enrollments-table thead {
+    display: none;
+  }
+
+  .enrollments-table tr {
+    background: #fff;
+    border: 2px solid #d0c0d0;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+  }
+
+  .enrollments-table td {
+    align-items: center;
+    border-bottom: 1px solid #e8dce8;
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    padding: 0.7rem 0.85rem;
+  }
+
+  .enrollments-table td::before {
+    color: #8a6a8a;
+    content: attr(data-label);
+    flex: 0 0 42%;
+    font-family: "Poppins", sans-serif;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .enrollments-table td:first-child {
+    align-items: flex-start;
+  }
+
+  .enrollments-table td:first-child::before,
+  .enrollment-detail-row td::before {
+    display: none;
+  }
+
+  .enrollment-detail-row {
+    margin-top: -0.75rem;
+  }
+
+  .enrollment-detail-row td {
+    display: block;
+    padding: 0;
+  }
+
+  .table-actions {
+    justify-content: stretch;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .table-actions button,
+  .payment-type-select {
+    flex: 1 1 100%;
+    width: 100%;
   }
 
   .payments-table {
