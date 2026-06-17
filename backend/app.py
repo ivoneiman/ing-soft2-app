@@ -1046,11 +1046,8 @@ def login():
     password = data.get("password")
 
     user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "Usuario no encontrado"}), 401
-
-    if not user.check_password(password):
-        return jsonify({"error": "Contraseña incorrecta"}), 401
+    if not user or not user.check_password(password):
+        return jsonify({"error": "Credenciales inválidas"}), 401
 
     session["user_id"] = user.id
     return jsonify({
@@ -1068,11 +1065,8 @@ def admin_login_request():
         return jsonify({"error": "Debe ingresar email y contraseña"}), 400
 
     user = User.query.filter_by(email=email).first()
-    if not user:
-        return jsonify({"error": "Usuario no encontrado"}), 401
-        
-    if not user.check_password(password):
-        return jsonify({"error": "Contraseña incorrecta"}), 401
+    if not user or not user.check_password(password):
+        return jsonify({"error": "Credenciales inválidas"}), 401
         
     if user.role != "admin":
         return jsonify({"error": "El usuario no es administrador"}), 403
