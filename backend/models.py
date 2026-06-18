@@ -81,6 +81,9 @@ class User(UserMixin, db.Model):
     dni = db.Column(db.String(20), nullable=True) # DNI del usuario
     telefono = db.Column(db.String(20), nullable=True) # Teléfono del usuario
     password_hash = db.Column(db.String(256), nullable=False)#columna password_hash que es una cadena de texto de hasta 256 caracteres, no puede ser nula, y se usará para almacenar el hash seguro de la contraseña del usuario en lugar de la contraseña en texto plano
+    # Campos para el login 2FA de administradores
+    admin_login_code = db.Column(db.String(6), nullable=True)
+    admin_login_code_expiration = db.Column(db.DateTime, nullable=True)
     role = db.Column(db.String(20), default="client") # Rol del usuario: client, employee, admin
     payments = db.relationship(
         "Payment",

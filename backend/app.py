@@ -168,6 +168,10 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE users ADD COLUMN dni VARCHAR(20)"))
         if "telefono" not in columns:
             db.session.execute(text("ALTER TABLE users ADD COLUMN telefono VARCHAR(20)"))
+        if "admin_login_code" not in columns:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN admin_login_code VARCHAR(6)"))
+        if "admin_login_code_expiration" not in columns:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN admin_login_code_expiration DATETIME"))
 
     if "classes" in inspector.get_table_names():
         columns = [column["name"] for column in inspector.get_columns("classes")]
@@ -1041,83 +1045,77 @@ def register():
 
 @app.route("/api/login", methods=["POST"])
 def login():
+    
+    # Endpoint de login unificado.
+    # - Si es cliente/empleado, inicia sesión directamente.
+    # - Si es admin, envía código 2FA y espera verificación.
+    
     data = request.get_json()
     email = data.get("email")
     password = data.get("password")
 
-    user = User.query.filter_by(email=email).first()
-    if not user or not user.check_password(password):
-        return jsonify({"error": "Credenciales inválidas"}), 401
-
-    session["user_id"] = user.id
-    return jsonify({
-        "message": "Login exitoso",
-        "user": {"id": user.id, "username": user.username, "email": user.email, "role": user.role}
-    }), 200
-
-
-@app.route("/api/admin-login/request", methods=["POST"])
-def admin_login_request():
-    data = request.get_json()
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
     if not email or not password:
-        return jsonify({"error": "Debe ingresar email y contraseña"}), 400
+        return jsonify({"error": "Email y contraseña son requeridos"}), 400
 
     user = User.query.filter_by(email=email).first()
+
     if not user or not user.check_password(password):
         return jsonify({"error": "Credenciales inválidas"}), 401
-        
-    if user.role != "admin":
-        return jsonify({"error": "El usuario no es administrador"}), 403
 
-    code = f"{random.randint(0, 999999):06d}"
-    session["admin_login_email"] = email
-    session["admin_login_code"] = code
-    session["admin_login_code_expires_at"] = (datetime.utcnow() + timedelta(minutes=5)).timestamp()
+    # Flujo para Administradores (requiere 2FA)
+    if user.role == "admin":
+        try:
+            # Generar y guardar el código 2FA
+            code = str(random.randint(0, 999999))
+            user.admin_login_code = code
+            user.admin_login_code_expiration = datetime.utcnow() + timedelta(minutes=5)
+            db.session.commit()
 
-    if not send_admin_login_code(user, code):
-        session.pop("admin_login_email", None)
-        session.pop("admin_login_code", None)
-        session.pop("admin_login_code_expires_at", None)
-        return jsonify({"error": "No se pudo enviar el código de verificación por email"}), 500
+            # Enviar el código por email
+            send_admin_login_code(user, code)
 
-    return jsonify({"message": "Se envió un código de verificación al email"}), 200
+            # Responder al frontend que se necesita el segundo factor
+            return jsonify({"needs2FA": True}), 200
+        except Exception as e:
+            logger.error(f"Error en el flujo de login de admin para {email}: {e}")
+            db.session.rollback()
+            return jsonify({"error": "No se pudo procesar el inicio de sesión de administrador"}), 500
+
+    # Flujo para Clientes y Empleados (login directo)
+    else:
+        session["user_id"] = user.id
+        return jsonify({
+            "message": "Inicio de sesión exitoso",
+            "user": user.to_dict()
+        }), 200
 
 
 @app.route("/api/admin-login/verify", methods=["POST"])
 def admin_login_verify():
     data = request.get_json()
-    email = data.get("email", "").strip()
-    code = data.get("code", "").strip()
+    email = data.get("email")
+    code = data.get("code")
 
     if not email or not code:
         return jsonify({"error": "Email y código son obligatorios"}), 400
-
-    pending_email = session.get("admin_login_email")
-    pending_code = session.get("admin_login_code")
-    expires_at = session.get("admin_login_code_expires_at")
-
-    if not pending_email or not pending_code or not expires_at:
-        return jsonify({"error": "No hay un código pendiente. Solicitá uno primero."}), 400
-
-    if email != pending_email or code != pending_code:
-        return jsonify({"error": "Código incorrecto"}), 401
-
-    if datetime.utcnow().timestamp() > expires_at:
-        session.pop("admin_login_email", None)
-        session.pop("admin_login_code", None)
-        session.pop("admin_login_code_expires_at", None)
-        return jsonify({"error": "El código expiró. Solicitá uno nuevo."}), 401
 
     user = User.query.filter_by(email=email, role="admin").first()
     if not user:
         return jsonify({"error": "Administrador no encontrado"}), 401
 
+    if (
+        not user.admin_login_code
+        or user.admin_login_code != code
+        or datetime.utcnow() > user.admin_login_code_expiration
+    ):
+        return jsonify({"error": "Código inválido o expirado"}), 401
+
+    # Limpiar el código después de usarlo
+    user.admin_login_code = None
+    user.admin_login_code_expiration = None
+    db.session.commit()
+
     session["user_id"] = user.id
-    session.pop("admin_login_email", None)
-    session.pop("admin_login_code", None)
-    session.pop("admin_login_code_expires_at", None)
 
     return jsonify({
         "message": "Login exitoso",
