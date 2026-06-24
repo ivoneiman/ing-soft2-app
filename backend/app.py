@@ -1742,6 +1742,34 @@ def create_enrollment():
     if error:
         return api_error(error, status_code)
         
+    # Escenario 1: Inscripción fallida por cliente ya inscripto en la clase seleccionada
+    existing_enrollment_this_class = Enrollment.query.filter_by(
+        user_id=current_user.id,
+        class_id=class_obj.id
+    ).filter(
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+    ).first()
+
+    if existing_enrollment_this_class:
+        return api_error(
+            "Usted ya se encuentra inscripto a esta clase",
+            409
+        )
+
+    # Validar si el usuario ya tiene una inscripción en el mismo horario para otra clase
+    existing_enrollment_same_time = Enrollment.query.join(Class).filter(
+        Enrollment.user_id == current_user.id,
+        Class.fecha_hora == class_obj.fecha_hora,
+        Class.id != class_obj.id,
+        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+    ).first()
+
+    if existing_enrollment_same_time:
+        return api_error(
+            "Error al realizar la inscripción: usted ya posee una inscripción a otra clase el día y horario seleccionado",
+            409
+        )
+
     # 🌟 NUEVA VALIDACIÓN: Verificar si ya tiene una inscripción mensual que cubra esta clase en el mismo mes
     month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
     last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
@@ -1765,13 +1793,6 @@ def create_enrollment():
         ).filter(
             Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
         ).first()
-
-        if existing_enr:
-            return api_success({
-                "message": "Ya estás inscripto en esta clase",
-                "redirect_to_payment": True,
-                "enrollment_id": existing_enr.id,
-            }, message="Ya estás inscripto en esta clase", status_code=200)
 
         for enr in existing_monthly_enrs:
             if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):

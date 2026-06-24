@@ -94,16 +94,11 @@
           </ul>
         </template>
         
-        <div v-if="isAlreadyEnrolled" class="selection-summary" style="margin-top: 1rem; padding: 1rem; background-color: #ecfdf3; border-radius: 8px; border-left: 4px solid #12b76a;">
-          <span class="radio-text" style="font-size: 0.95rem; color: #065f46;"><strong>Ya te encuentras inscripto a esta clase</strong></span>
-          
-        </div>
-
         <div class="selection-summary" v-else-if="selectedClassFull" style="margin-top: 1rem; padding: 1rem; background-color: #fef2f2; border-radius: 8px; border-left: 4px solid #b91c1c;">
           <span class="radio-text" style="font-size: 0.95rem; color: #7f1d1d;"><strong>Clase sin cupo:</strong> podés anotarte en la lista de espera. Te notificaremos vía mail si se libera un lugar.</span>
         </div>
 
-        <div v-if="!isAlreadyEnrolled || isWaitlistAction" style="display: flex; gap: 1rem; margin-top: 1.5rem; align-items: flex-start;">
+        <div style="display: flex; gap: 1rem; margin-top: 1.5rem; align-items: flex-start;">
           <div style="flex: 1; text-align: center;">
             <button
               type="button"
@@ -142,8 +137,8 @@
           </div>
         </div>
 
-        <button
-          v-if="hasSelectedType && (!isAlreadyEnrolled || isWaitlistAction)"
+        <button 
+          v-if="hasSelectedType"
           type="button"
           class="btn-inscribe"
           style="margin-top: 1.5rem;"
