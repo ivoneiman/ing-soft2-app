@@ -1206,14 +1206,11 @@ def change_password():
     new_password = data.get("new_password", "")
     confirm_password = data.get("confirm_password", "")
 
-    if not current_password:
+    if not current_password or not new_password or not confirm_password:
         return jsonify({"error": "Debe completar todos los campos."}), 400
 
     if not user.check_password(current_password):
         return jsonify({"error": "La contrase\u00f1a actual es incorrecta."}), 400
-
-    if not new_password or not confirm_password:
-        return jsonify({"error": "Debe completar todos los campos."}), 400
 
     if new_password != confirm_password:
         return jsonify({"error": "Las contrase\u00f1as no coinciden."}), 400
