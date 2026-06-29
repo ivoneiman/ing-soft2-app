@@ -66,6 +66,14 @@ export function updateProfile({ username, apellido, telefono, dni }) {
   );
 }
 
+export function changePassword({ current_password, new_password, confirm_password }) {
+  return axios.put(
+    `${API_URL}/me/password`,
+    { current_password, new_password, confirm_password },
+    REQUEST_CONFIG
+  );
+}
+
 export function deleteAccount() {
   return axios.delete(
     `${API_URL}/me`,

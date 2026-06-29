@@ -1190,6 +1190,55 @@ def update_profile():
         logger.error(f"Error al actualizar perfil: {e}")
         return jsonify({"error": "Error al actualizar el perfil"}), 500
 
+@app.route("/api/me/password", methods=["PUT"])
+def change_password():
+    """Actualiza la contraseÃ±a del usuario actual."""
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"error": "No autenticado"}), 401
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    data = request.get_json() or {}
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
+    confirm_password = data.get("confirm_password", "")
+
+    if not current_password:
+        return jsonify({"error": "Debe completar todos los campos."}), 400
+
+    if not user.check_password(current_password):
+        return jsonify({"error": "La contrase\u00f1a actual es incorrecta."}), 400
+
+    if not new_password or not confirm_password:
+        return jsonify({"error": "Debe completar todos los campos."}), 400
+
+    if new_password != confirm_password:
+        return jsonify({"error": "Las contrase\u00f1as no coinciden."}), 400
+
+    if current_password == new_password:
+        return jsonify({"error": "La nueva contrase\u00f1a debe ser distinta de la actual."}), 400
+
+    if len(new_password) < 6:
+        return jsonify({"error": "La contrase\u00f1a debe incluir al menos 6 caracteres."}), 400
+
+    if not re.search(r"[A-Z]", new_password):
+        return jsonify({"error": "La contrase\u00f1a debe incluir al menos una letra may\u00fascula."}), 400
+
+    if not re.search(r"[^a-zA-Z0-9]", new_password):
+        return jsonify({"error": "La contrase\u00f1a debe incluir al menos un s\u00edmbolo especial."}), 400
+
+    try:
+        user.set_password(new_password)
+        db.session.commit()
+        return jsonify({"message": "La contrase\u00f1a fue actualizada correctamente."}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error al cambiar contraseÃ±a: {e}")
+        return jsonify({"error": "Error al actualizar la contraseÃ±a"}), 500
+
 @app.route("/api/me", methods=["DELETE"])
 def delete_my_account():
     """Elimina la cuenta del usuario actual."""
