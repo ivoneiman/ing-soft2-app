@@ -2215,12 +2215,20 @@ def create_class():
     profesor_id = data.get("profesor_id")
     
     try:
-        cupo_maximo = int(data.get("cupoMaximo", 20))
+        cupo_maximo_str = data.get("cupoMaximo")
+        if cupo_maximo_str is None:
+            return jsonify({"error": "El campo de cupos es obligatorio"}), 400
+        cupo_maximo = int(cupo_maximo_str)
     except (ValueError, TypeError):
-        cupo_maximo = 20
+        return jsonify({"error": "El valor de cupos debe ser un número entero"}), 400
 
     if not all([activity_id, date_str, time_str, room, profesor_id]):
         return jsonify({"error": "Todos los campos son obligatorios (actividad, fecha, hora, salón y profesor)"}), 400
+
+    if cupo_maximo > 20:
+        return jsonify({"error": "La capacidad máxima del salón es de 20 cupos"}), 400
+    if cupo_maximo < 1:
+        return jsonify({"error": "La capacidad mínima del salón es de 1 cupo"}), 400
 
     actividad = db.session.get(Actividades, activity_id)
     if not actividad:
@@ -2237,9 +2245,6 @@ def create_class():
         fecha_hora = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
     except ValueError:
         return jsonify({"error": "Fecha u hora inválida"}), 400
-
-    if fecha_hora < datetime.now():
-        return jsonify({"error": "No se pueden crear clases en un horario que ya pasó"}), 400
 
     target_str = fecha_hora.strftime("%Y-%m-%d %H:%M")
     all_classes = Class.query.all()
@@ -2265,7 +2270,7 @@ def create_class():
     
     if room_conflict:
         if room_conflict.id_actividad != actividad.id:
-            return jsonify({"error": f"El {room} ya está ocupado por la clase '{room_conflict.name}' en ese horario"}), 400
+            return jsonify({"error": f"El {room} ya está ocupado por la clase '{room_conflict.name}' en ese horario"}), 409
             
     if existing_active_class:
         return jsonify({"error": "Ya existe una clase activa para esa actividad en ese horario"}), 400

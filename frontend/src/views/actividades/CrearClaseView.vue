@@ -33,13 +33,23 @@
       <div v-if="form.activity_id" class="selection-grid">
         <section class="selection-col">
           <h2 class="step-title"><span class="step-num">2</span> Día</h2>
-          <CatalogCalendario @date-selected="handleDateSelected" :key="form.activity_id" />
+          <div class="day-grid">
+            <button
+              v-for="day in weekDays"
+              :key="day.value"
+              type="button"
+              class="day-btn"
+              :class="{ active: selectedDayOfWeek === day.value }"
+              @click="handleDaySelected(day.value)">
+              {{ day.name }}
+            </button>
+          </div>
         </section>
 
         <section class="selection-col">
           <h2 class="step-title"><span class="step-num">3</span> Horario</h2>
-          <div v-if="!selectedDate" class="info-box">
-            Seleccioná un día en el calendario.
+          <div v-if="selectedDayOfWeek === null" class="info-box">
+            Seleccioná un día de la semana.
           </div>
           <template v-else>
             <div class="slots-grid">
@@ -54,7 +64,7 @@
               </button>
             </div>
             <p v-if="availableSlots.length === 0" class="info-box">
-              No hay horarios disponibles para los {{ getWeekdayName(selectedDate).toLowerCase() }} de este mes.
+              No hay horarios disponibles para los {{ getWeekdayName(selectedDayOfWeek).toLowerCase() }} de este mes.
             </p>
           </template>
         </section>
@@ -93,26 +103,35 @@
           </select>
         </section>
 
+        <!-- Paso 6: Cupos -->
+        <section v-if="form.profesor_id" class="selection-col" style="grid-column: 1 / -1;">
+          <h2 class="step-title"><span class="step-num">6</span> Cupos de la clase</h2>
+            <input
+              type="number"
+              v-model.number="form.cupoMaximo"
+              class="profesor-select"
+              placeholder="Ej: 15"
+            />
+            <small class="input-hint">La capacidad debe estar entre 1 y 20.</small>
+        </section>
 
       </div>
 
       <!-- Resumen de creación -->
-      <section v-if="selectedRoom" class="summary">
+      <section v-if="form.profesor_id" class="summary">
         <h3>Tu selección</h3>
         <ul class="summary-list">
           <li><strong>Actividad:</strong> {{ selectedActivityName }}</li>
           <li><strong>Salón:</strong> {{ selectedRoom }}</li>
-          <li><strong>Días a crear:</strong> Todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes</li>
+          <li><strong>Días a crear:</strong> Todos los {{ getWeekdayName(selectedDayOfWeek).toLowerCase() }} de los próximos 3 meses</li>
           <li><strong>Profesor:</strong> {{ selectedProfesorName || 'Sin asignar' }}</li>
           <li><strong>Horario:</strong> {{ selectedSlot }}</li>
+          <li><strong>Cupos por clase:</strong> {{ form.cupoMaximo }}</li>
         </ul>
         <div style="text-align: center; margin-top: 1rem;">
-          <button type="button" class="btn-inscribe" :disabled="isMonthlyDisabled" @click="submitForm">
+          <button type="button" class="btn-inscribe" @click="submitForm">
             Generar Clases del Mes
           </button>
-          <small v-if="isMonthlyDisabled" style="color: #6b7280; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
-            Para crear todo el mes, seleccione un día del 1 al 7.
-          </small>
         </div>
       </section>
 
@@ -124,7 +143,6 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from "vue";
-import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
 import { getActivities, createClass, getActivityClasses } from "@/services/api.js";
 import axios from "axios";
 
@@ -135,17 +153,19 @@ const form = reactive({
   profesor_id: null,
 });
 
-const selectedDate = ref(null);
+const selectedDayOfWeek = ref(null);
 const selectedSlot = ref("");
 const selectedRoom = ref("");
 const errorMessage = ref("");
 const profesores = ref([]);
 const successMessage = ref("");
 const occupiedClasses = ref([]);
+const weekDays = [
+  { name: 'Lunes', value: 1 }, { name: 'Martes', value: 2 }, { name: 'Miércoles', value: 3 },
+  { name: 'Jueves', value: 4 }, { name: 'Viernes', value: 5 }, { name: 'Sábado', value: 6 }
+];
 
-const isMonthlyDisabled = computed(() => {
-  return selectedDate.value && selectedDate.value.getDate() > 7;
-});
+
 
 const selectedActivityName = computed(() => {
   const actividad = actividades.value.find((item) => item.id === Number(form.activity_id));
@@ -157,10 +177,10 @@ const selectedProfesorName = computed(() => {
   return profesor ? `${profesor.nombre} ${profesor.apellido}` : null;
 });
 
-const getWeekdayName = (date) => {
-  if (!date) return "";
+const getWeekdayName = (dayIndex) => {
+  if (dayIndex === null) return "";
   const days = ["Domingos", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábados"];
-  return days[date.getDay()];
+  return days[dayIndex];
 };
 
 const loadOccupiedClasses = async () => {
@@ -180,7 +200,7 @@ const loadOccupiedClasses = async () => {
 const selectActivity = (id) => {
   form.activity_id = id;
   loadOccupiedClasses();
-  selectedDate.value = null;
+  selectedDayOfWeek.value = null;
   selectedSlot.value = "";
   selectedRoom.value = "";
   successMessage.value = "";
@@ -189,18 +209,34 @@ const selectActivity = (id) => {
 
 // Calcula todas las fechas correspondientes a ese mismo día de la semana para el mes seleccionado
 const targetDatesForSelectedDay = computed(() => {
-  if (!selectedDate.value) return [];
-  const selected = new Date(selectedDate.value);
-  const month = selected.getMonth();
-  const year = selected.getFullYear();
-  const dayOfWeek = selected.getDay();
+  if (selectedDayOfWeek.value === null) return [];
+  
+  const now = new Date();
+  const dayOfWeek = selectedDayOfWeek.value;
+  const selectedHour = selectedSlot.value ? parseInt(selectedSlot.value.split(':')[0], 10) : 23;
+  const selectedMinute = selectedSlot.value ? parseInt(selectedSlot.value.split(':')[1], 10) : 59;
 
   const dates = [];
-  let iterDate = new Date(year, month, 1);
+  // Empezamos a buscar desde hoy
+  let iterDate = new Date(now);
+
+  // Avanzamos hasta encontrar el próximo día de la semana seleccionado (o hoy si coincide)
   while (iterDate.getDay() !== dayOfWeek) {
     iterDate.setDate(iterDate.getDate() + 1);
   }
-  while (iterDate.getMonth() === month) {
+
+  // Si el día encontrado es hoy y la hora seleccionada ya pasó, empezamos desde la próxima semana
+  if (iterDate.getFullYear() === now.getFullYear() &&
+      iterDate.getMonth() === now.getMonth() &&
+      iterDate.getDate() === now.getDate()) {
+    if (selectedHour < now.getHours() || (selectedHour === now.getHours() && selectedMinute <= now.getMinutes())) {
+      iterDate.setDate(iterDate.getDate() + 7);
+    }
+  }
+
+  // Recorremos los próximos 3 meses
+  const threeMonthsFromNow = new Date(now.getFullYear(), now.getMonth() + 3, now.getDate());
+  while (iterDate <= threeMonthsFromNow) {
     const y = iterDate.getFullYear();
     const m = String(iterDate.getMonth() + 1).padStart(2, '0');
     const d = String(iterDate.getDate()).padStart(2, '0');
@@ -212,7 +248,7 @@ const targetDatesForSelectedDay = computed(() => {
 
 // Identifica qué horarios ya están 100% ocupados (misma actividad o 3 salones ocupados)
 const occupiedSlotsForMonth = computed(() => {
-  if (!selectedDate.value) return [];
+  if (selectedDayOfWeek.value === null) return [];
   const targets = targetDatesForSelectedDay.value;
   const completelyOccupiedSlots = new Set();
   const allSlots = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
@@ -241,30 +277,17 @@ const occupiedSlotsForMonth = computed(() => {
 });
 
 const availableSlots = computed(() => {
-  if (!selectedDate.value) return [];
-  const weekday = selectedDate.value.getDay();
-  if (weekday === 0) return []; // Domingos sin clase
+  if (selectedDayOfWeek.value === null) return [];
   
   const allSlots = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
   const occupied = occupiedSlotsForMonth.value;
   
   const now = new Date();
-  const isToday = selectedDate.value.getFullYear() === now.getFullYear() &&
-                  selectedDate.value.getMonth() === now.getMonth() &&
-                  selectedDate.value.getDate() === now.getDate();
 
   return allSlots.filter(slot => {
     if (occupied.includes(slot)) return false;
     
     const [hour, minute] = slot.split(':').map(Number);
-
-    if (isToday) {
-      const currentHours = now.getHours();
-      const currentMinutes = now.getMinutes();
-      if (hour < currentHours || (hour === currentHours && minute <= currentMinutes)) {
-        return false;
-      }
-    }
 
     // Verificar que al menos una de las clases que se van a generar con este horario sea en el futuro
     return targetDatesForSelectedDay.value.some(fechaStr => {
@@ -303,19 +326,8 @@ onMounted(() => {
   loadProfesores();
 });
 
-const handleDateSelected = (date) => {
-  if (!date) return;
-  
-  // Ignorar clicks si el día es domingo (0)
-  if (date.getDay() === 0) {
-    errorMessage.value = "Los domingos el establecimiento se encuentra cerrado.";
-    successMessage.value = "";
-    selectedSlot.value = "";
-    selectedDate.value = null;
-    return;
-  }
-
-  selectedDate.value = date;
+const handleDaySelected = (dayOfWeek) => {
+  selectedDayOfWeek.value = dayOfWeek;
   selectedSlot.value = "";
   selectedRoom.value = "";
   errorMessage.value = "";
@@ -330,7 +342,7 @@ const onSlotSelected = (slot) => {
 };
 
 const isRoomAvailable = (room) => {
-  if (!selectedDate.value || !selectedSlot.value) return false;
+  if (selectedDayOfWeek.value === null || !selectedSlot.value) return false;
   const targets = targetDatesForSelectedDay.value;
 
   return !occupiedClasses.value.some(c => 
@@ -348,7 +360,7 @@ const onRoomSelected = (room) => {
 };
 
 const isProfesorAvailable = (profesorId) => {
-  if (!selectedDate.value || !selectedSlot.value) return true; // Disponible si no hay fecha/hora
+  if (selectedDayOfWeek.value === null || !selectedSlot.value) return true; // Disponible si no hay fecha/hora
   const targets = targetDatesForSelectedDay.value;
 
   return !occupiedClasses.value.some(c => 
@@ -365,7 +377,7 @@ const submitForm = async () => {
 
   const missing = [];
   if (!form.activity_id) missing.push("actividad");
-  if (!selectedDate.value) missing.push("fecha");
+  if (selectedDayOfWeek.value === null) missing.push("día");
   if (!selectedSlot.value) missing.push("hora");
   if (!selectedRoom.value) missing.push("salón");
   if (!form.profesor_id) missing.push("profesor");
@@ -375,8 +387,13 @@ const submitForm = async () => {
     return;
   }
 
-  if (selectedDate.value.getDate() > 7) {
-    errorMessage.value = "Para crear las clases de todo el mes, debes seleccionar un día de la primera semana (del 1 al 7).";
+  if (form.cupoMaximo > 20) {
+    errorMessage.value = "La capacidad máxima del salón es de 20 cupos";
+    return;
+  }
+
+  if (form.cupoMaximo < 1) {
+    errorMessage.value = "La capacidad mínima del salón es de 1 cupo";
     return;
   }
 
@@ -506,6 +523,25 @@ const submitForm = async () => {
   box-shadow: 0 2px 8px rgba(87, 44, 87, 0.2);
 }
 
+.day-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+}
+
+.day-btn {
+  padding: 1rem 0.75rem;
+  transition: all 0.25s ease;
+}
+
+.day-btn.active {
+  border-color: #9f5f91;
+  background-color: #f5e6f5;
+  color: #572c57;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(87, 44, 87, 0.2);
+}
+
 .selection-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -587,6 +623,13 @@ const submitForm = async () => {
 .summary-list strong {
   color: #572c57;
   font-weight: 700;
+}
+
+.input-hint {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: #6b7280;
 }
 
 .profesor-select {
@@ -673,6 +716,10 @@ const submitForm = async () => {
     grid-template-columns: 1fr;
   }
   
+  .day-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
   .slots-grid {
     grid-template-columns: 1fr;
   }
