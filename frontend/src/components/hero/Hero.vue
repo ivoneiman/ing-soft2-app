@@ -27,14 +27,13 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
-import { roleHelpers } from '../../utils/roleHelpers'
 import { authStore } from '../../services/authStore'
 
 const router = useRouter()
 
 // Función para manejar el click del botón ASOCIATE
 const handleAsociateClick = () => {
-  if (roleHelpers.isClient() || roleHelpers.isEmployee() || roleHelpers.isAdmin()) {
+  if (authStore.isLoggedIn) {
     // Si está autenticado, ir a editar perfil
     router.push('/configuracion')
   } else {
@@ -45,10 +44,10 @@ const handleAsociateClick = () => {
 
 // Función para manejar el click del botón ACTIVIDADES
 const handleActividadesClick = () => {
-  if (roleHelpers.isClient()) {
+  if (authStore.isClient) {
     // Si es cliente, ir a actividades
     router.push('/actividades')
-  } else if (roleHelpers.isEmployee() || roleHelpers.isAdmin()) {
+  } else if (authStore.isEmployee || authStore.isAdmin) {
     // Si es employee o admin, ir a dashboard
     router.push('/dashboard')
   } else {

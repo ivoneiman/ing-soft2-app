@@ -76,6 +76,24 @@
             </button>
           </div>
         </section>
+
+        <!-- Paso 5: Profesor -->
+        <section v-if="selectedRoom" class="selection-col" style="grid-column: 1 / -1;">
+          <h2 class="step-title"><span class="step-num">5</span> Profesor</h2>
+          <select v-model="form.profesor_id" class="profesor-select">
+            <option :value="null" disabled>Seleccione un profesor</option>
+            <option 
+              v-for="profesor in profesores" 
+              :key="profesor.id" 
+              :value="profesor.id"
+              :disabled="!isProfesorAvailable(profesor.id)"
+            >
+              {{ profesor.nombre }} {{ profesor.apellido }} {{ !isProfesorAvailable(profesor.id) ? '(Ocupado)' : '' }}
+            </option>
+          </select>
+        </section>
+
+
       </div>
 
       <!-- Resumen de creación -->
@@ -85,6 +103,7 @@
           <li><strong>Actividad:</strong> {{ selectedActivityName }}</li>
           <li><strong>Salón:</strong> {{ selectedRoom }}</li>
           <li><strong>Días a crear:</strong> Todos los {{ getWeekdayName(selectedDate).toLowerCase() }} del mes</li>
+          <li><strong>Profesor:</strong> {{ selectedProfesorName || 'Sin asignar' }}</li>
           <li><strong>Horario:</strong> {{ selectedSlot }}</li>
         </ul>
         <div style="text-align: center; margin-top: 1rem;">
@@ -113,12 +132,14 @@ const actividades = ref([]);
 const form = reactive({
   activity_id: "",
   cupoMaximo: 20,
+  profesor_id: null,
 });
 
 const selectedDate = ref(null);
 const selectedSlot = ref("");
 const selectedRoom = ref("");
 const errorMessage = ref("");
+const profesores = ref([]);
 const successMessage = ref("");
 const occupiedClasses = ref([]);
 
@@ -129,6 +150,11 @@ const isMonthlyDisabled = computed(() => {
 const selectedActivityName = computed(() => {
   const actividad = actividades.value.find((item) => item.id === Number(form.activity_id));
   return actividad ? actividad.name : "";
+});
+
+const selectedProfesorName = computed(() => {
+  const profesor = profesores.value.find(p => p.id === form.profesor_id);
+  return profesor ? `${profesor.nombre} ${profesor.apellido}` : null;
 });
 
 const getWeekdayName = (date) => {
@@ -261,8 +287,20 @@ const loadActivities = async () => {
   }
 };
 
+const loadProfesores = async () => {
+  try {
+    const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+    const response = await axios.get(`${baseURL}/profesores`, { withCredentials: true });
+    profesores.value = response.data.profesores || [];
+  } catch (error) {
+    console.error("Error cargando profesores:", error);
+    profesores.value = [];
+  }
+};
+
 onMounted(() => {
   loadActivities();
+  loadProfesores();
 });
 
 const handleDateSelected = (date) => {
@@ -309,6 +347,18 @@ const onRoomSelected = (room) => {
   errorMessage.value = "";
 };
 
+const isProfesorAvailable = (profesorId) => {
+  if (!selectedDate.value || !selectedSlot.value) return true; // Disponible si no hay fecha/hora
+  const targets = targetDatesForSelectedDay.value;
+
+  return !occupiedClasses.value.some(c => 
+    c.profesor_id === profesorId &&
+    c.fecha_hora && 
+    targets.some(t => c.fecha_hora.startsWith(t)) && 
+    c.time === selectedSlot.value
+  );
+};
+
 const submitForm = async () => {
   errorMessage.value = "";
   successMessage.value = "";
@@ -318,6 +368,7 @@ const submitForm = async () => {
   if (!selectedDate.value) missing.push("fecha");
   if (!selectedSlot.value) missing.push("hora");
   if (!selectedRoom.value) missing.push("salón");
+  if (!form.profesor_id) missing.push("profesor");
 
   if (missing.length > 0) {
     errorMessage.value = `Por favor seleccione ${missing.join(", ")}.`;
@@ -353,16 +404,20 @@ const submitForm = async () => {
           time: selectedSlot.value,
           room: selectedRoom.value,
           cupoMaximo: form.cupoMaximo,
+          profesor_id: form.profesor_id,
         }, { withCredentials: true });
         createdDates.push(fechaStr);
       } catch (err) {
-        console.error("Fallo al crear la clase para la fecha:", fechaStr, err);
+        // Si una de las fechas falla (ej. conflicto de profesor), mostramos el error y paramos.
+        const specificError = err.response?.data?.error;
+        if (specificError) {
+          errorMessage.value = specificError;
+          return; // Detiene el bucle
+        }
       }
     }
 
     successMessage.value = createdDates.length > 0 ? `Clases generadas con éxito para las fechas: ${createdDates.join(' | ')}.` : 'No se crearon clases.';
-    selectedSlot.value = '';
-    selectedRoom.value = '';
     await loadOccupiedClasses();
   } catch (error) {
     errorMessage.value = error.response?.data?.error || "Error general al crear las clases.";
@@ -444,10 +499,11 @@ const submitForm = async () => {
 }
 
 .activity-btn.active {
-  border-color: #f6ea98;
-  background: #f6ea98;
-  color: #9f5f91;
-  box-shadow: 0 4px 15px rgba(87, 44, 87, 0.25);
+  border-color: #9f5f91;
+  background-color: #f5e6f5;
+  color: #572c57;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(87, 44, 87, 0.2);
 }
 
 .selection-grid {
@@ -479,9 +535,11 @@ const submitForm = async () => {
 }
 
 .slot-btn.active {
-  border-color: #f6ea98;
-  background: #f6ea98;
-  color: #9f5f91;
+  border-color: #9f5f91;
+  background-color: #f5e6f5;
+  color: #572c57;
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(87, 44, 87, 0.2);
 }
 
 .slot-time {
@@ -503,9 +561,9 @@ const submitForm = async () => {
   margin-top: 2rem;
   padding: 1.75rem;
   border-radius: 16px;
-  background: linear-gradient(135deg, #f5e6f5 0%, #ede5f5 100%);
-  border: 2px solid #9f5f91;
-  box-shadow: 0 4px 15px rgba(87, 44, 87, 0.1);
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
 .summary h3 {
@@ -529,6 +587,16 @@ const submitForm = async () => {
 .summary-list strong {
   color: #572c57;
   font-weight: 700;
+}
+
+.profesor-select {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d0c0d0;
+  border-radius: 8px;
+  font-size: 1rem;
+  background-color: white;
+  color: #333;
 }
 
 .btn-inscribe {

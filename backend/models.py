@@ -134,15 +134,17 @@ class Class(db.Model):
     cupoMaximo = db.Column(db.Integer, nullable=False, default=20)
     id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=False)
     estado = db.Column(db.String(20), default=STATUS_ACTIVE, nullable=False)
+    profesor_id = db.Column(db.Integer, db.ForeignKey("profesores.id"), nullable=False)
     descuento = db.Column(db.Integer, nullable=False, default=0) # Porcentaje de descuento (0, 40, 70)
     room = db.Column(db.String(50), nullable=True)
 
     # Relación con la actividad (necesaria para el catálogo y respuestas limpias)
     actividad = db.relationship("Actividades", backref="classes")
-
+    profesor = db.relationship("Profesor", backref="classes")
     # Relaciones con inscripciones y asistencias
     enrollments = db.relationship("Enrollment", back_populates="class_", cascade="all, delete-orphan")
     attendances = db.relationship("Attendance", back_populates="class_", cascade="all, delete-orphan")
+    profesor = db.relationship("Profesor", backref="classes")
     payments = db.relationship("Payment", back_populates="class_")
 
     # Identificador único unificado para el try/except de app.py de tu compañero
@@ -160,6 +162,7 @@ class Class(db.Model):
             "cupoMaximo": self.cupoMaximo,
             "actividad_name": self.actividad.name if self.actividad else None,
             "estado": self.estado,
+            "profesor_id": self.profesor_id,
             "descuento": self.descuento,
             "room": self.room,
         }
@@ -286,6 +289,19 @@ class Credit(db.Model):
 
 Credito = Credit
 
+class Profesor(db.Model):
+    """Representa a un profesor que puede ser asignado a clases."""
+    __tablename__ = "profesores"
+    id = db.Column(db.Integer, primary_key=True)
+    nombre = db.Column(db.String(80), nullable=False)
+    apellido = db.Column(db.String(80), nullable=False)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "nombre": self.nombre,
+            "apellido": self.apellido,
+        }
 
 class Notification(db.Model):
     """Notificación simple para avisos visibles en la cuenta del usuario."""

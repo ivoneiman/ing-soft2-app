@@ -429,27 +429,27 @@ def main():
         )
 
         # COMENTADAS TODAS LAS CLASES EXCEPTO LA DE CUPO 1/1
-        # class1 = create_test_class(
-        #     "Yoga",
-        #     at_app_time(today + timedelta(days=1), 9),
-        #     actividad1,
-        #     legacy_names=["Yoga Mañana"],
-        # )
-        class1 = None
-        # class2 = create_test_class(
-        #     "Funcional",
-        #     at_app_time(today + timedelta(days=2), 14),
-        #     actividad2,
-        #     legacy_names=["Funcional Tarde"],
-        # )
-        class2 = None
-        # class3 = create_test_class(
-        #     "Pilates",
-        #     at_app_time(today + timedelta(days=3), 20),
-        #     actividad3,
-        #     legacy_names=["Pilates Noche"],
-        # )
-        class3 = None
+        class1 = create_test_class(
+            "Yoga",
+            at_app_time(today + timedelta(days=1), 9),
+            actividad1,
+            legacy_names=["Yoga Mañana"],
+        )
+        
+        class2 = create_test_class(
+            "Funcional",
+            at_app_time(today + timedelta(days=2), 14),
+            actividad2,
+            legacy_names=["Funcional Tarde"],
+        )
+        
+        class3 = create_test_class(
+            "Pilates",
+            at_app_time(today + timedelta(days=3), 20),
+            actividad3,
+            legacy_names=["Pilates Noche"],
+        )
+        
         # create_test_class(
         #     "Yoga",
         #     at_app_time(today - timedelta(days=1), 9),

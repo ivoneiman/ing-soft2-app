@@ -28,6 +28,8 @@ try:
     from models import db, User
     # Importar todos los modelos requeridos
     from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry
+    # Importar todos los modelos requeridos, incluyendo Profesor
+    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry, Profesor
     from constants import (
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
@@ -61,9 +63,7 @@ except ModuleNotFoundError:
     )
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
-    # Importar todos los modelos requeridos
-    from .models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry
-    from .constants import (
+    from .constants import ( # noqa: F401
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
@@ -89,6 +89,20 @@ except ModuleNotFoundError:
     from .services.api_response import api_error, api_success
 
 # Carga variables de entorno desde .env
+
+# Mapeos para nombres de meses y días de la semana en español
+spanish_month_names = {
+    1: "Enero", 2: "Febrero", 3: "Marzo", 4: "Abril", 5: "Mayo", 6: "Junio",
+    7: "Julio", 8: "Agosto", 9: "Septiembre", 10: "Octubre", 11: "Noviembre", 12: "Diciembre"
+}
+spanish_weekday_names = {
+    0: "Lunes", 1: "Martes", 2: "Miércoles", 3: "Jueves", 4: "Viernes", 5: "Sábado", 6: "Domingo"
+}
+
+# Orden de los días de la semana para la clasificación
+weekday_order = list(spanish_weekday_names.values())
+month_order = list(spanish_month_names.values())
+
 load_dotenv()
 
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
@@ -189,6 +203,9 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE classes ADD COLUMN descuento INTEGER DEFAULT 0"))
         if "room" not in columns:
             db.session.execute(text("ALTER TABLE classes ADD COLUMN room VARCHAR(50)"))
+        if "profesor_id" not in columns:
+            db.session.execute(text("ALTER TABLE classes ADD COLUMN profesor_id INTEGER"))
+
         db.session.commit()
 
     if "payments" in inspector.get_table_names():
@@ -392,6 +409,7 @@ def _get_authenticated_user():
     user_id = session.get("user_id")
     if not user_id:
         return None
+    return db.session.get(User, user_id)
     return User.query.get(user_id)
 
 
@@ -1069,6 +1087,7 @@ def login():
             code = str(random.randint(0, 999999))
             user.admin_login_code = code
             user.admin_login_code_expiration = datetime.utcnow() + timedelta(minutes=5)
+            user.admin_login_code_expiration = datetime.now(ZoneInfo("UTC")) + timedelta(minutes=5)
             db.session.commit()
 
             # Enviar el código por email
@@ -1106,7 +1125,7 @@ def admin_login_verify():
     if (
         not user.admin_login_code
         or user.admin_login_code != code
-        or datetime.utcnow() > user.admin_login_code_expiration
+        or datetime.now(ZoneInfo("UTC")) > user.admin_login_code_expiration
     ):
         return jsonify({"error": "Código inválido o expirado"}), 401
 
@@ -1136,6 +1155,7 @@ def me():
         return jsonify({"error": "No autenticado"}), 401
 
     user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
 
@@ -1159,6 +1179,7 @@ def update_profile():
         return jsonify({"error": "No autenticado"}), 401
 
     user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
 
@@ -1198,6 +1219,7 @@ def change_password():
         return jsonify({"error": "No autenticado"}), 401
 
     user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
 
@@ -1244,6 +1266,7 @@ def delete_my_account():
         return jsonify({"error": "No autenticado"}), 401
 
     user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
 
@@ -1317,6 +1340,7 @@ def get_user_details(user_id):
         return jsonify({"error": "No tienes permisos"}), 403
 
     user = User.query.get(user_id)
+    user = db.session.get(User, user_id)
     if not user:
         return jsonify({"error": "Usuario no encontrado"}), 404
 
@@ -1392,6 +1416,7 @@ def create_user():
         return jsonify({"error": "No autenticado"}), 401
 
     current_user = User.query.get(user_id)
+    current_user = db.session.get(User, user_id)
     if not current_user or current_user.role not in ["admin", "employee"]:
         return jsonify({"error": "No tienes permisos para crear usuarios"}), 403
 
@@ -2325,6 +2350,169 @@ def my_notifications():
     return api_success({"notifications": [notification.to_dict() for notification in notifications]}, status_code=200)
 
 
+@app.route("/api/profesores", methods=["POST"])
+def create_profesor():
+    """Crea un nuevo profesor."""
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para crear profesores"}), 403
+
+    data = request.get_json() or {}
+    nombre = data.get("nombre", "").strip()
+    apellido = data.get("apellido", "").strip()
+
+    # Escenario 2: Campos incompletos
+    if not nombre or not apellido:
+        return jsonify({"error": "Por favor, complete todos los campos."}), 400
+
+    # Escenario 3: Caracteres inválidos
+    if not nombre.replace(" ", "").isalpha():
+        return jsonify({"error": "El formato del nombre es inválido. Solo debe contener letras."}), 400
+    if not apellido.replace(" ", "").isalpha():
+        return jsonify({"error": "El formato del apellido es inválido. Solo debe contener letras."}), 400
+
+    # Evitar duplicados
+    if Profesor.query.filter_by(nombre=nombre, apellido=apellido).first():
+        return jsonify({"error": "Este profesor ya existe."}), 409
+
+    new_profesor = Profesor(nombre=nombre, apellido=apellido)
+    db.session.add(new_profesor)
+    db.session.commit()
+
+    # Escenario 1: Creación exitosa
+    return jsonify({"message": "Profesor cargado exitosamente", "profesor": new_profesor.to_dict()}), 201
+
+@app.route("/api/profesores", methods=["GET"])
+def get_profesores():
+    """Devuelve una lista de todos los profesores."""
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para ver los profesores"}), 403
+
+    profesores_query = Profesor.query.order_by(Profesor.nombre, Profesor.apellido).all()
+    
+    profesores_data = []
+    for p in profesores_query:
+        profesor_dict = p.to_dict()
+        # Buscar clases asignadas a este profesor
+        # Order by fecha_hora for consistent grouping and display
+        clases_asignadas = Class.query.filter_by(profesor_id=p.id, estado=Class.STATUS_ACTIVE).order_by(Class.fecha_hora.asc()).all()
+        
+        # Prepare detailed class data for frontend flexibility
+        detailed_classes = []
+        for c in clases_asignadas:
+            if c.fecha_hora:
+                detailed_classes.append({
+                    "id": c.id,
+                    "activity_name": c.actividad.name if c.actividad else "Actividad Desconocida",
+                    "fecha_hora": c.fecha_hora.isoformat(),
+                    "time": c.fecha_hora.strftime("%H:%M"),
+                    "month_name": spanish_month_names.get(c.fecha_hora.month, "Desconocido"),
+                    "weekday_name": spanish_weekday_names.get(c.fecha_hora.weekday(), "Desconocido"),
+                })
+        profesor_dict['clases_detalladas'] = detailed_classes
+
+        # Group classes for the summarized string format
+        # Group by month_name, then activity_name, then weekday_name
+        grouped_classes_for_summary = {}
+        for c_detail in detailed_classes:
+            activity_name = c_detail["activity_name"]
+            month_name = c_detail["month_name"]
+            weekday_name = c_detail["weekday_name"]
+            time_only = c_detail["time"]
+            
+            if month_name not in grouped_classes_for_summary:
+                grouped_classes_for_summary[month_name] = {}
+            if activity_name not in grouped_classes_for_summary[month_name]:
+                grouped_classes_for_summary[month_name][activity_name] = {}
+            if weekday_name not in grouped_classes_for_summary[month_name][activity_name]:
+                grouped_classes_for_summary[month_name][activity_name][weekday_name] = []
+            
+            grouped_classes_for_summary[month_name][activity_name][weekday_name].append(time_only)
+        
+        formatted_summary_classes = []
+        # Sort keys for consistent output
+        # Sort months by their order in spanish_month_names
+        for month_name in sorted(grouped_classes_for_summary.keys(), key=lambda m: month_order.index(m) if m in month_order else len(month_order)):
+            activities = grouped_classes_for_summary[month_name]
+            for activity_name in sorted(activities.keys()):
+                weekdays = activities[activity_name]
+                # Sort weekdays by their order
+                for weekday_name in sorted(weekdays.keys(), key=lambda w: weekday_order.index(w) if w in weekday_order else len(weekday_order)):
+                    unique_sorted_times = sorted(list(set(weekdays[weekday_name])))
+                    # Format times to remove leading zero for hour if it's "0X:YY"
+                    formatted_times_no_leading_zero = [f"{int(t.split(':')[0])}:{t.split(':')[1]}" for t in unique_sorted_times]
+                    formatted_summary_classes.append(
+                        f"• <strong>{activity_name}</strong> - {month_name} - {weekday_name}, {', '.join(formatted_times_no_leading_zero)}hs"
+                    )
+        
+        profesor_dict['clases_resumen'] = formatted_summary_classes
+        profesor_dict['clases'] = [ # Keeping original 'clases' for backward compatibility if needed
+            {
+                "id": c.id,
+                "nombre": c.actividad.name if c.actividad else c.name, # Changed to activity name
+                "fecha_hora": c.fecha_hora.isoformat() if c.fecha_hora else None
+            } for c in clases_asignadas
+        ]
+        profesores_data.append(profesor_dict)
+    
+    return jsonify({
+        "profesores": profesores_data
+    }), 200
+
+@app.route("/api/profesores/<int:profesor_id>", methods=["PUT"])
+def update_profesor(profesor_id):
+    """Actualiza un profesor existente."""
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para editar profesores"}), 403
+
+    profesor = db.session.get(Profesor, profesor_id)
+    if not profesor:
+        return jsonify({"error": "Profesor no encontrado"}), 404
+
+    data = request.get_json() or {}
+    nombre = data.get("nombre", "").strip()
+    apellido = data.get("apellido", "").strip()
+
+    # Escenario 2: Campos vacíos
+    if not nombre or not apellido:
+        return jsonify({"error": "Por favor, complete todos los campos obligatorios."}), 400
+
+    # Escenario 3: Caracteres inválidos
+    if not nombre.replace(" ", "").isalpha():
+        return jsonify({"error": "El formato del nombre no cumple con los requisitos. Solo debe contener letras."}), 400
+    if not apellido.replace(" ", "").isalpha():
+        return jsonify({"error": "El formato del apellido no cumple con los requisitos. Solo debe contener letras."}), 400
+
+    profesor.nombre = nombre
+    profesor.apellido = apellido
+    db.session.commit()
+
+    return jsonify({"message": "Profesor actualizado exitosamente", "profesor": profesor.to_dict()}), 200
+
+@app.route("/api/profesores/<int:profesor_id>", methods=["DELETE"])
+def delete_profesor(profesor_id):
+    """Elimina un profesor."""
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para eliminar profesores"}), 403
+
+    profesor = db.session.get(Profesor, profesor_id)
+    if not profesor:
+        return jsonify({"error": "Profesor no encontrado"}), 404
+
+    # Validar si el profesor tiene clases asignadas
+    if profesor.classes:
+        # Usamos un código de estado 409 (Conflicto) para indicar que la acción no se puede completar.
+        return jsonify({"error": "No se puede eliminar al profesor porque tiene clases asignadas"}), 409
+
+    db.session.delete(profesor)
+    db.session.commit()
+
+    return jsonify({"message": "Profesor eliminado exitosamente"}), 200
+
+
 @app.route("/api/classes", methods=["POST"])
 def create_class():
     data = request.get_json() or {}
@@ -2332,18 +2520,26 @@ def create_class():
     date_str = data.get("date")
     time_str = data.get("time")
     room = data.get("room")
+    profesor_id = data.get("profesor_id")
     
     try:
         cupo_maximo = int(data.get("cupoMaximo", 20))
     except (ValueError, TypeError):
         cupo_maximo = 20
 
-    if not activity_id or not date_str or not time_str or not room:
-        return jsonify({"error": "Todos los campos son obligatorios (incluyendo el salón)"}), 400
+    if not all([activity_id, date_str, time_str, room, profesor_id]):
+        return jsonify({"error": "Todos los campos son obligatorios (actividad, fecha, hora, salón y profesor)"}), 400
 
     actividad = db.session.get(Actividades, activity_id)
     if not actividad:
         return jsonify({"error": "Actividad no encontrada"}), 404
+
+    # Validar si el profesor ya tiene una clase en ese horario
+    existing_class_for_profesor = Class.query.filter_by(
+        profesor_id=profesor_id, fecha_hora=datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    ).filter(Class.estado == Class.STATUS_ACTIVE).first()
+    if existing_class_for_profesor:
+        return jsonify({"error": "El profesor seleccionado ya tiene otra clase asignada en ese horario."}), 409
 
     try:
         fecha_hora = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
@@ -2386,6 +2582,8 @@ def create_class():
         class_to_reactivate.estado = Class.STATUS_ACTIVE
         class_to_reactivate.cupoMaximo = cupo_maximo
         
+        # 🌟 CORRECCIÓN: Asignar el profesor también al reactivar
+        class_to_reactivate.profesor_id = profesor_id
         try:
             db.session.commit()
             db.session.execute(text("UPDATE classes SET room = :room WHERE id = :id"), {"room": room, "id": class_to_reactivate.id})
@@ -2403,17 +2601,22 @@ def create_class():
         except Exception as err:
             db.session.rollback()
             return jsonify({"error": f"Error interno al reactivar la clase: {str(err)}"}), 500
-
-    new_class = Class(name=actividad.name, fecha_hora=fecha_hora, id_actividad=actividad.id, cupoMaximo=cupo_maximo)
+    
+    new_class = Class(
+        name=actividad.name,
+        fecha_hora=fecha_hora,
+        id_actividad=actividad.id,
+        cupoMaximo=cupo_maximo,
+        profesor_id=profesor_id
+    )
     db.session.add(new_class)
     
     try:
-        db.session.commit()
+        db.session.flush() # Asigna un ID a new_class sin hacer commit
         db.session.execute(text("UPDATE classes SET room = :room WHERE id = :id"), {"room": room, "id": new_class.id})
         db.session.commit()
     except IntegrityError as err:
         db.session.rollback()
-        return jsonify({"error": "Ya existe una clase para esa actividad en ese horario"}), 400
     except Exception as err:
         db.session.rollback()
         return jsonify({"error": f"Error interno: {str(err)}"}), 500

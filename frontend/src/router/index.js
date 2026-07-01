@@ -21,17 +21,19 @@ const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
-const AttendanceClassesView = () => import("../views/actividades/AttendanceClassesView.vue");
-const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
-const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue"); 
-const ReporteUsuariosView = () => import("../views/reportes/ReporteUsuariosView.vue");
 const ReportePagosView = () => import("../views/reportes/ReportePagosView.vue");
 const MisClasesView = () => import("../views/actividades/MisClasesView.vue");
-
+// Vistas de Administración de Profesores
+const ProfesoresAdminView = () => import("../views/admin/ProfesoresAdminView.vue");
+const ListarProfesoresView = () => import("../views/admin/ListarProfesoresView.vue");
+const CrearProfesorView = () => import("../views/admin/CrearProfesorView.vue");
+const CrearClaseView = () => import("../views/actividades/CrearClaseView.vue");
+ 
 // 🌟 CORRECCIÓN 1: El archivo físico se llama index.vue en tu carpeta dashboard
 const DashboardView = () => import("../views/dashboard/DashboardView.vue"); 
 
 const routes = [
+  // 🔵 Layout principal (con navbar)
   // 🔵 Layout principal (con navbar)
   {
     path: "/",
@@ -80,12 +82,6 @@ const routes = [
         meta: { requiresAuth: true, requiresAdmin: true }
       },
       {
-        path: "reportes/usuarios",
-        name: "ReporteUsuarios",
-        component: ReporteUsuariosView,
-        meta: { requiresAuth: true, requiresAdmin: true }
-      },
-      {
         path: "reportes/pagos",
         name: "ReportePagos",
         component: ReportePagosView,
@@ -98,27 +94,33 @@ const routes = [
         meta: { requiresAuth: true, requiresClient: true }
       },
       {
-        path: "pasar-asistencia",
-        name: "PasarAsistencia",
-        component: AttendanceClassesView,
-        meta: { requiresAuth: true, requiresEmployee: true }
-      },
-      {
-        path: "scan-qr/:classId",
-        name: "ScanQr",
-        component: ScanQrView,
-        meta: { requiresAuth: true, requiresEmployee: true }
-      },
-      {
-        path: "crear-clase",
-        name: "CrearClase",
-        component: CrearClaseView,
+        path: "/admin/profesores",
+        name: "AdminProfesores",
+        component: ProfesoresAdminView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
       },
       {
-        path: "crear-usuario",
-        name: "CrearUsuario",
-        component: CrearUsuarioView,
+        path: "/admin/profesores/listar",
+        name: "ListarProfesores",
+        component: ListarProfesoresView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "/admin/profesores/crear",
+        name: "CrearProfesor",
+        component: CrearProfesorView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "/admin/profesores/editar/:id",
+        name: "EditarProfesor",
+        component: () => import("../views/admin/EditarProfesorView.vue"),
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "/admin/clases/crear",
+        name: "CrearClase",
+        component: CrearClaseView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
       },
       {
