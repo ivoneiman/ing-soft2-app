@@ -67,17 +67,20 @@ export function updateProfile({ username, apellido, telefono, dni }) {
 }
 
 export function changePassword({ current_password, new_password, confirm_password }) {
-  return axios.put(
-    `${API_URL}/me/password`,
+  return axios.post(
+    `${API_URL}/me/change-password`,
     { current_password, new_password, confirm_password },
     REQUEST_CONFIG
   );
 }
 
-export function deleteAccount() {
+export function deleteAccount({ password }) {
   return axios.delete(
     `${API_URL}/me`,
-    REQUEST_CONFIG
+    {
+      ...REQUEST_CONFIG,
+      data: { password } // 💡 Aquí se agrega la contraseña al cuerpo de la petición
+    }
   );
 }
 

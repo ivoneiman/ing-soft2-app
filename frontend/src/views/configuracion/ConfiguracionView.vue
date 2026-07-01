@@ -142,6 +142,18 @@
     <!-- Modal de confirmación de eliminación -->
     <div v-if="showDeleteConfirm" class="delete-confirm-overlay">
       <div class="confirm-box">
+        <div v-if="deleteErrorMessage" class="alert alert-error" style="margin-bottom: 1rem;">
+          {{ deleteErrorMessage }}
+        </div>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="delete-password" style="text-align: left;">Para confirmar, ingrese su contraseña</label>
+          <input
+            id="delete-password"
+            v-model="deletePassword"
+            type="password"
+            autocomplete="current-password"
+          />
+        </div>
         <p>¿Está seguro que desea eliminar su cuenta? Esta acción no se puede deshacer.</p>
         <div class="buttons">
           <button @click="confirmDelete" class="btn-danger" :disabled="isDeleting">
@@ -185,6 +197,7 @@ const passwordErrorMessage = ref('')
 const deleteErrorMessage = ref('')
 const showDeleteConfirm = ref(false)
 const isDeleting = ref(false)
+const deletePassword = ref('')
 
 // Cargar datos del usuario actual
 onMounted(async () => {
@@ -273,19 +286,25 @@ const handleChangePassword = async () => {
 }
 
 const openDeleteConfirm = () => {
+  deletePassword.value = ''
   deleteErrorMessage.value = ''
   showDeleteConfirm.value = true
 }
 
 const cancelDelete = () => {
+  deletePassword.value = ''
+  deleteErrorMessage.value = ''
   showDeleteConfirm.value = false
 }
 
 const confirmDelete = async () => {
+  if (!deletePassword.value) {
+    deleteErrorMessage.value = 'Por favor, ingrese su contraseña para confirmar.'
+    return
+  }
   isDeleting.value = true
   try {
-    // Ejecuta la función del endpoint para eliminar la cuenta y cierra sesión
-    await deleteAccount()
+    await deleteAccount({ password: deletePassword.value })
     await logout()
     showDeleteConfirm.value = false
     router.push('/login')
