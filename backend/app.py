@@ -1200,6 +1200,12 @@ def change_password():
     if len(new_password) < 6:
         return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres"}), 400
 
+    if not re.search(r'[A-Z]', new_password):
+        return jsonify({"error": "La nueva contraseña debe incluir al menos una letra mayúscula"}), 400
+
+    if not re.search(r'[^a-zA-Z0-9]', new_password):
+        return jsonify({"error": "La nueva contraseña debe incluir al menos un símbolo especial (?, !, \", #, etc.)"}), 400
+
     user.set_password(new_password)
 
     try:
