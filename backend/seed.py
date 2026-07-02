@@ -239,6 +239,17 @@ def ensure_enrollment(user, class_obj, estado=Enrollment.STATUS_PENDING_PAYMENT,
     print(f"   [OK] Enrollment creado: {user.email} -> {class_obj.name} ({estado})")
     return enrollment
 
+"clases para probar reporte de asistencia"
+def ensure_attendance(user, class_obj):
+    """Crea un registro de asistencia si no existe."""
+    if Attendance.query.filter_by(user_id=user.id, class_id=class_obj.id).first():
+        print(f"   [SKIP] Asistencia para {user.email} en {class_obj.name} ya existe, omitiendo...")
+        return
+
+    attendance = Attendance(user_id=user.id, class_id=class_obj.id)
+    db.session.add(attendance)
+    print(f"   [OK] Asistencia creada: {user.email} -> {class_obj.name}")
+
 
 def ensure_payment(enrollment, status, created_at=None):
     """Crea o actualiza el pago de ejemplo asociado a una inscripcion."""
@@ -627,6 +638,67 @@ def main():
             cupo_maximo=20,
             legacy_names=["Yoga Julio 30"]
         )
+
+        print("   Creando clases específicas para el 29 de Junio de 2026...")
+        # Clase de Yoga con 1 asistente
+        yoga_junio_29 = create_test_class(
+            "Yoga - 29 Junio 2026",
+            datetime(2026, 6, 29, 10, 0),
+            actividad1,
+            profesor_test.id,
+            cupo_maximo=20,
+            legacy_names=["Yoga 29/06/2026"]
+        )
+
+        # Clase de Pilates sin asistentes
+        pilates_junio_29 = create_test_class(
+            "Pilates - 29 Junio 2026",
+            datetime(2026, 6, 29, 18, 0),
+            actividad3,
+            profesor_test.id,
+            cupo_maximo=20,
+            legacy_names=["Pilates 29/06/2026"]
+        )
+
+        # Clase de Funcional con 1 inscripto que no asistió
+        funcional_junio_29 = create_test_class(
+            "Funcional - 29 Junio 2026",
+            datetime(2026, 6, 29, 15, 0),
+            actividad2, # Funcional
+            profesor_test.id,
+            cupo_maximo=20,
+            legacy_names=["Funcional 29/06/2026"]
+        )
+
+        # Inscribir 3 usuarios a la clase de Yoga, pero solo 1 con asistencia
+        print("   Inscribiendo 3 usuarios a la clase de Yoga del 29/06...")
+        # 1. Usuario que SÍ asiste
+        yoga_enrollment = ensure_enrollment(client, yoga_junio_29, estado=Enrollment.STATUS_PAID)
+        ensure_payment(yoga_enrollment, Payment.STATUS_APPROVED, created_at=datetime(2026, 6, 28))
+        ensure_attendance(client, yoga_junio_29)
+
+        # 2. Usuarios que NO asisten
+        no_asiste_1 = create_test_user(
+            "NoAsiste1", "Yoga", "noasiste1@test.com", "client123", "55555501", "221 5555501"
+        )
+        no_asiste_2 = create_test_user(
+            "NoAsiste2", "Yoga", "noasiste2@test.com", "client123", "55555502", "221 5555502"
+        )
+
+        enrollment_no_asiste_1 = ensure_enrollment(no_asiste_1, yoga_junio_29, estado=Enrollment.STATUS_PAID)
+        ensure_payment(enrollment_no_asiste_1, Payment.STATUS_APPROVED, created_at=datetime(2026, 6, 28))
+
+        enrollment_no_asiste_2 = ensure_enrollment(no_asiste_2, yoga_junio_29, estado=Enrollment.STATUS_PAID)
+        ensure_payment(enrollment_no_asiste_2, Payment.STATUS_APPROVED, created_at=datetime(2026, 6, 28))
+
+        # Inscribir 1 usuario a la clase de Funcional del 29/06 que no asistió
+        print("   Inscribiendo 1 usuario a la clase de Funcional del 29/06 (no asistió)...")
+        funcional_no_asiste = create_test_user(
+            "NoAsiste", "Funcional", "noasistefuncional@test.com", "client123", "55555503", "221 5555503"
+        )
+        enrollment_funcional = ensure_enrollment(funcional_no_asiste, funcional_junio_29, estado=Enrollment.STATUS_PAID)
+        ensure_payment(enrollment_funcional, Payment.STATUS_APPROVED, created_at=datetime(2026, 6, 28))
+        # No se llama a ensure_attendance, por lo que se registrará como ausente.
 
         db.session.commit()
         print()

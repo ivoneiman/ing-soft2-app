@@ -2469,18 +2469,25 @@ def get_class_attendance(class_id):
         .all()
     )
     
+    # 1. Obtener todos los inscriptos (pagados) para esta clase, incluyendo los implícitos por abono mensual.
     month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
+    last_day = monthrange(class_obj.fecha_hora.year, class_obj.fecha_hora.month)[1]
+    month_end = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, last_day, 23, 59, 59)
+
     implicit_enrs = Enrollment.query.join(Class).filter(
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
         Enrollment.estado == Enrollment.STATUS_PAID,
         Class.id_actividad == class_obj.id_actividad,
         Class.fecha_hora >= month_start,
-        Class.fecha_hora < class_obj.fecha_hora
+        Class.fecha_hora <= month_end
     ).all()
     
     paid_enrollments_map = {enr.user_id: enr for enr in paid_enrollments_direct}
     for enr in implicit_enrs:
-        if enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
+        # La clase es implícita si el día/hora coincide y la fecha es posterior a la del abono original
+        if enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and \
+           enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M") and \
+           class_obj.fecha_hora >= enr.class_.fecha_hora:
             if enr.user_id not in paid_enrollments_map:
                 paid_enrollments_map[enr.user_id] = enr
                 

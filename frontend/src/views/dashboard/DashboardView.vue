@@ -20,27 +20,37 @@
       </p>
 
       <div v-else class="filtros-contenedor">
-        <!-- 1. Mes -->
+        <!-- 1. Estado -->
         <div class="form-group">
-          <label for="mes">1. Seleccionar Mes:</label>
+          <label for="status">1. Seleccionar Estado de clase:</label>
+          <select id="status" v-model="selectedStatus">
+            <option value="Activa"> Activas</option>
+            <option value="Finalizada"> Finalizadas</option>
+            <option value="Cancelada"> Canceladas</option>
+          </select>
+        </div>
+
+        <!-- 2. Mes -->
+        <div class="form-group">
+          <label for="mes">2. Seleccionar Mes:</label>
           <select id="mes" v-model="selectedMonth">
             <option value="" disabled>-- Seleccione un mes --</option>
             <option v-for="month in availableMonths" :key="month.value" :value="month.value">{{ month.label }}</option>
           </select>
         </div>
 
-        <!-- 2. Día exacto -->
+        <!-- 3. Día exacto -->
         <div class="form-group" v-if="selectedMonth">
-          <label for="dia">2. Seleccionar Día:</label>
+          <label for="dia">3. Seleccionar Día:</label>
           <select id="dia" v-model="selectedDate">
             <option value="" disabled>-- Seleccione un día --</option>
             <option v-for="date in availableDates" :key="date.value" :value="date.value">{{ date.label }}</option>
           </select>
         </div>
 
-        <!-- 3. Actividad -->
+        <!-- 4. Actividad -->
         <div class="form-group" v-if="selectedDate">
-          <label for="actividad">3. Seleccionar Actividad:</label>
+          <label for="actividad">4. Seleccionar Actividad:</label>
           <select id="actividad" v-model="selectedActivity">
             <option value="" disabled>-- Seleccione una actividad --</option>
             <option v-for="act in availableActivities" :key="act" :value="act">{{ act }}</option>
@@ -73,18 +83,25 @@
               <td class="texto-celda">{{ clase.enrolled }} / {{ clase.cupoMaximo }}</td>
               <td>
                 <span :class="isCancelled(clase) ? 'etiqueta-estado-roja' : 'etiqueta-estado-verde'">
-                  {{ classStatusLabel(clase.estado) }}
+                  {{ getDisplayStatus(clase) }}
                 </span>
               </td>
               <td style="text-align: center;">
-                <button 
-                  @click="abrirConfirmacionCancelacion(clase)"
-                  :disabled="isCancelled(clase)"
-                  class="btn-tabla-cancelar"
-                  :class="{ 'btn-tabla-deshabilitado': isCancelled(clase) }"
-                >
-                  {{ isCancelled(clase) ? 'Ya cancelada' : 'Cancelar clase' }}
-                </button>
+                <div v-if="selectedStatus === 'Activa' && !isCancelled(clase)">
+                  <button 
+                    @click="abrirConfirmacionCancelacion(clase)"
+                    :disabled="isCancelled(clase)"
+                    class="btn-tabla-cancelar"
+                    :class="{ 'btn-tabla-deshabilitado': isCancelled(clase) }"
+                  >
+                    {{ isCancelled(clase) ? 'Ya cancelada' : 'Cancelar clase' }}
+                  </button>
+                </div>
+                <div v-else-if="selectedStatus === 'Finalizada'">
+                  <button @click="verAsistencias(clase)" class="btn-tabla-ver-asistencia">
+                    Ver asistencias
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -92,6 +109,7 @@
       </div>
     </div>
 
+    <!-- Modal de Confirmación de Cancelación -->
     <div v-if="claseSeleccionada" class="modal-backdrop" role="dialog" aria-modal="true">
       <section class="confirm-modal">
         <h2>Cancelar clase</h2>
@@ -108,10 +126,58 @@
         </div>
       </section>
     </div>
+
+    <!-- Modal de Lista de Asistencia -->
+    <div v-if="claseParaAsistencia" class="modal-backdrop" role="dialog" aria-modal="true">
+      <section class="confirm-modal">
+        <h2>Lista de Asistencia</h2>
+        <p>Clase: <strong>{{ claseParaAsistencia.actividad || claseParaAsistencia.name }}</strong> del <strong>{{ formatFecha(claseParaAsistencia.fecha_hora) }}</strong></p>
+
+        <div v-if="cargandoAsistencia" class="loading-text">Cargando asistencias...</div>
+        <div v-else-if="errorAsistencia" class="feedback-message error">{{ errorAsistencia }}</div>
+        <div v-else-if="listaAsistencia.length === 0" class="empty-state" style="margin-top: 1rem;">No hubo inscriptos en esta clase.</div>
+        
+        <div v-else>
+          <p class="asistencia-summary">
+            Asistencias: {{ totalAsistencias }} / {{ listaAsistencia.length }}
+          </p>
+          <div v-if="totalAsistencias === 0" class="empty-state">No hubo asistencias.</div>
+          <div v-else class="tabla-responsiva-contenedor" style="margin-top: 16px; max-height: 300px; overflow-y: auto;">
+            <table class="tabla-gestion-gym">
+            <thead>
+              <tr>
+                <th>Alumno</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="asistente in listaAsistencia" :key="asistente.user_id">
+                <td>{{ asistente.apellido }}, {{ asistente.username }}</td>
+                <td>
+                  <span :class="asistente.present ? 'etiqueta-estado-verde' : 'etiqueta-estado-roja'">
+                    {{ asistente.present ? 'Asistió' : 'No asistió' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="modal-actions"><button type="button" class="btn-secundario" @click="cerrarAsistencias">Cerrar</button></div>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.asistencia-summary {
+  font-weight: bold;
+  color: #572c57;
+  background-color: #f6ea98;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
 /* Estilos unificados con la paleta de marca: #572c57, #9f5f91, #f5f5f5, #f6ea98, #e26972 */
 .gestion-clases-container {
   max-width: 1000px;
@@ -275,6 +341,12 @@
   white-space: nowrap;
 }
 
+.btn-tabla-ver-asistencia {
+  background-color: #9f5f91;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .btn-tabla-cancelar:hover:not(:disabled) {
   transform: scale(1.02);
 }
@@ -352,11 +424,12 @@
 
 <script setup>
 import { ref, computed, watch, onMounted } from "vue";
-import { CLASS_STATUS, statusLabel } from "../../constants/statuses";
-import { getAllClasses, cancelarClaseCompleta } from "../../services/api";
+import { CLASS_STATUS } from "../../constants/statuses";
+import { getAllClasses, cancelarClaseCompleta, getClassAttendance } from "../../services/api";
 import { formatShortDate } from "../../utils/formatters";
 
 const allClasses = ref([]);
+const selectedStatus = ref("Activa");
 const selectedMonth = ref("");
 const selectedDate = ref("");
 const selectedActivity = ref("");
@@ -367,12 +440,17 @@ const claseSeleccionada = ref(null);
 const feedbackMessage = ref("");
 const feedbackType = ref("success");
 
+const claseParaAsistencia = ref(null);
+const listaAsistencia = ref([]);
+const cargandoAsistencia = ref(false);
+const errorAsistencia = ref("");
+
+const totalAsistencias = computed(() => {
+  return listaAsistencia.value.filter(a => a.present).length;
+});
+
 function isCancelled(clase) {
   return clase.estado === CLASS_STATUS.CANCELLED;
-}
-
-function classStatusLabel(status) {
-  return statusLabel("class", status || CLASS_STATUS.ACTIVE);
 }
 
 function ordenarClasesPorEstado(todasLasClases) {
@@ -387,13 +465,24 @@ function classTimeLabel(value) {
   }).format(new Date(value));
 }
 
-const availableMonths = computed(() => {
-  const months = new Map();
+const statusFilteredClasses = computed(() => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  allClasses.value.forEach(c => {
-    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return;
+  if (selectedStatus.value === 'Activa') {
+    return allClasses.value.filter(c => c.estado !== CLASS_STATUS.CANCELLED && c.fecha_hora && new Date(c.fecha_hora) >= today);
+  } else if (selectedStatus.value === 'Finalizada') {
+    return allClasses.value.filter(c => c.estado !== CLASS_STATUS.CANCELLED && c.fecha_hora && new Date(c.fecha_hora) < today);
+  } else { // Cancelada
+    return allClasses.value.filter(c => c.estado === CLASS_STATUS.CANCELLED);
+  }
+});
+
+const availableMonths = computed(() => {
+  const months = new Map();
+
+  statusFilteredClasses.value.forEach(c => {
+    if (!c.fecha_hora) return;
     const d = new Date(c.fecha_hora);
     
     const y = d.getFullYear();
@@ -412,12 +501,10 @@ const availableMonths = computed(() => {
 const availableDates = computed(() => {
   if (!selectedMonth.value) return [];
   const dates = new Map();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
-  allClasses.value.forEach(c => {
-    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return;
+  statusFilteredClasses.value.forEach(c => {
     const d = new Date(c.fecha_hora);
+    if (!c.fecha_hora) return;
 
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -441,7 +528,7 @@ const availableActivities = computed(() => {
   if (!selectedDate.value) return [];
   const acts = new Set();
 
-  allClasses.value.forEach(c => {
+  statusFilteredClasses.value.forEach(c => {
     if (!c.fecha_hora) return;
     const d = new Date(c.fecha_hora);
     
@@ -460,11 +547,9 @@ const availableActivities = computed(() => {
 
 const filteredClasses = computed(() => {
   if (!selectedActivity.value) return [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
-  return allClasses.value.filter(c => {
-    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return false;
+  return statusFilteredClasses.value.filter(c => {
+    if (!c.fecha_hora) return false;
     const d = new Date(c.fecha_hora);
 
     const y = d.getFullYear();
@@ -479,6 +564,7 @@ const filteredClasses = computed(() => {
   }).sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora)); // Las ordena de la más cercana a la más lejana
 });
 
+watch(selectedStatus, () => { selectedMonth.value = ''; selectedDate.value = ''; selectedActivity.value = ''; });
 watch(selectedMonth, () => { selectedDate.value = ''; selectedActivity.value = ''; });
 watch(selectedDate, () => { selectedActivity.value = ''; });
 
@@ -525,6 +611,38 @@ async function ejecutarCancelacion() {
   } finally {
     cancelando.value = false;
   }
+}
+
+async function verAsistencias(clase) {
+  claseParaAsistencia.value = clase;
+  cargandoAsistencia.value = true;
+  errorAsistencia.value = "";
+  listaAsistencia.value = [];
+
+  try {
+    const response = await getClassAttendance(clase.id);
+    listaAsistencia.value = response.data.roster || [];
+  } catch (error) {
+    errorAsistencia.value = error.response?.data?.error || "No se pudo cargar la lista de asistencia.";
+  } finally {
+    cargandoAsistencia.value = false;
+  }
+}
+
+function cerrarAsistencias() {
+  claseParaAsistencia.value = null;
+  listaAsistencia.value = [];
+  errorAsistencia.value = "";
+}
+
+function getDisplayStatus(clase) {
+  if (clase.estado === CLASS_STATUS.CANCELLED) {
+    return 'Cancelada';
+  }
+  if (new Date(clase.fecha_hora) < new Date()) {
+    return 'Finalizada';
+  }
+  return 'Activa';
 }
 
 function formatFecha(fechaIso) {
