@@ -1870,6 +1870,37 @@ def create_enrollment():
     }, message="Inscripción creada. Podés completar el pago ahora o más adelante.", status_code=201)
 
 
+@app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
+def delete_user_by_admin(user_id):
+    """Elimina un usuario por un administrador."""
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin"]:
+        return jsonify({"error": "No tienes permisos para eliminar usuarios"}), 403
+
+    if current_user.id == user_id:
+        return jsonify({"error": "No puedes eliminar tu propia cuenta desde este panel"}), 400
+
+    user_to_delete = db.session.get(User, user_id)
+    if not user_to_delete:
+        return jsonify({"error": "Usuario no encontrado"}), 404
+
+    # Validación de seguridad: no permitir eliminar usuarios con inscripciones activas o pagos aprobados.
+    active_enrollments = [e for e in user_to_delete.enrollments if e.estado not in [Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED]]
+    approved_payments = [p for p in user_to_delete.payments if p.status == Payment.STATUS_APPROVED]
+
+    if active_enrollments or approved_payments:
+        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas o pagos registrados."}), 409
+
+    try:
+        db.session.delete(user_to_delete)
+        db.session.commit()
+        return jsonify({"message": "Usuario eliminado correctamente"}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error al eliminar usuario por admin: {e}")
+        return jsonify({"error": "Error interno al eliminar el usuario"}), 500
+
+
 @app.route("/api/waitlists", methods=["POST"])
 def create_waitlist_entry():
     current_user = _get_authenticated_user()

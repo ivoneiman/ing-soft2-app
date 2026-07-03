@@ -21,8 +21,10 @@ const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
+const ReporteUsuariosView = () => import("../views/reportes/ReporteUsuariosView.vue");
 const ReportePagosView = () => import("../views/reportes/ReportePagosView.vue");
 const MisClasesView = () => import("../views/actividades/MisClasesView.vue");
+const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue");
 // Vistas de Administración de Profesores
 const ProfesoresAdminView = () => import("../views/admin/ProfesoresAdminView.vue");
 const ListarProfesoresView = () => import("../views/admin/ListarProfesoresView.vue");
@@ -77,15 +79,20 @@ const routes = [
       },
       {
         path: "reportes",
-        name: "Reportes",
         component: ReportesView,
-        meta: { requiresAuth: true, requiresAdmin: true }
-      },
-      {
-        path: "reportes/pagos",
-        name: "ReportePagos",
-        component: ReportePagosView,
-        meta: { requiresAuth: true, requiresAdmin: true }
+        meta: { requiresAuth: true, requiresAdmin: true },
+        children: [
+          {
+            path: 'usuarios',
+            name: 'ReporteUsuarios',
+            component: ReporteUsuariosView,
+          },
+          {
+            path: 'pagos',
+            name: 'ReportePagos',
+            component: ReportePagosView,
+          }
+        ]
       },
       {
         path: "mi-qr",
@@ -121,6 +128,12 @@ const routes = [
         path: "/admin/clases/crear",
         name: "CrearClase",
         component: CrearClaseView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "/admin/usuarios/crear",
+        name: "CrearUsuario",
+        component: CrearUsuarioView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
       },
       {

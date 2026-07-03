@@ -84,6 +84,10 @@ export function deleteAccount({ password }) {
   );
 }
 
+export function deleteUserAsAdmin(userId) {
+  return axios.delete(`${API_URL}/admin/users/${userId}`, REQUEST_CONFIG);
+}
+
 // =========================
 // ACTIVIDADES
 // =========================

@@ -111,7 +111,7 @@
           </button>
 
           <div v-if="isAdminDropdownOpen" class="dropdown-container">
-            <router-link to="/crear-usuario" @click="handleAdminDropdownClick">
+            <router-link to="/admin/usuarios/crear" @click="handleAdminDropdownClick">
               Crear Usuario
             </router-link>
             <router-link to="/admin/profesores" @click="handleAdminDropdownClick">

@@ -5,12 +5,20 @@
       <p>Seleccioná el módulo que deseas consultar.</p>
     </header>
 
-    <div class="reports-grid">
+    <!-- Aquí se renderizará el componente hijo (ReporteUsuariosView o ReportePagosView) -->
+    <router-view v-slot="{ Component }">
+      <transition name="fade" mode="out-in">
+        <component :is="Component" />
+      </transition>
+    </router-view>
+
+    <!-- Las tarjetas de navegación solo se mostrarán si estamos en la ruta base /reportes -->
+    <div v-if="$route.path === '/reportes'" class="reports-grid">
       <router-link to="/reportes/usuarios" class="report-card">
         <h3>Directorio de Usuarios</h3>
         <p>Visualizar perfiles, contactar e inspeccionar inscripciones.</p>
       </router-link>
-      
+
       <router-link to="/reportes/pagos" class="report-card">
         <h3>Historial de Pagos</h3>
         <p>Visualizar todos los pagos realizados, señas y transacciones pendientes.</p>
@@ -20,7 +28,10 @@
 </template>
 
 <script setup>
-import { RouterLink } from 'vue-router';
+import { RouterLink, RouterView, useRoute } from "vue-router";
+
+// useRoute es necesario para que $route sea reactivo en el template
+const route = useRoute();
 </script>
 
 <style scoped>
@@ -29,6 +40,16 @@ import { RouterLink } from 'vue-router';
   max-width: 1200px;
   margin: 0 auto;
   min-height: calc(100vh - 140px);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 .page-header {
