@@ -91,6 +91,25 @@ def send_admin_login_code(user, code):
     )
 
 
+def send_temporary_password_email(user, temporary_password):
+    if not _has_valid_email(user):
+        return False
+
+    html = f"""
+    <h1>Contraseña temporal - SiempreGym</h1>
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    <p>Se generó automáticamente una contraseña temporal para tu cuenta.</p>
+    <p><strong>{escape(temporary_password)}</strong></p>
+    <p>Ingresá con esta contraseña y cámbiala cuando lo necesites.</p>
+    """
+
+    return _send_email(
+        user.email,
+        "Contraseña temporal - SiempreGym",
+        html,
+    )
+
+
 def _format_class_datetime(class_obj):
     if not getattr(class_obj, "fecha_hora", None):
         return "fecha a confirmar"

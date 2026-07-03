@@ -11,8 +11,8 @@ export function register({ username, apellido, email, dni, telefono, password })
   return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
 }
 
-export function crearUsuario({ username, apellido, email, dni, telefono, password, role }) {
-  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password, role }, REQUEST_CONFIG);
+export function crearUsuario({ username, apellido, email, dni, telefono, role }) {
+  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, role }, REQUEST_CONFIG);
 }
 
 export function getUsers() {

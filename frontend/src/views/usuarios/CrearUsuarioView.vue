@@ -1,7 +1,7 @@
 <template>
   <div class="crear-usuario-container">
     <h2>Crear nuevo usuario</h2>
-    <p class="subtitle">Completá los datos del nuevo cliente</p>
+    <p class="subtitle">Se generará automáticamente una contraseña temporal que será enviada al correo electrónico del usuario.</p>
 
     <form @submit.prevent="onSubmit">
 
@@ -32,19 +32,13 @@
         <input id="email" v-model="form.email" type="email" placeholder="juan@mail.com" />
       </div>
 
-      <div class="field">
+      <div v-if="isAdmin" class="field">
         <label for="role">Tipo de Usuario</label>
         <select id="role" v-model="form.role">
           <option value="client">Cliente</option>
-          <option v-if="isAdmin" value="employee">Empleado</option>
-          <option v-if="isAdmin" value="admin">Administrador</option>
+          <option value="employee">Empleado</option>
+          <option value="admin">Administrador</option>
         </select>
-      </div>
-
-      <div class="field">
-        <label for="password">Contraseña</label>
-        <input id="password" v-model="form.password" type="password" placeholder="Mínimo 6 caracteres, 1 mayúscula y 1 símbolo" />
-        <small class="hint">Debe tener al menos 6 caracteres, 1 mayúscula y 1 símbolo especial (?, !, ", #, etc.)</small>
       </div>
 
       <div v-if="error" class="msg error">{{ error }}</div>
@@ -64,7 +58,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { crearUsuario } from '../../services/api'
 import { roleHelpers } from '../../utils/roleHelpers'
 
@@ -74,7 +68,6 @@ const form = reactive({
   dni: '',
   telefono: '',
   email: '',
-  password: '',
   role: 'client'
 })
 
@@ -82,24 +75,7 @@ const error   = ref('')
 const success = ref('')
 const loading = ref(false)
 
-const isAdmin = ref(false)
-
-onMounted(() => {
-  isAdmin.value = roleHelpers.isAdmin()
-})
-
-function validarPassword(password) {
-  if (password.length < 6) {
-    return 'La contraseña debe tener al menos 6 caracteres'
-  }
-  if (!/[A-Z]/.test(password)) {
-    return 'La contraseña debe incluir al menos una letra mayúscula'
-  }
-  if (!/[^a-zA-Z0-9]/.test(password)) {
-    return 'La contraseña debe incluir al menos un símbolo especial (?, !, ", #, etc.)'
-  }
-  return null
-}
+const isAdmin = computed(() => roleHelpers.isAdmin())
 
 function limpiarFormulario() {
   Object.keys(form).forEach(k => {
@@ -114,26 +90,19 @@ async function onSubmit() {
   error.value   = ''
   success.value = ''
 
-  const { username, apellido, dni, telefono, email, password, role } = form
+  const { username, apellido, dni, telefono, email, role } = form
 
   if (!username.trim() || !apellido.trim() || !dni.trim() ||
-      !telefono.trim() || !email.trim() || !password) {
+      !telefono.trim() || !email.trim()) {
     error.value = 'Debe completar todos los campos'
-    return
-  }
-
-  const errorPass = validarPassword(password)
-  if (errorPass) {
-    error.value = errorPass
     return
   }
 
   loading.value = true
   try {
-    await crearUsuario({ username, apellido, email, dni, telefono, password, role })
+    await crearUsuario({ username, apellido, email, dni, telefono, role })
     success.value = 'Usuario creado exitosamente'
     limpiarFormulario()
-    success.value = 'Usuario creado exitosamente'
   } catch (err) {
     if (err.response?.data?.error) {
       error.value = err.response.data.error

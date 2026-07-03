@@ -2,6 +2,7 @@ import os
 import logging
 import re
 import random
+import string
 import time
 import threading
 import urllib.parse
@@ -12,7 +13,6 @@ from dotenv import load_dotenv
 
 from flask import Flask, request, jsonify, session, redirect, g, has_request_context
 from flask_cors import CORS
-from werkzeug.security import generate_password_hash, check_password_hash
 from sqlalchemy import case, event, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.engine import Engine
@@ -23,6 +23,7 @@ try:
         send_class_cancelled_email,
         send_credit_generated_email,
         send_waitlist_promotion_email,
+        send_temporary_password_email,
     )
     from mercadopago_config import get_mercadopago_client
     from models import db, User
@@ -60,6 +61,7 @@ except ModuleNotFoundError:
         send_class_cancelled_email,
         send_credit_generated_email,
         send_waitlist_promotion_email,
+        send_temporary_password_email,
     )
     from .mercadopago_config import get_mercadopago_client
     from .models import db, User
@@ -182,6 +184,11 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE users ADD COLUMN dni VARCHAR(20)"))
         if "telefono" not in columns:
             db.session.execute(text("ALTER TABLE users ADD COLUMN telefono VARCHAR(20)"))
+        if "admin_login_code" not in columns:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN admin_login_code VARCHAR(6)"))
+        if "admin_login_code_expiration" not in columns:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN admin_login_code_expiration DATETIME"))
+        db.session.commit()
 
     if "classes" in inspector.get_table_names():
         columns = [column["name"] for column in inspector.get_columns("classes")]
@@ -1383,46 +1390,54 @@ def create_user():
     if not user_id:
         return jsonify({"error": "No autenticado"}), 401
 
-    current_user = User.query.get(user_id)
     current_user = db.session.get(User, user_id)
     if not current_user or current_user.role not in ["admin", "employee"]:
         return jsonify({"error": "No tienes permisos para crear usuarios"}), 403
 
-    data = request.get_json()
-    username = data.get("username", "").strip()
-    apellido = data.get("apellido", "").strip()
-    email = data.get("email", "").strip()
-    dni = data.get("dni", "").strip()
-    telefono = data.get("telefono", "").strip()
-    password = data.get("password", "").strip()
-    role = data.get("role", "client").strip()
+    data = request.get_json() or {}
+    username = (data.get("username") or "").strip()
+    apellido = (data.get("apellido") or "").strip()
+    email = (data.get("email") or "").strip()
+    dni = (data.get("dni") or "").strip()
+    telefono = (data.get("telefono") or "").strip()
+    role = (data.get("role") or "client").strip()
 
-    if not all([username, apellido, email, dni, telefono, password]):
+    if not all([username, apellido, email, dni, telefono]):
         return jsonify({"error": "Todos los campos son obligatorios"}), 400
 
-    if len(password) < 6:
-        return jsonify({"error": "La contraseña debe tener al menos 6 caracteres"}), 400
-
-    if not re.search(r'[A-Z]', password):
-        return jsonify({"error": "La contraseña debe incluir al menos una letra mayúscula"}), 400
-
-    if not re.search(r'[^a-zA-Z0-9]', password):
-        return jsonify({"error": "La contraseña debe incluir al menos un símbolo especial (?, !, \", #, etc.)"}), 400
+    if not re.search(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
+        return jsonify({"error": "El email es inválido"}), 400
 
     existing_email = User.query.filter_by(email=email).first()
     if existing_email:
         return jsonify({"error": "El email ya está registrado"}), 400
 
-    # Validación de seguridad:
     if current_user.role == "employee" and role != "client":
         return jsonify({"error": "Los empleados solo pueden crear usuarios cliente"}), 403
-        
+
     if current_user.role == "admin" and role not in ["client", "employee", "admin"]:
         role = "client"
 
+    password_chars = [
+        random.choice(string.ascii_uppercase),
+        random.choice(string.ascii_lowercase),
+        random.choice(string.digits),
+        random.choice("!@#$%^&*"),
+    ]
+    while len(password_chars) < 10:
+        password_chars.append(random.choice(string.ascii_letters + string.digits + "!@#$%^&*"))
+    random.shuffle(password_chars)
+    temporary_password = "".join(password_chars)
+
     new_user = User(username=username, apellido=apellido, email=email, dni=dni, telefono=telefono, role=role)
-    new_user.set_password(password)
+    new_user.set_password(temporary_password)
     db.session.add(new_user)
+    db.session.flush()
+
+    if not send_temporary_password_email(new_user, temporary_password):
+        db.session.rollback()
+        return jsonify({"error": "No se pudo enviar la contraseña temporal por email"}), 500
+
     db.session.commit()
 
     return jsonify({"message": "Usuario creado exitosamente", "user": new_user.to_dict()}), 201
