@@ -1022,10 +1022,28 @@ def login():
 
     user = User.query.filter_by(email=email).first()
     if not user:
-        return jsonify({"error": "Usuario no encontrado"}), 401
+        return jsonify({"error": "Credenciales inválidas"}), 401
 
     if not user.check_password(password):
-        return jsonify({"error": "Contraseña incorrecta"}), 401
+        return jsonify({"error": "Credenciales inválidas"}), 401
+
+    # --- INICIO DE LA CORRECCIÓN ---
+    # Si el usuario es un administrador, no iniciamos sesión directamente.
+    # En su lugar, activamos el flujo de 2FA (código por email).
+    if user.role == "admin":
+        code = f"{random.randint(0, 999999):06d}"
+        # Guardamos el código y su expiración en la sesión para verificarlo después.
+        session["admin_login_email"] = email
+        session["admin_login_code"] = code
+        session["admin_login_code_expires_at"] = (datetime.utcnow() + timedelta(minutes=5)).timestamp()
+
+        # Llamamos al servicio de email para enviar el código.
+        if not send_admin_login_code(user, code):
+            return jsonify({"error": "No se pudo enviar el código de verificación por email"}), 500
+
+        # Respondemos al frontend que se necesita el segundo factor (2FA).
+        return jsonify({"needs2FA": True}), 200
+    # --- FIN DE LA CORRECCIÓN ---
 
     session["user_id"] = user.id
     return jsonify({

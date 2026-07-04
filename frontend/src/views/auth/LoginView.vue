@@ -21,9 +21,9 @@
             <input id="email" v-model="email" type="email" placeholder="tu@email.com" :disabled="adminLoginStep" required />
           </div>
 
-          <div class="input-group" v-if="mode === 'password' || mode === 'admin-code'">
+          <div class="input-group" v-if="!adminLoginStep">
             <label for="password">Contraseña</label>
-            <input id="password" v-model="password" type="password" placeholder="••••••••" :disabled="adminLoginStep" required />
+            <input id="password" v-model="password" type="password" placeholder="••••••••" required />
           </div>
 
           <div class="input-group" v-if="adminLoginStep">
@@ -94,18 +94,21 @@ async function onSubmit() {
         return
       }
 
-      // `authStore.login` ahora debe manejar la lógica de roles.
-      // Asumimos que devuelve un objeto con `needs2FA: true` si el usuario es admin.
+      // `authStore.login` ahora maneja la lógica de roles.
+      // Si el backend responde con `needs2FA: true`, el usuario es un admin
+      // y se debe proceder al segundo paso.
       const ok = await authStore.login(email.value, password.value)
 
       if (ok) {
-        // Si el login fue exitoso y no requiere 2FA (cliente/empleado)
+        // Si el login fue exitoso y NO requiere 2FA (es cliente o empleado),
+        // se redirige directamente.
         if (!authStore.needs2FA) {
           redirectAfterLogin()
         } else {
-          // Si es admin, se necesita el segundo factor
+          // Si es admin, el backend ya envió el código.
+          // Mostramos el campo para el código y un mensaje informativo.
           info.value = 'Le enviamos un código a su email para completar su autenticación.'
-          adminLoginStep.value = true
+          adminLoginStep.value = true // Esto muestra el campo del código
         }
       } else {
         error.value = authStore.error
