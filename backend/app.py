@@ -23,6 +23,7 @@ try:
         send_class_cancelled_email,
         send_credit_generated_email,
         send_waitlist_promotion_email,
+        send_class_room_changed_email,
         send_temporary_password_email,
     )
     from mercadopago_config import get_mercadopago_client
@@ -61,6 +62,7 @@ except ModuleNotFoundError:
         send_class_cancelled_email,
         send_credit_generated_email,
         send_waitlist_promotion_email,
+        send_class_room_changed_email,
         send_temporary_password_email,
     )
     from .mercadopago_config import get_mercadopago_client
@@ -2433,6 +2435,8 @@ def update_class(class_id):
     if not class_obj:
         return jsonify({"error": "Clase no encontrada"}), 404
 
+    old_room = class_obj.room  # Guardar el salón actual antes de cualquier cambio
+
     if class_obj.estado != Class.STATUS_ACTIVE:
         return jsonify({"error": "Solo se pueden editar clases activas"}), 400
 
@@ -2473,12 +2477,34 @@ def update_class(class_id):
     if existing_class_in_room:
         return jsonify({"error": f"El salón '{room}' ya está ocupado en ese horario por otra clase."}), 409
 
+    # Comprobar si el salón ha cambiado
+    room_changed = old_room != room
+
     # Actualizar los datos
     class_obj.room = room
     class_obj.cupoMaximo = cupo_maximo
     class_obj.profesor_id = profesor_id
 
     try:
+        # Si el salón cambió, notificar a los inscriptos
+        if room_changed:
+            # Buscar todas las inscripciones activas (pagadas y pendientes de pago)
+            enrollments = Enrollment.query.filter(
+                Enrollment.class_id == class_id,
+                Enrollment.estado.in_([Enrollment.STATUS_PAID, Enrollment.STATUS_PENDING_PAYMENT])
+            ).all()
+            user_ids = [e.user_id for e in enrollments]
+            
+            if user_ids:
+                users_to_notify = User.query.filter(User.id.in_(user_ids)).all()
+                for user in users_to_notify:
+                    try:
+                        # Enviar el email a cada usuario inscripto
+                        send_class_room_changed_email(user, class_obj, old_room, room)
+                    except Exception as e:
+                        # Registrar si un email falla, pero no detener el proceso
+                        logger.error(f"No se pudo enviar email de cambio de salón a {user.email}: {e}")
+
         db.session.commit()
         return jsonify({"message": "Clase actualizada exitosamente", "class": class_obj.to_dict()}), 200
     except Exception as e:

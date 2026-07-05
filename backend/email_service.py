@@ -251,3 +251,30 @@ def send_waitlist_promotion_email(user, class_obj, new_enrollment, other_pending
         f"Fuiste inscripto a la clase de {activity_name} - SiempreGym",
         html,
     )
+
+
+def send_class_room_changed_email(user, class_obj, old_room, new_room):
+    """
+    Notifica a un usuario inscripto que el salón de su clase ha cambiado.
+    """
+    if not _has_valid_email(user):
+        return False
+
+    activity_name = escape(_activity_name(class_obj))
+    class_datetime = escape(_format_class_datetime(class_obj))
+
+    html = f"""
+    <h1>Cambio de sala para tu clase</h1>
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    <p>Te informamos que hubo un cambio en una de tus próximas clases:</p>
+    <p><strong>Clase:</strong> {activity_name}<br>
+    <strong>Fecha y hora:</strong> {class_datetime}</p>
+    <p>La sala fue modificado:</p>
+    <ul>
+        <li><strong>Sala anterior:</strong> {escape(old_room or 'No asignado')}</li>
+        <li><strong>Nueva sala:</strong> {escape(new_room or 'No asignado')}</li>
+    </ul>
+    <p>¡Te esperamos!</p>
+    """
+
+    return _send_email(user.email, f"Cambio de sala para {activity_name}", html)

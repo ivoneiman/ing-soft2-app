@@ -706,7 +706,7 @@ function abrirModalEdicion(clase) {
   feedbackMessage.value = "";
   claseParaEditar.value = clase;
   formEdicion.id = clase.id;
-  formEdicion.room = clase.room || 'Sala 1';
+  formEdicion.room = clase.room;
   formEdicion.cupoMaximo = clase.cupoMaximo;
   formEdicion.profesor_id = clase.profesor_id;
 }
@@ -771,7 +771,7 @@ async function ejecutarEdicion() {
 
   if (salonConflictivo) {
     editFeedbackType.value = "error";
-    editFeedbackMessage.value = `El salón '${formEdicion.room}' ya está ocupado por otra clase en ese horario`;
+    editFeedbackMessage.value = `La '${formEdicion.room}' ya está ocupada por otra clase en ese horario`;
     return;
   }
 
