@@ -66,6 +66,8 @@
               <th>Actividad</th>
               <th>Fecha / Día</th>
               <th>Horario</th>
+              <th>Sala</th>
+              <th>Profesor</th>
               <th>Cupos Ocupados</th>
               <th>Estado</th>
               <th style="text-align: center;">Acciones</th>
@@ -80,6 +82,8 @@
               <td class="col-actividad">{{ clase.actividad || clase.name }}</td>
               <td class="texto-celda">{{ formatFecha(clase.fecha_hora) }}</td>
               <td class="col-resaltada texto-celda">{{ clase.time || 'No definido' }} hs</td>
+              <td class="texto-celda">{{ clase.room || 'N/A' }}</td>
+              <td class="texto-celda">{{ clase.profesor_nombre || 'N/A' }}</td>
               <td class="texto-celda">{{ clase.enrolled }} / {{ clase.cupoMaximo }}</td>
               <td>
                 <span :class="isCancelled(clase) ? 'etiqueta-estado-roja' : 'etiqueta-estado-verde'">
@@ -87,7 +91,12 @@
                 </span>
               </td>
               <td style="text-align: center;">
-                <div v-if="selectedStatus === 'Activa' && !isCancelled(clase)">
+                <div v-if="selectedStatus === 'Activa' && !isCancelled(clase)" class="acciones-columna">
+                  <button
+                    @click="abrirModalEdicion(clase)"
+                    class="btn-tabla-editar"
+                  >
+                    Editar clase</button>
                   <button 
                     @click="abrirConfirmacionCancelacion(clase)"
                     :disabled="isCancelled(clase)"
@@ -122,6 +131,52 @@
           </button>
           <button type="button" :disabled="cancelando" @click="ejecutarCancelacion">
             {{ cancelando ? 'Cancelando...' : 'Confirmar cancelación' }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Modal de Edición de Clase -->
+    <div v-if="claseParaEditar" class="modal-backdrop" role="dialog" aria-modal="true">
+      <section class="confirm-modal">
+        <h2>Editar Clase</h2>
+        <p>
+          Editando: <strong>{{ claseParaEditar.actividad || claseParaEditar.name }}</strong> del <strong>{{ formatFecha(claseParaEditar.fecha_hora) }}</strong>
+        </p>
+        
+        <div class="form-group-modal">
+          <label for="edit-room">Salón</label>
+          <select id="edit-room" v-model="formEdicion.room">
+            <option>Sala 1</option>
+            <option>Sala 2</option>
+            <option>Sala 3</option>
+          </select>
+        </div>
+
+        <div class="form-group-modal">
+          <label for="edit-cupo">Cupos</label>
+          <input id="edit-cupo" type="number" v-model.number="formEdicion.cupoMaximo" min="1" max="20" />
+        </div>
+
+        <div class="form-group-modal">
+          <label for="edit-profesor">Profesor</label>
+          <select id="edit-profesor" v-model="formEdicion.profesor_id">
+            <option v-for="profesor in profesores" :key="profesor.id" :value="profesor.id">
+              {{ profesor.nombre }} {{ profesor.apellido }}
+            </option>
+          </select>
+        </div>
+
+        <p v-if="editFeedbackMessage" :class="['feedback-message', editFeedbackType]" style="margin-top: 1rem;">
+          {{ editFeedbackMessage }}
+        </p>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secundario" @click="cerrarModalEdicion">
+            Cancelar
+          </button>
+          <button type="button" :disabled="editando" @click="ejecutarEdicion">
+            {{ editando ? 'Guardando...' : 'Confirmar edición' }}
           </button>
         </div>
       </section>
@@ -177,6 +232,11 @@
   background-color: #f6ea98;
   padding: 8px 12px;
   border-radius: 6px;
+}
+
+.acciones-columna {
+  display: flex;
+  gap: 8px;
 }
 /* Estilos unificados con la paleta de marca: #572c57, #9f5f91, #f5f5f5, #f6ea98, #e26972 */
 .gestion-clases-container {
@@ -341,6 +401,12 @@
   white-space: nowrap;
 }
 
+.btn-tabla-editar {
+  background-color: #9f5f91; /* Color rojo, igual que el de cancelar */
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .btn-tabla-ver-asistencia {
   background-color: #9f5f91;
   font-size: 13px;
@@ -416,6 +482,26 @@
   margin-top: 24px;
 }
 
+.form-group-modal {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+}
+
+.form-group-modal label {
+  font-weight: bold;
+  color: #572c57;
+  margin-bottom: 0.5rem;
+}
+
+.form-group-modal input,
+.form-group-modal select {
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
 .btn-secundario {
   background: #f5f5f5;
   color: #572c57;
@@ -423,9 +509,9 @@
 </style>
 
 <script setup>
-import { ref, computed, watch, onMounted } from "vue";
+import { ref, reactive, computed, watch, onMounted } from "vue";
 import { CLASS_STATUS } from "../../constants/statuses";
-import { getAllClasses, cancelarClaseCompleta, getClassAttendance } from "../../services/api";
+import { getAllClasses, cancelarClaseCompleta, getClassAttendance, getProfesores, updateClass } from "../../services/api";
 import { formatShortDate } from "../../utils/formatters";
 
 const allClasses = ref([]);
@@ -436,9 +522,22 @@ const selectedActivity = ref("");
 
 const cargando = ref(false);
 const cancelando = ref(false);
+const editando = ref(false);
 const claseSeleccionada = ref(null);
 const feedbackMessage = ref("");
 const feedbackType = ref("success");
+
+const editFeedbackMessage = ref("");
+const editFeedbackType = ref("success");
+
+const profesores = ref([]);
+const claseParaEditar = ref(null);
+const formEdicion = reactive({
+  id: null,
+  room: '',
+  cupoMaximo: 20,
+  profesor_id: null,
+});
 
 const claseParaAsistencia = ref(null);
 const listaAsistencia = ref([]);
@@ -582,6 +681,17 @@ async function cargarClases() {
   }
 }
 
+async function cargarProfesores() {
+  try {
+    const response = await getProfesores();
+    profesores.value = response.data.profesores || [];
+  } catch (error) {
+    feedbackType.value = "error";
+    feedbackMessage.value = "No se pudieron cargar los profesores para la edición.";
+    console.error("Error cargando profesores:", error);
+  }
+}
+
 function abrirConfirmacionCancelacion(clase) {
   feedbackMessage.value = "";
   claseSeleccionada.value = clase;
@@ -590,6 +700,22 @@ function abrirConfirmacionCancelacion(clase) {
 function cerrarConfirmacionCancelacion() {
   claseSeleccionada.value = null;
 }
+
+function abrirModalEdicion(clase) {
+  editFeedbackMessage.value = ""; // Limpiar mensaje de error al abrir
+  editFeedbackType.value = "success";
+  feedbackMessage.value = "";
+  claseParaEditar.value = clase;
+  formEdicion.id = clase.id;
+  formEdicion.room = clase.room || 'Sala 1';
+  formEdicion.cupoMaximo = clase.cupoMaximo;
+  formEdicion.profesor_id = clase.profesor_id;
+}
+
+function cerrarModalEdicion() {
+  claseParaEditar.value = null;
+}
+
 
 async function ejecutarCancelacion() {
   if (!claseSeleccionada.value) return;
@@ -610,6 +736,76 @@ async function ejecutarCancelacion() {
     feedbackMessage.value = error.response?.data?.error || "No se pudo procesar la cancelación.";
   } finally {
     cancelando.value = false;
+  }
+}
+
+async function ejecutarEdicion() {
+  if (!claseParaEditar.value) return;
+
+  // Validación de cupos en el frontend
+  if (formEdicion.cupoMaximo > 20) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = "El cupo máximo es de 20";
+    return;
+  }
+  if (formEdicion.cupoMaximo < 1) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = "El cupo mínimo es 1";
+    return;
+  }
+
+  // Validación de conflicto de salón en el frontend
+  const claseOriginal = claseParaEditar.value;
+  const salonConflictivo = allClasses.value.find(c =>
+    c.id !== claseOriginal.id &&
+    c.estado === 'Activa' &&
+    c.fecha_hora === claseOriginal.fecha_hora &&
+    c.room === formEdicion.room
+  );
+
+  if (salonConflictivo) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = `El salón '${formEdicion.room}' ya está ocupado por otra clase en ese horario`;
+    return;
+  }
+
+  // Validación de conflicto de profesor en el frontend
+  const profesorConflictivo = allClasses.value.find(c =>
+    c.id !== claseOriginal.id &&
+    c.estado === 'Activa' &&
+    c.fecha_hora === claseOriginal.fecha_hora &&
+    c.profesor_id === formEdicion.profesor_id
+  );
+
+  if (profesorConflictivo) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = "El profesor ya tiene una clase en ese día y horario";
+    return;
+  }
+
+  editFeedbackMessage.value = ""; // Limpiar mensajes de error previos
+  editando.value = true;
+  try {
+    const response = await updateClass(formEdicion.id, {
+      room: formEdicion.room,
+      cupoMaximo: formEdicion.cupoMaximo,
+      profesor_id: formEdicion.profesor_id,
+    });
+
+    // Actualizar la clase en la lista local
+    const index = allClasses.value.findIndex(c => c.id === formEdicion.id);
+    if (index !== -1) {
+      allClasses.value[index] = { ...allClasses.value[index], ...response.data.class };
+    }
+
+    feedbackType.value = "success";
+    feedbackMessage.value = "Cambios realizados con éxito";
+    cerrarModalEdicion();
+  } catch (error) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = error.response?.data?.error || "No se pudo guardar la clase.";
+  } finally {
+    editando.value = false;
   }
 }
 
@@ -651,5 +847,6 @@ function formatFecha(fechaIso) {
 
 onMounted(() => {
   cargarClases();
+  cargarProfesores();
 });
 </script>

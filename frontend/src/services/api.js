@@ -175,6 +175,21 @@ export function getMyClasses() {
   );
 }
 
+export function getProfesores() {
+  return axios.get(
+    `${API_URL}/profesores`,
+    REQUEST_CONFIG
+  );
+}
+
+export function updateClass(classId, data) {
+  return axios.put(
+    `${API_URL}/classes/${classId}`,
+    data,
+    REQUEST_CONFIG
+  );
+}
+
 // =========================
 // ASISTENCIA
 // =========================

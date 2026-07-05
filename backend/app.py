@@ -405,7 +405,10 @@ def _enrollment_counts():
 
 
 def _class_slot_payload(class_obj, enrolled_count):
-    return class_service.class_slot_payload(class_obj, enrolled_count)
+    payload = class_service.class_slot_payload(class_obj, enrolled_count)
+    if "profesor_id" not in payload:
+        payload["profesor_id"] = class_obj.profesor_id
+    return payload
 
 
 def _get_authenticated_user():
@@ -1489,9 +1492,16 @@ def get_all_classes():
     Utilizado principalmente por el Dashboard del staff."""
     enrollment_map = _enrollment_counts()
     class_payloads = []
-    for class_obj in Class.query.all():
+    # Usamos joinedload para cargar eficientemente los profesores en una sola consulta
+    from sqlalchemy.orm import joinedload
+    
+    for class_obj in Class.query.options(joinedload(Class.profesor)).all():
         enrolled_count = enrollment_map.get(class_obj.id, 0)
         payload = _class_slot_payload(class_obj, enrolled_count)
+        payload['room'] = class_obj.room
+        if class_obj.profesor:
+            payload['profesor_nombre'] = f"{class_obj.profesor.nombre} {class_obj.profesor.apellido}"
+
         class_payloads.append(payload)
     return jsonify({"classes": class_payloads}), 200
 
@@ -2398,6 +2408,70 @@ def create_class():
             "room": room
         }
     }), 201
+
+@app.route("/api/classes/<int:class_id>", methods=["PUT"])
+def update_class(class_id):
+    """Actualiza los datos de una clase existente (salón, cupo, profesor)."""
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para editar clases"}), 403
+
+    class_obj = db.session.get(Class, class_id)
+    if not class_obj:
+        return jsonify({"error": "Clase no encontrada"}), 404
+
+    if class_obj.estado != Class.STATUS_ACTIVE:
+        return jsonify({"error": "Solo se pueden editar clases activas"}), 400
+
+    data = request.get_json() or {}
+    room = data.get("room")
+    profesor_id = data.get("profesor_id")
+    
+    try:
+        cupo_maximo = int(data.get("cupoMaximo"))
+    except (ValueError, TypeError):
+        return jsonify({"error": "El valor de cupos debe ser un número entero"}), 400
+
+    if not all([room, profesor_id, cupo_maximo]):
+        return jsonify({"error": "Todos los campos son obligatorios (salón, profesor y cupo)"}), 400
+
+    if cupo_maximo > 20:
+        return jsonify({"error": "El cupo máximo es de 20"}), 400
+    if cupo_maximo < 1:
+        return jsonify({"error": "El cupo mínimo es 1"}), 400
+
+    # Validar si el profesor ya tiene una clase en ese horario
+    existing_class_for_profesor = Class.query.filter(
+        Class.profesor_id == profesor_id,
+        Class.fecha_hora == class_obj.fecha_hora,
+        Class.id != class_id,
+        Class.estado == Class.STATUS_ACTIVE
+    ).first()
+    if existing_class_for_profesor:
+        return jsonify({"error": "El profesor ya tiene una clase en ese día y horario"}), 409
+
+    # Validar si el salón está ocupado en ese horario por otra clase
+    existing_class_in_room = Class.query.filter(
+        Class.room == room,
+        Class.fecha_hora == class_obj.fecha_hora,
+        Class.id != class_id,
+        Class.estado == Class.STATUS_ACTIVE
+    ).first()
+    if existing_class_in_room:
+        return jsonify({"error": f"El salón '{room}' ya está ocupado en ese horario por otra clase."}), 409
+
+    # Actualizar los datos
+    class_obj.room = room
+    class_obj.cupoMaximo = cupo_maximo
+    class_obj.profesor_id = profesor_id
+
+    try:
+        db.session.commit()
+        return jsonify({"message": "Clase actualizada exitosamente", "class": class_obj.to_dict()}), 200
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error al actualizar la clase: {e}")
+        return jsonify({"error": "Error interno al actualizar la clase"}), 500
 
 @app.route("/api/classes/<int:class_id>/discount", methods=["PUT"])
 def apply_class_discount(class_id):
