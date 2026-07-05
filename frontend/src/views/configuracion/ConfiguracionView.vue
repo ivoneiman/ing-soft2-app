@@ -81,6 +81,54 @@
     </section>
 
     <!-- Botón de eliminación de cuenta -->
+    <section class="profile-section">
+      <h2>Cambiar contraseña</h2>
+
+      <div v-if="passwordSuccessMessage" class="alert alert-success">
+        {{ passwordSuccessMessage }}
+      </div>
+
+      <div v-if="passwordErrorMessage" class="alert alert-error">
+        {{ passwordErrorMessage }}
+      </div>
+
+      <form @submit.prevent="handleChangePassword" class="profile-form">
+        <div class="form-group">
+          <label for="current-password">Contraseña actual</label>
+          <input
+            id="current-password"
+            v-model="passwordForm.current_password"
+            type="password"
+            autocomplete="current-password"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="new-password">Nueva contraseña</label>
+          <input
+            id="new-password"
+            v-model="passwordForm.new_password"
+            type="password"
+            autocomplete="new-password"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="confirm-password">Confirmación de nueva contraseña</label>
+          <input
+            id="confirm-password"
+            v-model="passwordForm.confirm_password"
+            type="password"
+            autocomplete="new-password"
+          />
+        </div>
+
+        <button type="submit" class="btn-submit" :disabled="isChangingPassword">
+          {{ isChangingPassword ? 'Cambiando...' : 'Cambiar contraseña' }}
+        </button>
+      </form>
+    </section>
+
     <div class="delete-action">
       <button type="button" class="btn-delete" @click="openDeleteConfirm">
         Eliminar Usuario
@@ -94,6 +142,18 @@
     <!-- Modal de confirmación de eliminación -->
     <div v-if="showDeleteConfirm" class="delete-confirm-overlay">
       <div class="confirm-box">
+        <div v-if="deleteErrorMessage" class="alert alert-error" style="margin-bottom: 1rem;">
+          {{ deleteErrorMessage }}
+        </div>
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label for="delete-password" style="text-align: left;">Para confirmar, ingrese su contraseña</label>
+          <input
+            id="delete-password"
+            v-model="deletePassword"
+            type="password"
+            autocomplete="current-password"
+          />
+        </div>
         <p>¿Está seguro que desea eliminar su cuenta? Esta acción no se puede deshacer.</p>
         <div class="buttons">
           <button @click="confirmDelete" class="btn-danger" :disabled="isDeleting">
@@ -108,7 +168,7 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { getCurrentUser, updateProfile, deleteAccount, logout } from '../../services/api'
+import { getCurrentUser, updateProfile, changePassword, deleteAccount, logout } from '../../services/api'
 import { roleHelpers } from '../../utils/roleHelpers'
 import { useRouter } from 'vue-router'
 
@@ -122,12 +182,22 @@ const formData = ref({
   telefono: ''
 })
 
+const passwordForm = ref({
+  current_password: '',
+  new_password: '',
+  confirm_password: ''
+})
+
 const isLoading = ref(false)
 const successMessage = ref('')
 const errorMessage = ref('')
+const isChangingPassword = ref(false)
+const passwordSuccessMessage = ref('')
+const passwordErrorMessage = ref('')
 const deleteErrorMessage = ref('')
 const showDeleteConfirm = ref(false)
 const isDeleting = ref(false)
+const deletePassword = ref('')
 
 // Cargar datos del usuario actual
 onMounted(async () => {
@@ -190,21 +260,51 @@ const handleSaveProfile = async () => {
   }
 }
 
-// Funciones de eliminación de usuario
+const handleChangePassword = async () => {
+  passwordSuccessMessage.value = ''
+  passwordErrorMessage.value = ''
+
+  isChangingPassword.value = true
+
+  try {
+    await changePassword({
+      current_password: passwordForm.value.current_password,
+      new_password: passwordForm.value.new_password,
+      confirm_password: passwordForm.value.confirm_password
+    })
+    passwordForm.value = {
+      current_password: '',
+      new_password: '',
+      confirm_password: ''
+    }
+    passwordSuccessMessage.value = 'La contraseña fue actualizada correctamente.'
+  } catch (err) {
+    passwordErrorMessage.value = err.response?.data?.error || 'Error al actualizar la contraseña'
+  } finally {
+    isChangingPassword.value = false
+  }
+}
+
 const openDeleteConfirm = () => {
+  deletePassword.value = ''
   deleteErrorMessage.value = ''
   showDeleteConfirm.value = true
 }
 
 const cancelDelete = () => {
+  deletePassword.value = ''
+  deleteErrorMessage.value = ''
   showDeleteConfirm.value = false
 }
 
 const confirmDelete = async () => {
+  if (!deletePassword.value) {
+    deleteErrorMessage.value = 'Por favor, ingrese su contraseña para confirmar.'
+    return
+  }
   isDeleting.value = true
   try {
-    // Ejecuta la función del endpoint para eliminar la cuenta y cierra sesión
-    await deleteAccount()
+    await deleteAccount({ password: deletePassword.value })
     await logout()
     showDeleteConfirm.value = false
     router.push('/login')

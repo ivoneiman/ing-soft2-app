@@ -11,8 +11,8 @@ export function register({ username, apellido, email, dni, telefono, password })
   return axios.post(`${API_URL}/register`, { username, apellido, email, dni, telefono, password }, REQUEST_CONFIG);
 }
 
-export function crearUsuario({ username, apellido, email, dni, telefono, password, role }) {
-  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, password, role }, REQUEST_CONFIG);
+export function crearUsuario({ username, apellido, email, dni, telefono, role }) {
+  return axios.post(`${API_URL}/users`, { username, apellido, email, dni, telefono, role }, REQUEST_CONFIG);
 }
 
 export function getUsers() {
@@ -66,11 +66,26 @@ export function updateProfile({ username, apellido, telefono, dni }) {
   );
 }
 
-export function deleteAccount() {
-  return axios.delete(
-    `${API_URL}/me`,
+export function changePassword({ current_password, new_password, confirm_password }) {
+  return axios.post(
+    `${API_URL}/me/change-password`,
+    { current_password, new_password, confirm_password },
     REQUEST_CONFIG
   );
+}
+
+export function deleteAccount({ password }) {
+  return axios.delete(
+    `${API_URL}/me`,
+    {
+      ...REQUEST_CONFIG,
+      data: { password } // 💡 Aquí se agrega la contraseña al cuerpo de la petición
+    }
+  );
+}
+
+export function deleteUserAsAdmin(userId) {
+  return axios.delete(`${API_URL}/admin/users/${userId}`, REQUEST_CONFIG);
 }
 
 // =========================
@@ -156,6 +171,21 @@ export function createClass({
 export function getMyClasses() {
   return axios.get(
     `${API_URL}/classes/my`,
+    REQUEST_CONFIG
+  );
+}
+
+export function getProfesores() {
+  return axios.get(
+    `${API_URL}/profesores`,
+    REQUEST_CONFIG
+  );
+}
+
+export function updateClass(classId, data) {
+  return axios.put(
+    `${API_URL}/classes/${classId}`,
+    data,
     REQUEST_CONFIG
   );
 }

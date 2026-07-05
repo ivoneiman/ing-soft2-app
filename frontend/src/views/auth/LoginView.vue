@@ -15,40 +15,31 @@
         <h2>Bienvenido de nuevo</h2>
         <p class="subtitle">Iniciá sesión para continuar</p>
 
-        <div class="mode-buttons">
-          <button type="button" class="mode-button" :class="{ active: mode === 'password' }" @click="setMode('password')">
-            Login normal
-          </button>
-          <button type="button" class="mode-button" :class="{ active: mode === 'admin-code' }" @click="setMode('admin-code')">
-            Administrador por código
-          </button>
-        </div>
-
         <form @submit.prevent="onSubmit" class="login-form">
           <div class="input-group">
             <label for="email">Email</label>
-            <input id="email" v-model="email" type="email" placeholder="tu@email.com" :disabled="mode === 'admin-code' && codeSent" required />
+            <input id="email" v-model="email" type="email" placeholder="tu@email.com" :disabled="adminLoginStep" required />
           </div>
 
-          <div class="input-group" v-if="mode === 'password' || mode === 'admin-code'">
+          <div class="input-group" v-if="!adminLoginStep">
             <label for="password">Contraseña</label>
-            <input id="password" v-model="password" type="password" placeholder="••••••••" :disabled="mode === 'admin-code' && codeSent" required />
+            <input id="password" v-model="password" type="password" placeholder="••••••••" required />
           </div>
 
-          <div class="input-group" v-if="mode === 'admin-code' && codeSent">
+          <div class="input-group" v-if="adminLoginStep">
             <label for="code">Código de verificación</label>
             <input id="code" v-model="code" type="text" maxlength="6" placeholder="123456" required />
           </div>
 
           <button type="submit" class="btn-submit" :disabled="loading">
-            {{ mode === 'admin-code' ? (codeSent ? 'Verificar código' : 'Recibir código') : 'Ingresar' }}
+            {{ adminLoginStep ? 'Verificar código' : 'Ingresar' }}
           </button>
           <div v-if="error" class="msg error">{{ error }}</div>
           <div v-if="info" class="msg info">{{ info }}</div>
         </form>
         
         <!-- Enlace a la vista de registro.-->
-        <p class="link-text" v-if="mode === 'password'">
+        <p class="link-text" v-if="!adminLoginStep">
           ¿No tenés cuenta?
           <RouterLink to="/register">Crear cuenta</RouterLink>
         </p>
@@ -64,75 +55,63 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 // Variables reactivas para manejar el estado del formulario y el estado UI.
 const route = useRoute()
 const router = useRouter()
-const mode = ref('password')
+const mode = ref('password') // Se mantiene por si se quiere reutilizar, pero el flujo es único.
 const email = ref('') //email ingresado por el usuario
 const password = ref('')// contraseña ingresada por el usuario
 const code = ref('')
 const error = ref('')// mensaje de error a mostrar al usuario
 const info = ref('')
 const loading = ref(false)//indica si peticion está en curso
-const codeSent = ref(false)
+const adminLoginStep = ref(false) // true si el login es de admin y se espera el código
 
 function redirectAfterLogin() {
   router.push(route.query.redirect || '/')
-}
-
-function setMode(newMode) {
-  mode.value = newMode
-  error.value = ''
-  info.value = ''
-  password.value = ''
-  code.value = ''
-  codeSent.value = false
 }
 
 async function onSubmit() {
   // Reiniciamos el mensaje de error y marcamos carga
   error.value = ''
   info.value = ''
-  //validación de campos obligatorios
-  if (!email.value.trim()) {
-    error.value = 'Debe completar el email'
-    return
-  }
-
   loading.value = true
+
   try {
-    if (mode.value === 'admin-code') {
-      if (!codeSent.value) {
-        if (!password.value.trim()) {
-          error.value = 'Debe completar la contraseña'
-          return
-        }
-        const ok = await authStore.adminLoginRequest(email.value, password.value)
-        if (ok) {
-          info.value = 'Se envió un código al email. Ingresalo a continuación.'
-          codeSent.value = true
-        } else {
-          error.value = authStore.error || 'No se pudo solicitar el código'
-        }
-      } else {
-        if (!code.value.trim()) {
-          error.value = 'Debe completar el código'
-          return
-        }
-        const ok = await authStore.adminLoginVerify(email.value, code.value.trim())
-        if (ok) {
-          redirectAfterLogin()
-        } else {
-          error.value = authStore.error || 'Código incorrecto'
-        }
-      }
-    } else {
-      if (!password.value.trim()) {
-        error.value = 'Debe completar la contraseña'
+    // Si estamos en el paso de verificación de código para admin
+    if (adminLoginStep.value) {
+      if (!code.value.trim()) {
+        error.value = 'Debes ingresar el código de verificación.'
         return
       }
-      const ok = await authStore.login(email.value, password.value)
+      const ok = await authStore.adminLoginVerify(email.value, code.value.trim())
       if (ok) {
         redirectAfterLogin()
       } else {
-        error.value = authStore.error || 'Email o contraseña incorrectos'
+        error.value = authStore.error || 'El código es incorrecto o ha expirado.'
+      }
+    } else {
+      // Paso inicial: enviar email y contraseña
+      if (!email.value.trim() || !password.value.trim()) {
+        error.value = 'Debes completar tu email y contraseña.'
+        return
+      }
+
+      // `authStore.login` ahora maneja la lógica de roles.
+      // Si el backend responde con `needs2FA: true`, el usuario es un admin
+      // y se debe proceder al segundo paso.
+      const ok = await authStore.login(email.value, password.value)
+
+      if (ok) {
+        // Si el login fue exitoso y NO requiere 2FA (es cliente o empleado),
+        // se redirige directamente.
+        if (!authStore.needs2FA) {
+          redirectAfterLogin()
+        } else {
+          // Si es admin, el backend ya envió el código.
+          // Mostramos el campo para el código y un mensaje informativo.
+          info.value = 'Le enviamos un código a su email para completar su autenticación.'
+          adminLoginStep.value = true // Esto muestra el campo del código
+        }
+      } else {
+        error.value = authStore.error
       }
     }
   } finally {

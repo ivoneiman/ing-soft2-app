@@ -20,27 +20,37 @@
       </p>
 
       <div v-else class="filtros-contenedor">
-        <!-- 1. Mes -->
+        <!-- 1. Estado -->
         <div class="form-group">
-          <label for="mes">1. Seleccionar Mes:</label>
+          <label for="status">1. Seleccionar Estado de clase:</label>
+          <select id="status" v-model="selectedStatus">
+            <option value="Activa"> Activas</option>
+            <option value="Finalizada"> Finalizadas</option>
+            <option value="Cancelada"> Canceladas</option>
+          </select>
+        </div>
+
+        <!-- 2. Mes -->
+        <div class="form-group">
+          <label for="mes">2. Seleccionar Mes:</label>
           <select id="mes" v-model="selectedMonth">
             <option value="" disabled>-- Seleccione un mes --</option>
             <option v-for="month in availableMonths" :key="month.value" :value="month.value">{{ month.label }}</option>
           </select>
         </div>
 
-        <!-- 2. Día exacto -->
+        <!-- 3. Día exacto -->
         <div class="form-group" v-if="selectedMonth">
-          <label for="dia">2. Seleccionar Día:</label>
+          <label for="dia">3. Seleccionar Día:</label>
           <select id="dia" v-model="selectedDate">
             <option value="" disabled>-- Seleccione un día --</option>
             <option v-for="date in availableDates" :key="date.value" :value="date.value">{{ date.label }}</option>
           </select>
         </div>
 
-        <!-- 3. Actividad -->
+        <!-- 4. Actividad -->
         <div class="form-group" v-if="selectedDate">
-          <label for="actividad">3. Seleccionar Actividad:</label>
+          <label for="actividad">4. Seleccionar Actividad:</label>
           <select id="actividad" v-model="selectedActivity">
             <option value="" disabled>-- Seleccione una actividad --</option>
             <option v-for="act in availableActivities" :key="act" :value="act">{{ act }}</option>
@@ -56,6 +66,8 @@
               <th>Actividad</th>
               <th>Fecha / Día</th>
               <th>Horario</th>
+              <th>Sala</th>
+              <th>Profesor</th>
               <th>Cupos Ocupados</th>
               <th>Estado</th>
               <th style="text-align: center;">Acciones</th>
@@ -70,21 +82,35 @@
               <td class="col-actividad">{{ clase.actividad || clase.name }}</td>
               <td class="texto-celda">{{ formatFecha(clase.fecha_hora) }}</td>
               <td class="col-resaltada texto-celda">{{ clase.time || 'No definido' }} hs</td>
+              <td class="texto-celda">{{ clase.room || 'N/A' }}</td>
+              <td class="texto-celda">{{ clase.profesor_nombre || 'N/A' }}</td>
               <td class="texto-celda">{{ clase.enrolled }} / {{ clase.cupoMaximo }}</td>
               <td>
                 <span :class="isCancelled(clase) ? 'etiqueta-estado-roja' : 'etiqueta-estado-verde'">
-                  {{ classStatusLabel(clase.estado) }}
+                  {{ getDisplayStatus(clase) }}
                 </span>
               </td>
               <td style="text-align: center;">
-                <button 
-                  @click="abrirConfirmacionCancelacion(clase)"
-                  :disabled="isCancelled(clase)"
-                  class="btn-tabla-cancelar"
-                  :class="{ 'btn-tabla-deshabilitado': isCancelled(clase) }"
-                >
-                  {{ isCancelled(clase) ? 'Ya cancelada' : 'Cancelar clase' }}
-                </button>
+                <div v-if="selectedStatus === 'Activa' && !isCancelled(clase)" class="acciones-columna">
+                  <button
+                    @click="abrirModalEdicion(clase)"
+                    class="btn-tabla-editar"
+                  >
+                    Editar clase</button>
+                  <button 
+                    @click="abrirConfirmacionCancelacion(clase)"
+                    :disabled="isCancelled(clase)"
+                    class="btn-tabla-cancelar"
+                    :class="{ 'btn-tabla-deshabilitado': isCancelled(clase) }"
+                  >
+                    {{ isCancelled(clase) ? 'Ya cancelada' : 'Cancelar clase' }}
+                  </button>
+                </div>
+                <div v-else-if="selectedStatus === 'Finalizada'">
+                  <button @click="verAsistencias(clase)" class="btn-tabla-ver-asistencia">
+                    Ver asistencias
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -92,6 +118,7 @@
       </div>
     </div>
 
+    <!-- Modal de Confirmación de Cancelación -->
     <div v-if="claseSeleccionada" class="modal-backdrop" role="dialog" aria-modal="true">
       <section class="confirm-modal">
         <h2>Cancelar clase</h2>
@@ -108,10 +135,108 @@
         </div>
       </section>
     </div>
+
+    <!-- Modal de Edición de Clase -->
+    <div v-if="claseParaEditar" class="modal-backdrop" role="dialog" aria-modal="true">
+      <section class="confirm-modal">
+        <h2>Editar Clase</h2>
+        <p>
+          Editando: <strong>{{ claseParaEditar.actividad || claseParaEditar.name }}</strong> del <strong>{{ formatFecha(claseParaEditar.fecha_hora) }}</strong>
+        </p>
+        
+        <div class="form-group-modal">
+          <label for="edit-room">Salón</label>
+          <select id="edit-room" v-model="formEdicion.room">
+            <option>Sala 1</option>
+            <option>Sala 2</option>
+            <option>Sala 3</option>
+          </select>
+        </div>
+
+        <div class="form-group-modal">
+          <label for="edit-cupo">Cupos</label>
+          <input id="edit-cupo" type="number" v-model.number="formEdicion.cupoMaximo" min="1" max="20" />
+        </div>
+
+        <div class="form-group-modal">
+          <label for="edit-profesor">Profesor</label>
+          <select id="edit-profesor" v-model="formEdicion.profesor_id">
+            <option v-for="profesor in profesores" :key="profesor.id" :value="profesor.id">
+              {{ profesor.nombre }} {{ profesor.apellido }}
+            </option>
+          </select>
+        </div>
+
+        <p v-if="editFeedbackMessage" :class="['feedback-message', editFeedbackType]" style="margin-top: 1rem;">
+          {{ editFeedbackMessage }}
+        </p>
+
+        <div class="modal-actions">
+          <button type="button" class="btn-secundario" @click="cerrarModalEdicion">
+            Cancelar
+          </button>
+          <button type="button" :disabled="editando" @click="ejecutarEdicion">
+            {{ editando ? 'Guardando...' : 'Confirmar edición' }}
+          </button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Modal de Lista de Asistencia -->
+    <div v-if="claseParaAsistencia" class="modal-backdrop" role="dialog" aria-modal="true">
+      <section class="confirm-modal">
+        <h2>Lista de Asistencia</h2>
+        <p>Clase: <strong>{{ claseParaAsistencia.actividad || claseParaAsistencia.name }}</strong> del <strong>{{ formatFecha(claseParaAsistencia.fecha_hora) }}</strong></p>
+
+        <div v-if="cargandoAsistencia" class="loading-text">Cargando asistencias...</div>
+        <div v-else-if="errorAsistencia" class="feedback-message error">{{ errorAsistencia }}</div>
+        <div v-else-if="listaAsistencia.length === 0" class="empty-state" style="margin-top: 1rem;">No hubo inscriptos en esta clase.</div>
+        
+        <div v-else>
+          <p class="asistencia-summary">
+            Asistencias: {{ totalAsistencias }} / {{ listaAsistencia.length }}
+          </p>
+          <div class="tabla-responsiva-contenedor" style="margin-top: 16px; max-height: 300px; overflow-y: auto;">
+            <table class="tabla-gestion-gym" aria-live="polite">
+            <thead>
+              <tr>
+                <th>Alumno</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="asistente in listaAsistencia" :key="asistente.user_id">
+                <td>{{ asistente.apellido }}, {{ asistente.username }}</td>
+                <td>
+                  <span :class="asistente.present ? 'etiqueta-estado-verde' : 'etiqueta-estado-roja'">
+                    {{ asistente.present ? 'Asistió' : 'No asistió' }}
+                  </span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="modal-actions"><button type="button" class="btn-secundario" @click="cerrarAsistencias">Cerrar</button></div>
+      </section>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.asistencia-summary {
+  font-weight: bold;
+  color: #572c57;
+  background-color: #f6ea98;
+  padding: 8px 12px;
+  border-radius: 6px;
+}
+
+.acciones-columna {
+  display: flex;
+  gap: 8px;
+}
 /* Estilos unificados con la paleta de marca: #572c57, #9f5f91, #f5f5f5, #f6ea98, #e26972 */
 .gestion-clases-container {
   max-width: 1000px;
@@ -275,6 +400,18 @@
   white-space: nowrap;
 }
 
+.btn-tabla-editar {
+  background-color: #9f5f91; /* Color rojo, igual que el de cancelar */
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.btn-tabla-ver-asistencia {
+  background-color: #9f5f91;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .btn-tabla-cancelar:hover:not(:disabled) {
   transform: scale(1.02);
 }
@@ -344,6 +481,26 @@
   margin-top: 24px;
 }
 
+.form-group-modal {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1rem;
+}
+
+.form-group-modal label {
+  font-weight: bold;
+  color: #572c57;
+  margin-bottom: 0.5rem;
+}
+
+.form-group-modal input,
+.form-group-modal select {
+  padding: 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
 .btn-secundario {
   background: #f5f5f5;
   color: #572c57;
@@ -351,28 +508,47 @@
 </style>
 
 <script setup>
-import { ref, computed, watch, onMounted } from "vue";
-import { CLASS_STATUS, statusLabel } from "../../constants/statuses";
-import { getAllClasses, cancelarClaseCompleta } from "../../services/api";
+import { ref, reactive, computed, watch, onMounted } from "vue";
+import { CLASS_STATUS } from "../../constants/statuses";
+import { getAllClasses, cancelarClaseCompleta, getClassAttendance, getProfesores, updateClass } from "../../services/api";
 import { formatShortDate } from "../../utils/formatters";
 
 const allClasses = ref([]);
+const selectedStatus = ref("Activa");
 const selectedMonth = ref("");
 const selectedDate = ref("");
 const selectedActivity = ref("");
 
 const cargando = ref(false);
 const cancelando = ref(false);
+const editando = ref(false);
 const claseSeleccionada = ref(null);
 const feedbackMessage = ref("");
 const feedbackType = ref("success");
 
+const editFeedbackMessage = ref("");
+const editFeedbackType = ref("success");
+
+const profesores = ref([]);
+const claseParaEditar = ref(null);
+const formEdicion = reactive({
+  id: null,
+  room: '',
+  cupoMaximo: 20,
+  profesor_id: null,
+});
+
+const claseParaAsistencia = ref(null);
+const listaAsistencia = ref([]);
+const cargandoAsistencia = ref(false);
+const errorAsistencia = ref("");
+
+const totalAsistencias = computed(() => {
+  return listaAsistencia.value.filter(a => a.present).length;
+});
+
 function isCancelled(clase) {
   return clase.estado === CLASS_STATUS.CANCELLED;
-}
-
-function classStatusLabel(status) {
-  return statusLabel("class", status || CLASS_STATUS.ACTIVE);
 }
 
 function ordenarClasesPorEstado(todasLasClases) {
@@ -387,13 +563,24 @@ function classTimeLabel(value) {
   }).format(new Date(value));
 }
 
-const availableMonths = computed(() => {
-  const months = new Map();
+const statusFilteredClasses = computed(() => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  allClasses.value.forEach(c => {
-    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return;
+  if (selectedStatus.value === 'Activa') {
+    return allClasses.value.filter(c => c.estado !== CLASS_STATUS.CANCELLED && c.fecha_hora && new Date(c.fecha_hora) >= today);
+  } else if (selectedStatus.value === 'Finalizada') {
+    return allClasses.value.filter(c => c.estado !== CLASS_STATUS.CANCELLED && c.fecha_hora && new Date(c.fecha_hora) < today);
+  } else { // Cancelada
+    return allClasses.value.filter(c => c.estado === CLASS_STATUS.CANCELLED);
+  }
+});
+
+const availableMonths = computed(() => {
+  const months = new Map();
+
+  statusFilteredClasses.value.forEach(c => {
+    if (!c.fecha_hora) return;
     const d = new Date(c.fecha_hora);
     
     const y = d.getFullYear();
@@ -412,12 +599,10 @@ const availableMonths = computed(() => {
 const availableDates = computed(() => {
   if (!selectedMonth.value) return [];
   const dates = new Map();
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
-  allClasses.value.forEach(c => {
-    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return;
+  statusFilteredClasses.value.forEach(c => {
     const d = new Date(c.fecha_hora);
+    if (!c.fecha_hora) return;
 
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -441,7 +626,7 @@ const availableActivities = computed(() => {
   if (!selectedDate.value) return [];
   const acts = new Set();
 
-  allClasses.value.forEach(c => {
+  statusFilteredClasses.value.forEach(c => {
     if (!c.fecha_hora) return;
     const d = new Date(c.fecha_hora);
     
@@ -460,11 +645,9 @@ const availableActivities = computed(() => {
 
 const filteredClasses = computed(() => {
   if (!selectedActivity.value) return [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
 
-  return allClasses.value.filter(c => {
-    if (!c.fecha_hora || new Date(c.fecha_hora) < today) return false;
+  return statusFilteredClasses.value.filter(c => {
+    if (!c.fecha_hora) return false;
     const d = new Date(c.fecha_hora);
 
     const y = d.getFullYear();
@@ -479,6 +662,7 @@ const filteredClasses = computed(() => {
   }).sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora)); // Las ordena de la más cercana a la más lejana
 });
 
+watch(selectedStatus, () => { selectedMonth.value = ''; selectedDate.value = ''; selectedActivity.value = ''; });
 watch(selectedMonth, () => { selectedDate.value = ''; selectedActivity.value = ''; });
 watch(selectedDate, () => { selectedActivity.value = ''; });
 
@@ -496,6 +680,17 @@ async function cargarClases() {
   }
 }
 
+async function cargarProfesores() {
+  try {
+    const response = await getProfesores();
+    profesores.value = response.data.profesores || [];
+  } catch (error) {
+    feedbackType.value = "error";
+    feedbackMessage.value = "No se pudieron cargar los profesores para la edición.";
+    console.error("Error cargando profesores:", error);
+  }
+}
+
 function abrirConfirmacionCancelacion(clase) {
   feedbackMessage.value = "";
   claseSeleccionada.value = clase;
@@ -504,6 +699,22 @@ function abrirConfirmacionCancelacion(clase) {
 function cerrarConfirmacionCancelacion() {
   claseSeleccionada.value = null;
 }
+
+function abrirModalEdicion(clase) {
+  editFeedbackMessage.value = ""; // Limpiar mensaje de error al abrir
+  editFeedbackType.value = "success";
+  feedbackMessage.value = "";
+  claseParaEditar.value = clase;
+  formEdicion.id = clase.id;
+  formEdicion.room = clase.room;
+  formEdicion.cupoMaximo = clase.cupoMaximo;
+  formEdicion.profesor_id = clase.profesor_id;
+}
+
+function cerrarModalEdicion() {
+  claseParaEditar.value = null;
+}
+
 
 async function ejecutarCancelacion() {
   if (!claseSeleccionada.value) return;
@@ -527,11 +738,121 @@ async function ejecutarCancelacion() {
   }
 }
 
+async function ejecutarEdicion() {
+  if (!claseParaEditar.value) return;
+
+  // Validación de cupos en el frontend
+  if (formEdicion.cupoMaximo > 20) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = "El cupo máximo es de 20";
+    return;
+  }
+  if (formEdicion.cupoMaximo < 1) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = "El cupo mínimo es 1";
+    return;
+  }
+
+  // Validación de cupo contra inscriptos
+  if (formEdicion.cupoMaximo < claseParaEditar.value.enrolled) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = "La cantidad de inscriptos supera el nuevo cupo ingresado";
+    return;
+  }
+
+  // Validación de conflicto de salón en el frontend
+  const claseOriginal = claseParaEditar.value;
+  const salonConflictivo = allClasses.value.find(c =>
+    c.id !== claseOriginal.id &&
+    c.estado === 'Activa' &&
+    c.fecha_hora === claseOriginal.fecha_hora &&
+    c.room === formEdicion.room
+  );
+
+  if (salonConflictivo) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = `La '${formEdicion.room}' ya está ocupada por otra clase en ese horario`;
+    return;
+  }
+
+  // Validación de conflicto de profesor en el frontend
+  const profesorConflictivo = allClasses.value.find(c =>
+    c.id !== claseOriginal.id &&
+    c.estado === 'Activa' &&
+    c.fecha_hora === claseOriginal.fecha_hora &&
+    c.profesor_id === formEdicion.profesor_id
+  );
+
+  if (profesorConflictivo) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = "El profesor ya tiene una clase en ese día y horario";
+    return;
+  }
+
+  editFeedbackMessage.value = ""; // Limpiar mensajes de error previos
+  editando.value = true;
+  try {
+    const response = await updateClass(formEdicion.id, {
+      room: formEdicion.room,
+      cupoMaximo: formEdicion.cupoMaximo,
+      profesor_id: formEdicion.profesor_id,
+    });
+
+    // Actualizar la clase en la lista local
+    const index = allClasses.value.findIndex(c => c.id === formEdicion.id);
+    if (index !== -1) {
+      allClasses.value[index] = { ...allClasses.value[index], ...response.data.class };
+    }
+
+    feedbackType.value = "success";
+    feedbackMessage.value = "Cambios realizados con éxito";
+    cerrarModalEdicion();
+  } catch (error) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = error.response?.data?.error || "No se pudo guardar la clase.";
+  } finally {
+    editando.value = false;
+  }
+}
+
+async function verAsistencias(clase) {
+  claseParaAsistencia.value = clase;
+  cargandoAsistencia.value = true;
+  errorAsistencia.value = "";
+  listaAsistencia.value = [];
+
+  try {
+    const response = await getClassAttendance(clase.id);
+    listaAsistencia.value = response.data.roster || [];
+  } catch (error) {
+    errorAsistencia.value = error.response?.data?.error || "No se pudo cargar la lista de asistencia.";
+  } finally {
+    cargandoAsistencia.value = false;
+  }
+}
+
+function cerrarAsistencias() {
+  claseParaAsistencia.value = null;
+  listaAsistencia.value = [];
+  errorAsistencia.value = "";
+}
+
+function getDisplayStatus(clase) {
+  if (clase.estado === CLASS_STATUS.CANCELLED) {
+    return 'Cancelada';
+  }
+  if (new Date(clase.fecha_hora) < new Date()) {
+    return 'Finalizada';
+  }
+  return 'Activa';
+}
+
 function formatFecha(fechaIso) {
   return formatShortDate(fechaIso);
 }
 
 onMounted(() => {
   cargarClases();
+  cargarProfesores();
 });
 </script>

@@ -38,9 +38,12 @@
             <td class="bold">{{ formatName(user.apellido, user.username) }}</td>
             <td>{{ user.email }}</td>
             <td>
-              <button class="table-action secondary" @click="openUserProfile(user.id)">
-                Información del perfil
-              </button>
+              <div class="actions-group">
+                <button class="table-action secondary" @click="openUserProfile(user.id)">
+                  Información del perfil
+                </button>
+                <button class="table-action danger" @click="openDeleteConfirmation(user)">Eliminar</button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -128,12 +131,37 @@
         </div>
       </section>
     </div>
+
+    <!-- Modal de Confirmación de Eliminación -->
+    <div v-if="userToDelete" class="modal-backdrop" role="dialog" aria-modal="true" @click.self="closeDeleteConfirmation">
+      <section class="profile-modal delete-confirm">
+        <header class="modal-header">
+          <h2>Confirmar Eliminación</h2>
+          <button class="close-btn" @click="closeDeleteConfirmation">✕</button>
+        </header>
+        <div class="modal-body">
+          <p>
+            ¿Estás seguro de que deseas eliminar permanentemente al usuario <strong>{{ formatName(userToDelete.apellido, userToDelete.username) }}</strong>?
+          </p>
+          <p class="warning-text">
+            Toda su información, incluyendo inscripciones y pagos, será eliminada. Esta acción no se puede deshacer.
+          </p>
+        </div>
+        <footer class="modal-footer">
+            <button class="btn-secondary" @click="closeDeleteConfirmation">Cancelar</button>
+            <button class="btn-danger" @click="confirmDeleteUser" :disabled="isDeleting">
+              {{ isDeleting ? 'Eliminando...' : 'Sí, eliminar usuario' }}
+            </button>
+        </footer>
+      </section>
+    </div>
   </main>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue';
 import axios from 'axios';
+import { deleteUserAsAdmin } from '../../services/api';
 import { formatDateTime, formatMoney } from '../../utils/formatters';
 
 // Para no depender de que modifiques tu api.js, hacemos la llamada directamente configurada.
@@ -143,6 +171,9 @@ const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const users = ref([]);
 const isLoading = ref(false);
 const searchQuery = ref('');
+
+const userToDelete = ref(null);
+const isDeleting = ref(false);
 
 const filteredUsers = computed(() => {
   let result = [...users.value];
@@ -228,6 +259,32 @@ function closeUserProfile() {
   selectedUser.value = null;
 }
 
+function openDeleteConfirmation(user) {
+  userToDelete.value = user;
+}
+
+function closeDeleteConfirmation() {
+  userToDelete.value = null;
+}
+
+async function confirmDeleteUser() {
+  if (!userToDelete.value) return;
+
+  isDeleting.value = true;
+  try {
+    await deleteUserAsAdmin(userToDelete.value.id);
+
+    // Eliminar el usuario de la lista local para actualizar la UI al instante
+    users.value = users.value.filter(u => u.id !== userToDelete.value.id);
+    closeDeleteConfirmation();
+  } catch (err) {
+    console.error("Error eliminando el usuario:", err);
+    // Aquí podrías mostrar un mensaje de error en el modal
+  } finally {
+    isDeleting.value = false;
+  }
+}
+
 onMounted(() => {
   loadUsers();
 });
@@ -307,6 +364,11 @@ onMounted(() => {
   vertical-align: middle;
 }
 
+.actions-group {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .search-container {
   margin-bottom: 1rem;
 }
@@ -351,6 +413,11 @@ onMounted(() => {
   font-weight: 600;
   padding: 8px 12px;
 }
+.table-action.danger {
+  background-color: #fee2e2;
+  color: #b42318;
+}
+
 
 .modal-backdrop {
   position: fixed; inset: 0; background: rgba(20, 10, 20, 0.72);
@@ -374,6 +441,28 @@ onMounted(() => {
 .profile-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;}
 .detail-group label { color: #8a6a8a; font-size: 0.85rem; font-weight: 600; display: block; margin-bottom: 4px;}
 .detail-group p { margin: 0; font-weight: 700; color: #4a3a4a; }
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #e8dce8;
+  background-color: #f9fafb;
+}
+.modal-footer button {
+  padding: 0.6rem 1.2rem;
+  border-radius: 8px;
+  border: 1px solid;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-secondary { background-color: #fff; border-color: #d0d5dd; color: #344054; }
+.btn-danger { background-color: #d92d20; border-color: #d92d20; color: #fff; }
+
+.warning-text {
+  background-color: #fffbeb;
+  color: #b42318;
+}
 
 .classes-title { color: #572c57; margin-bottom: 1rem;}
 

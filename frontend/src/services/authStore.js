@@ -7,6 +7,7 @@ export const authStore = reactive({
   user: null,
   loading: false,
   error: null,
+  needs2FA: false, // Nuevo estado para manejar el flujo de admin
   isLoggedIn: false,
 
   async fetchCurrentUser() {
@@ -24,26 +25,23 @@ export const authStore = reactive({
     this.loading = true
     this.error = null
     try {
+      // Esta llamada ahora va a un endpoint unificado en el backend
       const res = await login({ email, password })
-      this.user = res.data.user
-      this.isLoggedIn = true
-      return true
+
+      // Si el backend indica que se necesita 2FA (porque es un admin)
+      if (res.data.needs2FA) {
+        this.needs2FA = true
+        // No se loguea al usuario todavía, solo se avanza al siguiente paso
+        return true // La primera fase fue exitosa
+      } else {
+        // Si es un cliente o empleado, el login es directo
+        this.user = res.data.user
+        this.isLoggedIn = true
+        this.needs2FA = false
+        return true
+      }
     } catch (err) {
       this.error = err.response?.data?.error || 'Error al iniciar sesión'
-      return false
-    } finally {
-      this.loading = false
-    }
-  },
-
-  async adminLoginRequest(email, password) {
-    this.loading = true
-    this.error = null
-    try {
-      await adminLoginRequest({ email, password })
-      return true
-    } catch (err) {
-      this.error = err.response?.data?.error || 'Error al solicitar el código'
       return false
     } finally {
       this.loading = false
@@ -57,6 +55,7 @@ export const authStore = reactive({
       const res = await adminLoginVerify({ email, code })
       this.user = res.data.user
       this.isLoggedIn = true
+      this.needs2FA = false // Se completa el flujo 2FA
       return true
     } catch (err) {
       this.error = err.response?.data?.error || 'Error al verificar el código'
@@ -89,6 +88,7 @@ export const authStore = reactive({
     } finally {
       this.user = null
       this.isLoggedIn = false
+      this.needs2FA = false
     }
   }
 })

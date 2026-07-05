@@ -16,10 +16,63 @@
         </button>
       </div>
 
+      <section class="filters-panel">
+        <div class="filter-grid">
+          <label class="filter-field">
+            <span>Tipo de actividad</span>
+            <select v-model="selectedActivity">
+              <option value="">Todas</option>
+              <option v-for="activity in availableActivities" :key="activity" :value="activity">
+                {{ activity }}
+              </option>
+            </select>
+          </label>
+
+          <label class="filter-field">
+            <span>Día</span>
+            <select v-model="selectedDay">
+              <option value="">Todos</option>
+              <option v-for="day in availableDays" :key="day" :value="day">
+                {{ day }}
+              </option>
+            </select>
+          </label>
+
+          <label class="filter-field">
+            <span>Horario</span>
+            <select v-model="selectedTime">
+              <option value="">Todos</option>
+              <option v-for="time in availableTimes" :key="time" :value="time">
+                {{ time }}
+              </option>
+            </select>
+          </label>
+
+          <label class="filter-field">
+            <span>Salón</span>
+            <select v-model="selectedRoom">
+              <option value="">Todos</option>
+              <option v-for="room in availableRooms" :key="room" :value="room">
+                {{ room }}
+              </option>
+            </select>
+          </label>
+        </div>
+
+        <div class="filters-actions">
+          <button type="button" class="ghost-button" @click="resetFilters">
+            Limpiar filtros
+          </button>
+          <p class="filters-summary">
+            {{ attendanceClasses.length }} clase{{ attendanceClasses.length === 1 ? '' : 's' }} disponible{{ attendanceClasses.length === 1 ? '' : 's' }}
+          </p>
+        </div>
+      </section>
+
       <p v-if="errorMessage" class="message error">{{ errorMessage }}</p>
       <p v-if="loading" class="empty-state">Cargando clases...</p>
       <p v-else-if="attendanceClasses.length === 0" class="empty-state">
-        No hay clases activas para tomar asistencia.
+        No hay clases que coincidan con los filtros seleccionados.
       </p>
 
       <div v-else class="classes-grid">
@@ -59,13 +112,61 @@ const router = useRouter();
 const classes = ref([]);
 const loading = ref(false);
 const errorMessage = ref('');
+const selectedActivity = ref('');
+const selectedDay = ref('');
+const selectedTime = ref('');
+const selectedRoom = ref('');
 
 const today = new Date();
 today.setHours(0, 0, 0, 0);
 
 const todayLabel = computed(() => formatShortDate(today.toISOString()));
 
-const attendanceClasses = computed(() =>
+const weekdayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+function normalizeValue(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function getClassActivityName(clase) {
+  return clase.actividad || clase.name || clase.activity_name || '';
+}
+
+function getClassDayLabel(clase) {
+  if (!clase.fecha_hora) return '';
+  return weekdayNames[new Date(clase.fecha_hora).getDay()];
+}
+
+function getClassTimeLabel(clase) {
+  const explicitTime = clase.time || '';
+  if (explicitTime) return explicitTime;
+
+  if (!clase.fecha_hora) return '';
+
+  return new Intl.DateTimeFormat('es-AR', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(clase.fecha_hora));
+}
+
+function normalizeRoomName(room) {
+  const value = String(room ?? '').trim();
+  if (!value) return '';
+
+  const normalized = value.toLowerCase();
+  const match = normalized.match(/sala(?:n)?\s*([123])/i);
+  if (match) {
+    return `Salón ${match[1]}`;
+  }
+
+  return value;
+}
+
+function getClassRoom(clase) {
+  return normalizeRoomName(clase.room || clase.salon || clase.location || '');
+}
+
+const baseAttendanceClasses = computed(() =>
   classes.value
     .filter((clase) => clase.estado === CLASS_STATUS.ACTIVE)
     .filter((clase) => {
@@ -75,6 +176,37 @@ const attendanceClasses = computed(() =>
       return classDate >= today;
     })
     .sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora))
+);
+
+const attendanceClasses = computed(() =>
+  baseAttendanceClasses.value.filter((clase) => {
+    const matchesActivity = !selectedActivity.value || normalizeValue(getClassActivityName(clase)) === normalizeValue(selectedActivity.value);
+    const matchesDay = !selectedDay.value || normalizeValue(getClassDayLabel(clase)) === normalizeValue(selectedDay.value);
+    const matchesTime = !selectedTime.value || normalizeValue(getClassTimeLabel(clase)) === normalizeValue(selectedTime.value);
+    const matchesRoom = !selectedRoom.value || normalizeValue(getClassRoom(clase)) === normalizeValue(selectedRoom.value);
+
+    return matchesActivity && matchesDay && matchesTime && matchesRoom;
+  })
+);
+
+const availableActivities = computed(() =>
+  [...new Set(baseAttendanceClasses.value.map((clase) => getClassActivityName(clase)).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
+);
+
+const availableDays = computed(() =>
+  [...new Set(baseAttendanceClasses.value.map((clase) => getClassDayLabel(clase)).filter(Boolean))]
+    .sort((a, b) => weekdayNames.indexOf(a) - weekdayNames.indexOf(b))
+);
+
+const availableTimes = computed(() =>
+  [...new Set(baseAttendanceClasses.value.map((clase) => getClassTimeLabel(clase)).filter(Boolean))]
+    .sort()
+);
+
+const availableRooms = computed(() =>
+  [...new Set(baseAttendanceClasses.value.map((clase) => getClassRoom(clase)).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }))
 );
 
 async function loadClasses() {
@@ -93,6 +225,13 @@ async function loadClasses() {
 
 function startAttendance(classId) {
   router.push({ name: 'ScanQr', params: { classId } });
+}
+
+function resetFilters() {
+  selectedActivity.value = '';
+  selectedDay.value = '';
+  selectedTime.value = '';
+  selectedRoom.value = '';
 }
 
 function classDateLabel(value) {
@@ -151,6 +290,63 @@ onMounted(loadClasses);
   border-radius: 8px;
   box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
   padding: 24px;
+}
+
+.filters-panel {
+  background: rgba(245, 245, 245, 0.08);
+  border: 1px solid #9f5f91;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  padding: 16px;
+}
+
+.filter-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-field span {
+  color: #f6ea98;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.filter-field select {
+  background: #f5f5f5;
+  border: 1px solid #9f5f91;
+  border-radius: 6px;
+  color: #2a142e;
+  padding: 8px 10px;
+}
+
+.filters-actions {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+
+.filters-summary {
+  color: #d9cfe0;
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.ghost-button {
+  background: transparent;
+  border: 1px solid #f6ea98;
+  color: #f6ea98;
+  font-size: 13px;
+  padding: 8px 12px;
 }
 
 .panel-header {
@@ -249,12 +445,14 @@ dd {
 }
 
 @media (max-width: 620px) {
-  .panel-header {
+  .panel-header,
+  .filters-actions {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .refresh-button {
+  .refresh-button,
+  .ghost-button {
     width: 100%;
   }
 }

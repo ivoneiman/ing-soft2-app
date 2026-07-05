@@ -91,6 +91,25 @@ def send_admin_login_code(user, code):
     )
 
 
+def send_temporary_password_email(user, temporary_password):
+    if not _has_valid_email(user):
+        return False
+
+    html = f"""
+    <h1>Contraseña temporal - SiempreGym</h1>
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    <p>Se generó automáticamente una contraseña temporal para tu cuenta.</p>
+    <p><strong>{escape(temporary_password)}</strong></p>
+    <p>Ingresá con esta contraseña y cámbiala cuando lo necesites.</p>
+    """
+
+    return _send_email(
+        user.email,
+        "Contraseña temporal - SiempreGym",
+        html,
+    )
+
+
 def _format_class_datetime(class_obj):
     if not getattr(class_obj, "fecha_hora", None):
         return "fecha a confirmar"
@@ -232,3 +251,30 @@ def send_waitlist_promotion_email(user, class_obj, new_enrollment, other_pending
         f"Fuiste inscripto a la clase de {activity_name} - SiempreGym",
         html,
     )
+
+
+def send_class_room_changed_email(user, class_obj, old_room, new_room):
+    """
+    Notifica a un usuario inscripto que el salón de su clase ha cambiado.
+    """
+    if not _has_valid_email(user):
+        return False
+
+    activity_name = escape(_activity_name(class_obj))
+    class_datetime = escape(_format_class_datetime(class_obj))
+
+    html = f"""
+    <h1>Cambio de sala para tu clase</h1>
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    <p>Te informamos que hubo un cambio en una de tus próximas clases:</p>
+    <p><strong>Clase:</strong> {activity_name}<br>
+    <strong>Fecha y hora:</strong> {class_datetime}</p>
+    <p>La sala fue modificado:</p>
+    <ul>
+        <li><strong>Sala anterior:</strong> {escape(old_room or 'No asignado')}</li>
+        <li><strong>Nueva sala:</strong> {escape(new_room or 'No asignado')}</li>
+    </ul>
+    <p>¡Te esperamos!</p>
+    """
+
+    return _send_email(user.email, f"Cambio de sala para {activity_name}", html)

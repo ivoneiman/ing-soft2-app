@@ -18,7 +18,7 @@
       <!-- Dashboard para admin y employee -->
       <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/dashboard" class="nav-item" @click="closeMobileMenu">Dashboard</router-link>
       <!-- Crear clase como botón principal para admin y employee -->
-      <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/crear-clase" class="nav-item" @click="closeMobileMenu">Crear clase</router-link>
+      <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/admin/clases/crear" class="nav-item" @click="closeMobileMenu">Crear clase</router-link>
       <!-- Solo clientes pueden ver Actividades -->
       <router-link v-if="!authStore.isLoggedIn || roleHelpers.isClient()" to="/actividades" class="nav-item" @click="closeMobileMenu">Actividades</router-link>
       <router-link v-if="!authStore.isLoggedIn || roleHelpers.isClient()" to="/sobre-nosotros" class="nav-item" @click="closeMobileMenu">Sobre Nosotros</router-link>
@@ -111,8 +111,11 @@
           </button>
 
           <div v-if="isAdminDropdownOpen" class="dropdown-container">
-            <router-link to="/crear-usuario" @click="handleAdminDropdownClick">
+            <router-link to="/admin/usuarios/crear" @click="handleAdminDropdownClick">
               Crear Usuario
+            </router-link>
+            <router-link to="/admin/profesores" @click="handleAdminDropdownClick">
+              Profesores
             </router-link>
             <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" @click="handleAdminDropdownClick">
               Pasar Asistencia

@@ -13,7 +13,7 @@ from app import (
     _payment_type_for_enrollment,
     app,
 )
-from models import db, User, Class, Enrollment, Attendance, Actividades, Payment
+from models import db, User, Class, Enrollment, Attendance, Actividades, Payment, Profesor
 
 
 def user_exists(email):
@@ -34,6 +34,11 @@ def find_class_by_datetime_and_activity(fecha_hora, actividad_id):
 def actividad_exists(name):
     """Verifica si una actividad ya existe por nombre."""
     return Actividades.query.filter_by(name=name).first() is not None
+
+
+def profesor_exists(nombre, apellido):
+    """Verifica si un profesor ya existe."""
+    return Profesor.query.filter_by(nombre=nombre, apellido=apellido).first() is not None
 
 
 def create_test_actividad(name):
@@ -65,6 +70,18 @@ def create_test_user(username, apellido, email, password, dni, telefono, role="c
     db.session.flush()
     print(f"   [OK] Usuario creado: {email} ({role})")
     return user
+
+def create_test_profesor(nombre, apellido):
+    """Crea un profesor de prueba si no existe."""
+    if profesor_exists(nombre, apellido):
+        print(f"   [SKIP] Profesor {nombre} {apellido} ya existe, omitiendo...")
+        return Profesor.query.filter_by(nombre=nombre, apellido=apellido).first()
+    
+    profesor = Profesor(nombre=nombre, apellido=apellido)
+    db.session.add(profesor)
+    db.session.flush()
+    print(f"   [OK] Profesor creado: {nombre} {apellido}")
+    return profesor
 
 
 def app_now():
@@ -115,7 +132,7 @@ def previous_available_datetime(actividad_id, fecha_hora, ignore_class_id=None):
         candidate = candidate - timedelta(days=1)
 
 
-def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=None, search_direction="forward", cupo_maximo=20):
+def create_test_class(name, fecha_hora, actividad, profesor_id, descuento=0, legacy_names=None, search_direction="forward", cupo_maximo=20):
     """Crea o actualiza una clase semilla sin duplicarla."""
     fecha_hora = as_naive_datetime(fecha_hora)
     find_available_datetime = previous_available_datetime if search_direction == "backward" else next_available_datetime
@@ -147,6 +164,9 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
         if existing_by_name.cupoMaximo != cupo_maximo:
             existing_by_name.cupoMaximo = cupo_maximo
             changed = True
+        if existing_by_name.profesor_id != profesor_id:
+            existing_by_name.profesor_id = profesor_id
+            changed = True
 
         action = "actualizada" if changed else "ya existe"
         print_class_log(existing_by_name, action)
@@ -160,6 +180,7 @@ def create_test_class(name, fecha_hora, actividad, descuento=0, legacy_names=Non
         id_actividad=actividad.id,
         descuento=descuento,
         cupoMaximo=cupo_maximo,
+        profesor_id=profesor_id
     )
     db.session.add(class_obj)
     db.session.flush()  # Para obtener el ID generado
@@ -218,6 +239,17 @@ def ensure_enrollment(user, class_obj, estado=Enrollment.STATUS_PENDING_PAYMENT,
     print(f"   [OK] Enrollment creado: {user.email} -> {class_obj.name} ({estado})")
     return enrollment
 
+"clases para probar reporte de asistencia"
+def ensure_attendance(user, class_obj):
+    """Crea un registro de asistencia si no existe."""
+    if Attendance.query.filter_by(user_id=user.id, class_id=class_obj.id).first():
+        print(f"   [SKIP] Asistencia para {user.email} en {class_obj.name} ya existe, omitiendo...")
+        return
+
+    attendance = Attendance(user_id=user.id, class_id=class_obj.id)
+    db.session.add(attendance)
+    print(f"   [OK] Asistencia creada: {user.email} -> {class_obj.name}")
+
 
 def ensure_payment(enrollment, status, created_at=None):
     """Crea o actualiza el pago de ejemplo asociado a una inscripcion."""
@@ -267,7 +299,7 @@ def ensure_class_active(class_obj):
         print(f"   [OK] Clase reactivada para pruebas: {class_obj.name}")
 
 
-def create_client_payment_examples(client, actividad_yoga, actividad_funcional, actividad_pilates, today):
+def create_client_payment_examples(client, actividad_yoga, actividad_funcional, actividad_pilates, profesor, today):
     """Crea casos de ejemplo para historial de pagos de client@test.com."""
     print("Creando casos de pagos para client@test.com...")
 
@@ -275,6 +307,7 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
         "Yoga",
         at_app_time(today - timedelta(days=1), 12),
         actividad_yoga,
+        profesor.id,
         legacy_names=["Yoga Mediodia", "Seed Pago Vencido - Yoga"],
         search_direction="backward",
     )
@@ -293,6 +326,7 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
         "Funcional",
         at_app_time(today + timedelta(days=1), 18),
         actividad_funcional,
+        profesor.id,
         legacy_names=["Funcional Intensivo", "Seed Pago Pendiente - Funcional"],
     )
     pending_enrollment = ensure_enrollment(
@@ -310,6 +344,7 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
         "Pilates",
         at_app_time(today + timedelta(days=2), 16),
         actividad_pilates,
+        profesor.id,
         legacy_names=["Pilates Suave", "Seed Pago Aprobado - Pilates"],
     )
     paid_enrollment = ensure_enrollment(
@@ -327,6 +362,7 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
         "Yoga",
         at_app_time(today + timedelta(days=3), 11),
         actividad_yoga,
+        profesor.id,
         legacy_names=["Yoga Restaurativo", "Seed Pago Rechazado - Yoga"],
     )
     rejected_enrollment = ensure_enrollment(
@@ -341,7 +377,7 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
     )
 
 
-def create_client_credit_examples(client, actividad_pilates, today):
+def create_client_credit_examples(client, actividad_pilates, profesor, today):
     """Crea un flujo claro para probar créditos por cancelación con client@test.com."""
     print("Creando casos de créditos para client@test.com...")
 
@@ -349,6 +385,7 @@ def create_client_credit_examples(client, actividad_pilates, today):
         "Pilates",
         at_app_time(today + timedelta(days=7), 15),
         actividad_pilates,
+        profesor.id,
         legacy_names=["Credito Test - Pilates Cancelable"],
     )
     ensure_class_active(cancellable_class)
@@ -367,6 +404,7 @@ def create_client_credit_examples(client, actividad_pilates, today):
         "Pilates",
         at_app_time(today + timedelta(days=8), 15),
         actividad_pilates,
+        profesor.id,
         legacy_names=["Credito Test - Pilates Destino"],
     )
     ensure_class_active(target_class)
@@ -392,6 +430,21 @@ def main():
             username="Admin", apellido="Test", email="admin@test.com",
             password="admin123", dni="11111111", telefono="221 1111111", role="admin"
         )
+
+        # Administradores del equipo
+        create_test_user(
+            username="Franco", apellido="Martin", email="francomartin08@hotmail.com",
+            password="Admin_123", dni="44444444", telefono="221 4444444", role="admin"
+        )
+        create_test_user(
+            username="Tobias", apellido="Gonzalez", email="tobiasgonzalez07@gmail.com",
+            password="Admin_123", dni="55555555", telefono="221 5555555", role="admin"
+        )
+        create_test_user(
+            username="Ivo", apellido="Neiman", email="ivoneiman@gmail.com",
+            password="Admin_123", dni="66666666", telefono="221 6666666", role="admin"
+        )
+
         
         employee = create_test_user(
             username="Employee", apellido="Test", email="employee@test.com",
@@ -403,6 +456,12 @@ def main():
             password="client123", dni="33333333", telefono="221 3333333", role="client"
         )
 
+        db.session.commit()
+        print()
+
+        # ─── Crear profesor de prueba ───────────────────────────────────────
+        print("Creando profesor de prueba...")
+        profesor_test = create_test_profesor("Gustavo", "Martinez")
         db.session.commit()
         print()
 
@@ -429,27 +488,30 @@ def main():
         )
 
         # COMENTADAS TODAS LAS CLASES EXCEPTO LA DE CUPO 1/1
-        # class1 = create_test_class(
-        #     "Yoga",
-        #     at_app_time(today + timedelta(days=1), 9),
-        #     actividad1,
-        #     legacy_names=["Yoga Mañana"],
-        # )
-        class1 = None
-        # class2 = create_test_class(
-        #     "Funcional",
-        #     at_app_time(today + timedelta(days=2), 14),
-        #     actividad2,
-        #     legacy_names=["Funcional Tarde"],
-        # )
-        class2 = None
-        # class3 = create_test_class(
-        #     "Pilates",
-        #     at_app_time(today + timedelta(days=3), 20),
-        #     actividad3,
-        #     legacy_names=["Pilates Noche"],
-        # )
-        class3 = None
+        class1 = create_test_class(
+            "Yoga",
+            at_app_time(today + timedelta(days=1), 9),
+            actividad1,
+            profesor_test.id,
+            legacy_names=["Yoga Mañana"],
+        )
+        
+        class2 = create_test_class(
+            "Funcional",
+            at_app_time(today + timedelta(days=2), 14),
+            actividad2,
+            profesor_test.id,
+            legacy_names=["Funcional Tarde"],
+        )
+        
+        class3 = create_test_class(
+            "Pilates",
+            at_app_time(today + timedelta(days=3), 20),
+            actividad3,
+            profesor_test.id,
+            legacy_names=["Pilates Noche"],
+        )
+        
         # create_test_class(
         #     "Yoga",
         #     at_app_time(today - timedelta(days=1), 9),
@@ -486,6 +548,7 @@ def main():
             "Pilates - Clase Limitada (1 Cupo)",
             at_app_time(today + timedelta(days=7), 11),
             actividad3,
+            profesor_test.id,
             cupo_maximo=1,
             legacy_names=["Pilates Limitado"]
         )
@@ -495,6 +558,7 @@ def main():
             "Yoga - Prueba Cupos (19/20)",
             at_app_time(today + timedelta(days=8), 19),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Prueba 19 Cupos"]
         )
@@ -505,6 +569,7 @@ def main():
             "Yoga - 2 Junio (Martes)",
             datetime(year, 6, 2, 10, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Junio 2"]
         )
@@ -512,6 +577,7 @@ def main():
             "Yoga - 9 Junio (Martes)",
             datetime(year, 6, 9, 10, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Junio 9"]
         )
@@ -519,6 +585,7 @@ def main():
             "Yoga - 16 Junio (Martes)",
             datetime(year, 6, 16, 10, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Junio 16"]
         )
@@ -526,6 +593,7 @@ def main():
             "Yoga - 23 Junio (Martes)",
             datetime(year, 6, 23, 10, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Junio 23"]
         )
@@ -533,6 +601,7 @@ def main():
             "Yoga - 30 Junio (Martes)",
             datetime(year, 6, 30, 10, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Junio 30"]
         )
@@ -543,6 +612,7 @@ def main():
             "Yoga - 2 Julio (Jueves)",
             datetime(year, 7, 2, 7, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Julio 2"]
         )
@@ -550,6 +620,7 @@ def main():
             "Yoga - 9 Julio (Jueves)",
             datetime(year, 7, 9, 7, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Julio 9"]
         )
@@ -557,6 +628,7 @@ def main():
             "Yoga - 16 Julio (Jueves) - 1 Espacio ",
             datetime(year, 7, 16, 7, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=2,
             legacy_names=["Yoga Julio 16"]
         )
@@ -564,6 +636,7 @@ def main():
             "Yoga - 23 Julio (Jueves)",
             datetime(year, 7, 23, 7, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Julio 23"]
         )
@@ -571,9 +644,71 @@ def main():
             "Yoga - 30 Julio (Jueves)",
             datetime(year, 7, 30, 7, 0),
             actividad1,
+            profesor_test.id,
             cupo_maximo=20,
             legacy_names=["Yoga Julio 30"]
         )
+
+        print("   Creando clases específicas para el 29 de Junio de 2026...")
+        # Clase de Yoga con 1 asistente
+        yoga_junio_29 = create_test_class(
+            "Yoga - 29 Junio 2026",
+            datetime(2026, 6, 29, 10, 0),
+            actividad1,
+            profesor_test.id,
+            cupo_maximo=20,
+            legacy_names=["Yoga 29/06/2026"]
+        )
+
+        # Clase de Pilates sin asistentes
+        pilates_junio_29 = create_test_class(
+            "Pilates - 29 Junio 2026",
+            datetime(2026, 6, 29, 18, 0),
+            actividad3,
+            profesor_test.id,
+            cupo_maximo=20,
+            legacy_names=["Pilates 29/06/2026"]
+        )
+
+        # Clase de Funcional con 1 inscripto que no asistió
+        funcional_junio_29 = create_test_class(
+            "Funcional - 29 Junio 2026",
+            datetime(2026, 6, 29, 15, 0),
+            actividad2, # Funcional
+            profesor_test.id,
+            cupo_maximo=20,
+            legacy_names=["Funcional 29/06/2026"]
+        )
+
+        # Inscribir 3 usuarios a la clase de Yoga, pero solo 1 con asistencia
+        print("   Inscribiendo 3 usuarios a la clase de Yoga del 29/06...")
+        # 1. Usuario que SÍ asiste
+        yoga_enrollment = ensure_enrollment(client, yoga_junio_29, estado=Enrollment.STATUS_PAID)
+        ensure_payment(yoga_enrollment, Payment.STATUS_APPROVED, created_at=datetime(2026, 6, 28))
+        ensure_attendance(client, yoga_junio_29)
+
+        # 2. Usuarios que NO asisten
+        no_asiste_1 = create_test_user(
+            "NoAsiste1", "Yoga", "noasiste1@test.com", "client123", "55555501", "221 5555501"
+        )
+        no_asiste_2 = create_test_user(
+            "NoAsiste2", "Yoga", "noasiste2@test.com", "client123", "55555502", "221 5555502"
+        )
+
+        enrollment_no_asiste_1 = ensure_enrollment(no_asiste_1, yoga_junio_29, estado=Enrollment.STATUS_PAID)
+        ensure_payment(enrollment_no_asiste_1, Payment.STATUS_APPROVED, created_at=datetime(2026, 6, 28))
+
+        enrollment_no_asiste_2 = ensure_enrollment(no_asiste_2, yoga_junio_29, estado=Enrollment.STATUS_PAID)
+        ensure_payment(enrollment_no_asiste_2, Payment.STATUS_APPROVED, created_at=datetime(2026, 6, 28))
+
+        # Inscribir 1 usuario a la clase de Funcional del 29/06 que no asistió
+        print("   Inscribiendo 1 usuario a la clase de Funcional del 29/06 (no asistió)...")
+        funcional_no_asiste = create_test_user(
+            "NoAsiste", "Funcional", "noasistefuncional@test.com", "client123", "55555503", "221 5555503"
+        )
+        enrollment_funcional = ensure_enrollment(funcional_no_asiste, funcional_junio_29, estado=Enrollment.STATUS_PAID)
+        ensure_payment(enrollment_funcional, Payment.STATUS_APPROVED, created_at=datetime(2026, 6, 28))
+        # No se llama a ensure_attendance, por lo que se registrará como ausente.
 
         db.session.commit()
         print()
@@ -621,14 +756,14 @@ def main():
         # ─── Casos de historial de pagos para client@test.com ───────────────
 
         # COMENTADO: No hay clases para crear ejemplos de pagos
-        # create_client_payment_examples(client, actividad1, actividad2, actividad3, today)
+        # create_client_payment_examples(client, actividad1, actividad2, actividad3, profesor_test, today)
         db.session.commit()
         print()
 
         # ─── Casos para probar créditos por cancelación ─────────────────────
 
         # COMENTADO: No hay clases para crear ejemplos de créditos
-        # create_client_credit_examples(client, actividad3, today)
+        # create_client_credit_examples(client, actividad3, profesor_test, today)
         db.session.commit()
         print()
 
