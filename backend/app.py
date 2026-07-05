@@ -1947,7 +1947,7 @@ def delete_user_by_admin(user_id):
     approved_payments = [p for p in user_to_delete.payments if p.status == Payment.STATUS_APPROVED]
 
     if active_enrollments or approved_payments:
-        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas o pagos registrados."}), 409
+        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas."}), 409
 
     try:
         db.session.delete(user_to_delete)

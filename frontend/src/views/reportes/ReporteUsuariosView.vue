@@ -146,10 +146,16 @@
           <p class="warning-text">
             Toda su información, incluyendo inscripciones y pagos, será eliminada. Esta acción no se puede deshacer.
           </p>
+          <p v-if="deleteErrorMessage" class="delete-error-message">
+            {{ deleteErrorMessage }}
+          </p>
+          <p v-if="deleteSuccessMessage" class="delete-success-message">
+            {{ deleteSuccessMessage }}
+          </p>
         </div>
         <footer class="modal-footer">
-            <button class="btn-secondary" @click="closeDeleteConfirmation">Cancelar</button>
-            <button class="btn-danger" @click="confirmDeleteUser" :disabled="isDeleting">
+            <button class="btn-secondary" @click="closeDeleteConfirmation">{{ deleteSuccessMessage ? 'Cerrar' : 'Cancelar' }}</button>
+            <button v-if="!deleteSuccessMessage" class="btn-danger" @click="confirmDeleteUser" :disabled="isDeleting">
               {{ isDeleting ? 'Eliminando...' : 'Sí, eliminar usuario' }}
             </button>
         </footer>
@@ -174,6 +180,8 @@ const searchQuery = ref('');
 
 const userToDelete = ref(null);
 const isDeleting = ref(false);
+const deleteErrorMessage = ref('');
+const deleteSuccessMessage = ref('');
 
 const filteredUsers = computed(() => {
   let result = [...users.value];
@@ -261,25 +269,30 @@ function closeUserProfile() {
 
 function openDeleteConfirmation(user) {
   userToDelete.value = user;
+  deleteErrorMessage.value = '';
+  deleteSuccessMessage.value = '';
 }
 
 function closeDeleteConfirmation() {
   userToDelete.value = null;
+  deleteErrorMessage.value = '';
+  deleteSuccessMessage.value = '';
 }
 
 async function confirmDeleteUser() {
   if (!userToDelete.value) return;
 
   isDeleting.value = true;
+  deleteErrorMessage.value = '';
   try {
-    await deleteUserAsAdmin(userToDelete.value.id);
+    const response = await deleteUserAsAdmin(userToDelete.value.id);
 
     // Eliminar el usuario de la lista local para actualizar la UI al instante
     users.value = users.value.filter(u => u.id !== userToDelete.value.id);
-    closeDeleteConfirmation();
+    deleteSuccessMessage.value = response.data?.message || 'Usuario eliminado correctamente.';
   } catch (err) {
     console.error("Error eliminando el usuario:", err);
-    // Aquí podrías mostrar un mensaje de error en el modal
+    deleteErrorMessage.value = err.response?.data?.error || 'No se puede eliminar el usuario porque tiene inscripciones activas o pagos aprobados.';
   } finally {
     isDeleting.value = false;
   }
@@ -462,6 +475,22 @@ onMounted(() => {
 .warning-text {
   background-color: #fffbeb;
   color: #b42318;
+}
+
+.delete-error-message {
+  background-color: #fee2e2;
+  color: #b42318;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.delete-success-message {
+  background-color: #eef8f1;
+  color: #027a48;
+  padding: 0.75rem;
+  border-radius: 8px;
+  font-weight: 600;
 }
 
 .classes-title { color: #572c57; margin-bottom: 1rem;}
