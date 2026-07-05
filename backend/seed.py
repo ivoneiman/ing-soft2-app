@@ -431,10 +431,20 @@ def main():
             password="admin123", dni="11111111", telefono="221 1111111", role="admin"
         )
 
+        # Administradores del equipo
         create_test_user(
-            username="SiempreGym", apellido="Admin", email="tobiasgonzalez07@gmail.com",
-            password="siempregym123", dni="00000000", telefono="000000000", role="admin"
+            username="Franco", apellido="Martin", email="francomartin08@hotmail.com",
+            password="Admin_123", dni="44444444", telefono="221 4444444", role="admin"
         )
+        create_test_user(
+            username="Tobias", apellido="Gonzalez", email="tobiasgonzalez07@gmail.com",
+            password="Admin_123", dni="55555555", telefono="221 5555555", role="admin"
+        )
+        create_test_user(
+            username="Ivo", apellido="Neiman", email="ivoneiman@gmail.com",
+            password="Admin_123", dni="66666666", telefono="221 6666666", role="admin"
+        )
+
         
         employee = create_test_user(
             username="Employee", apellido="Test", email="employee@test.com",
