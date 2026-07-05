@@ -2247,6 +2247,19 @@ def get_profesores():
         "profesores": profesores_data
     }), 200
 
+@app.route("/api/profesores/<int:profesor_id>", methods=["GET"])
+def get_profesor_by_id(profesor_id):
+    """Devuelve un profesor específico para edición."""
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para ver profesores"}), 403
+
+    profesor = db.session.get(Profesor, profesor_id)
+    if not profesor:
+        return jsonify({"error": "Profesor no encontrado"}), 404
+
+    return jsonify({"profesor": profesor.to_dict()}), 200
+
 @app.route("/api/profesores/<int:profesor_id>", methods=["PUT"])
 def update_profesor(profesor_id):
     """Actualiza un profesor existente."""

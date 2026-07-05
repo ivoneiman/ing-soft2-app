@@ -11,6 +11,10 @@
 
     <div v-else class="admin-card">
       <form @submit.prevent="handleSubmit" class="form-container">
+        <div v-if="profesorActual" class="current-info">
+          <strong>Nombre y Apellido actuales:</strong> {{ profesorActual.nombre }} {{ profesorActual.apellido }}
+        </div>
+
         <div class="input-group">
           <label for="nombre">Nombre</label>
           <input
@@ -19,7 +23,7 @@
             type="text"
             placeholder="Ej: Carlos"
             required
-            :disabled="loading"
+            :disabled="loading || loadError"
           />
         </div>
 
@@ -31,7 +35,7 @@
             type="text"
             placeholder="Ej: Gómez"
             required
-            :disabled="loading"
+            :disabled="loading || loadError"
           />
         </div>
 
@@ -42,8 +46,8 @@
           <button type="button" class="btn-secondary" @click="router.push('/admin/profesores/listar')">
             Volver al listado
           </button>
-          <button type="submit" class="btn-primary" :disabled="loading">
-            {{ loading ? 'Guardando...' : 'Guardar Cambios' }}
+          <button type="submit" class="btn-primary" :disabled="loading || loadError">
+            {{ loadError ? 'Edición no disponible' : (loading ? 'Guardando...' : 'Guardar Cambios') }}
           </button>
         </div>
       </form>
@@ -65,8 +69,10 @@ const form = reactive({
   apellido: '',
 });
 
+const profesorActual = ref(null);
 const initialLoading = ref(true);
 const loading = ref(false);
+const loadError = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 
@@ -76,9 +82,9 @@ onMounted(async () => {
   try {
     const response = await axios.get(`${baseURL}/profesores/${profesorId}`, { withCredentials: true });
     const profesor = response.data.profesor;
-    form.nombre = profesor.nombre;
-    form.apellido = profesor.apellido;
+    profesorActual.value = profesor;
   } catch (err) {
+    loadError.value = true;
     errorMessage.value = err.response?.data?.error || 'No se pudieron cargar los datos del profesor.';
     console.error(err);
   } finally {
@@ -87,6 +93,8 @@ onMounted(async () => {
 });
 
 async function handleSubmit() {
+  if (initialLoading.value || loadError.value) return;
+
   loading.value = true;
   errorMessage.value = '';
   successMessage.value = '';
@@ -146,5 +154,13 @@ async function handleSubmit() {
   border-radius: 8px;
   text-decoration: none;
   text-align: center;
+}
+
+.current-info {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: #572c57;
+  border-radius: 10px;
+  color: #f5f0f7;
 }
 </style>
