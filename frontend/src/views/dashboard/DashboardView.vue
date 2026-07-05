@@ -1,12 +1,11 @@
 <template>
   <div class="gestion-clases-container">
     <h1 class="titulo-principal">INFORMACIÓN DE CLASES</h1>
-    <p class="descripcion-panel">Panel de control para visualizar, monitorear y gestionar tus clases.</p>
+    <p class="descripcion-panel">Panel de control para visualizar, monitorear y gestionar las clases.</p>
 
     <div class="tarjeta-oscura-tabla">
       <div class="tabla-encabezado">
         <h2 class="subtitulo-seccion" style="margin: 0; border: none; padding: 0;">Seleccionar Clase</h2>
-        <button @click="cargarClases" class="btn-refrescar">Actualizar lista</button>
       </div>
 
       <p v-if="feedbackMessage" :class="['feedback-message', feedbackType]">
@@ -16,72 +15,69 @@
       <p v-if="cargando" class="loading-text">Cargando clases desde el servidor...</p>
 
       <p v-else-if="allClasses.length === 0" class="empty-state">
-        No hay clases registradas en el catálogo actual.
+        No se encuentran clases registradas en el sistema.
       </p>
 
-      <div v-else class="filtros-contenedor">
-        <!-- 1. Estado -->
+      <div v-else>
+        <div class="filtros-contenedor">
         <div class="form-group">
-          <label for="status">1. Seleccionar Estado de clase:</label>
+          <label for="status">Estado</label>
           <select id="status" v-model="selectedStatus">
+            <option value="Todas">Todas las clases</option>
             <option value="Activa"> Activas</option>
             <option value="Finalizada"> Finalizadas</option>
             <option value="Cancelada"> Canceladas</option>
           </select>
         </div>
-
-        <!-- 2. Mes -->
         <div class="form-group">
-          <label for="mes">2. Seleccionar Mes:</label>
-          <select id="mes" v-model="selectedMonth">
-            <option value="" disabled>-- Seleccione un mes --</option>
-            <option v-for="month in availableMonths" :key="month.value" :value="month.value">{{ month.label }}</option>
+          <label for="month">Mes</label>
+          <select id="month" v-model="selectedMonth">
+            <option value="">Todos los meses</option>
+            <option v-for="month in availableMonths" :key="month.value" :value="month.value">
+              {{ month.label }}
+            </option>
           </select>
         </div>
-
-        <!-- 3. Día exacto -->
-        <div class="form-group" v-if="selectedMonth">
-          <label for="dia">3. Seleccionar Día:</label>
-          <select id="dia" v-model="selectedDate">
-            <option value="" disabled>-- Seleccione un día --</option>
-            <option v-for="date in availableDates" :key="date.value" :value="date.value">{{ date.label }}</option>
+        <div class="form-group">
+          <label for="day">Día</label>
+          <select id="day" v-model="selectedDay">
+            <option value="">Todos los días</option>
+            <option v-for="day in 31" :key="day" :value="day">{{ day }}</option>
           </select>
         </div>
-
-        <!-- 4. Actividad -->
-        <div class="form-group" v-if="selectedDate">
-          <label for="actividad">4. Seleccionar Actividad:</label>
-          <select id="actividad" v-model="selectedActivity">
-            <option value="" disabled>-- Seleccione una actividad --</option>
-            <option v-for="act in availableActivities" :key="act" :value="act">{{ act }}</option>
+        <div class="form-group">
+          <label for="activity">Actividad</label>
+          <select id="activity" v-model="selectedActivityName">
+            <option value="">Todas las actividades</option>
+            <option v-for="activity in availableActivities" :key="activity" :value="activity">
+              {{ activity }}
+            </option>
           </select>
         </div>
-      </div>
-
-      <!-- Resultado filtrado (Tabla) -->
-      <div v-if="filteredClasses.length > 0" class="tabla-responsiva-contenedor mt-4">
+        </div>
+      <div v-if="displayedClasses.length > 0" class="tabla-responsiva-contenedor mt-4">
         <table class="tabla-gestion-gym">
           <thead>
             <tr>
               <th>Actividad</th>
               <th>Fecha / Día</th>
-              <th>Horario</th>
+              <th>Mes</th>
               <th>Sala</th>
               <th>Profesor</th>
               <th>Cupos Ocupados</th>
               <th>Estado</th>
-              <th style="text-align: center;">Acciones</th>
+              <th style="text-align: center; width: 320px;">Acciones</th>
             </tr>
           </thead>
           <tbody>
             <tr 
-              v-for="clase in filteredClasses" 
+              v-for="clase in displayedClasses" 
               :key="clase.id" 
               :class="{ 'fila-cancelada': isCancelled(clase) }"
             >
               <td class="col-actividad">{{ clase.actividad || clase.name }}</td>
               <td class="texto-celda">{{ formatFecha(clase.fecha_hora) }}</td>
-              <td class="col-resaltada texto-celda">{{ clase.time || 'No definido' }} hs</td>
+              <td class="texto-celda">{{ formatMonth(clase.fecha_hora) }}</td>
               <td class="texto-celda">{{ clase.room || 'N/A' }}</td>
               <td class="texto-celda">{{ clase.profesor_nombre || 'N/A' }}</td>
               <td class="texto-celda">{{ clase.enrolled }} / {{ clase.cupoMaximo }}</td>
@@ -91,30 +87,41 @@
                 </span>
               </td>
               <td style="text-align: center;">
-                <div v-if="selectedStatus === 'Activa' && !isCancelled(clase)" class="acciones-columna">
+                <div v-if="getDisplayStatus(clase) === 'Activa'" class="acciones-columna">
                   <button
                     @click="abrirModalEdicion(clase)"
                     class="btn-tabla-editar"
                   >
-                    Editar clase</button>
+                    Editar</button>
+                  <button
+                    @click="goToAttendance(clase.id)"
+                    class="btn-tabla-asistencia"
+                  >
+                    Pasar asistencia
+                  </button>
                   <button 
                     @click="abrirConfirmacionCancelacion(clase)"
                     :disabled="isCancelled(clase)"
                     class="btn-tabla-cancelar"
                     :class="{ 'btn-tabla-deshabilitado': isCancelled(clase) }"
                   >
-                    {{ isCancelled(clase) ? 'Ya cancelada' : 'Cancelar clase' }}
+                    Cancelar
                   </button>
                 </div>
-                <div v-else-if="selectedStatus === 'Finalizada'">
+                <div v-else-if="getDisplayStatus(clase) === 'Finalizada'">
                   <button @click="verAsistencias(clase)" class="btn-tabla-ver-asistencia">
                     Ver asistencias
                   </button>
                 </div>
+                <!-- No se muestra nada para clases canceladas -->
               </td>
             </tr>
           </tbody>
         </table>
+      </div>
+      <p v-else class="empty-state" style="margin-top: 24px;">
+        No se encontraron clases para los filtros aplicados
+      </p>
       </div>
     </div>
 
@@ -236,6 +243,12 @@
 .acciones-columna {
   display: flex;
   gap: 8px;
+}
+
+.btn-tabla-asistencia {
+  background-color: #9f5f91; /* Mismo color que editar/cancelar */
+  color: #f6ea98;
+  font-size: 13px;
 }
 /* Estilos unificados con la paleta de marca: #572c57, #9f5f91, #f5f5f5, #f6ea98, #e26972 */
 .gestion-clases-container {
@@ -509,15 +522,17 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import { CLASS_STATUS } from "../../constants/statuses";
 import { getAllClasses, cancelarClaseCompleta, getClassAttendance, getProfesores, updateClass } from "../../services/api";
 import { formatShortDate } from "../../utils/formatters";
 
 const allClasses = ref([]);
-const selectedStatus = ref("Activa");
-const selectedMonth = ref("");
-const selectedDate = ref("");
-const selectedActivity = ref("");
+const selectedStatus = ref("Todas");
+const selectedMonth = ref(""); // e.g., "2024-07"
+const selectedDay = ref(""); // e.g., 15
+const selectedActivityName = ref(""); // e.g., "Yoga"
+
 
 const cargando = ref(false);
 const cancelando = ref(false);
@@ -543,6 +558,8 @@ const listaAsistencia = ref([]);
 const cargandoAsistencia = ref(false);
 const errorAsistencia = ref("");
 
+const router = useRouter();
+
 const totalAsistencias = computed(() => {
   return listaAsistencia.value.filter(a => a.present).length;
 });
@@ -551,127 +568,85 @@ function isCancelled(clase) {
   return clase.estado === CLASS_STATUS.CANCELLED;
 }
 
-function ordenarClasesPorEstado(todasLasClases) {
-  return [...todasLasClases].sort((a, b) => Number(isCancelled(a)) - Number(isCancelled(b)));
-}
-
-function classTimeLabel(value) {
-  if (!value) return '-';
-  return new Intl.DateTimeFormat('es-AR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
-const statusFilteredClasses = computed(() => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  if (selectedStatus.value === 'Activa') {
-    return allClasses.value.filter(c => c.estado !== CLASS_STATUS.CANCELLED && c.fecha_hora && new Date(c.fecha_hora) >= today);
-  } else if (selectedStatus.value === 'Finalizada') {
-    return allClasses.value.filter(c => c.estado !== CLASS_STATUS.CANCELLED && c.fecha_hora && new Date(c.fecha_hora) < today);
-  } else { // Cancelada
-    return allClasses.value.filter(c => c.estado === CLASS_STATUS.CANCELLED);
-  }
-});
-
 const availableMonths = computed(() => {
   const months = new Map();
-
-  statusFilteredClasses.value.forEach(c => {
+  allClasses.value.forEach(c => {
     if (!c.fecha_hora) return;
     const d = new Date(c.fecha_hora);
-    
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const yearMonth = `${y}-${m}`;
-
+    const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
     if (!months.has(yearMonth)) {
       const monthName = d.toLocaleString('es-AR', { month: 'long', year: 'numeric' });
-      const label = monthName.charAt(0).toUpperCase() + monthName.slice(1);
-      months.set(yearMonth, { value: yearMonth, label });
+      months.set(yearMonth, {
+        value: yearMonth,
+        label: monthName.charAt(0).toUpperCase() + monthName.slice(1)
+      });
     }
   });
-  return Array.from(months.values()).sort((a, b) => a.value.localeCompare(b.value));
-});
-
-const availableDates = computed(() => {
-  if (!selectedMonth.value) return [];
-  const dates = new Map();
-
-  statusFilteredClasses.value.forEach(c => {
-    const d = new Date(c.fecha_hora);
-    if (!c.fecha_hora) return;
-
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const yearMonth = `${y}-${m}`;
-
-    if (yearMonth === selectedMonth.value) {
-      const day = String(d.getDate()).padStart(2, '0');
-      const dateOnly = `${y}-${m}-${day}`;
-
-      if (!dates.has(dateOnly)) {
-        const label = d.toLocaleString('es-AR', { weekday: 'long', day: 'numeric' });
-        const capitalizedLabel = label.charAt(0).toUpperCase() + label.slice(1);
-        dates.set(dateOnly, { value: dateOnly, label: capitalizedLabel });
-      }
-    }
-  });
-  return Array.from(dates.values()).sort((a, b) => a.value.localeCompare(b.value));
+  return Array.from(months.values()).sort((a, b) => b.value.localeCompare(a.value)); // Descendente
 });
 
 const availableActivities = computed(() => {
-  if (!selectedDate.value) return [];
-  const acts = new Set();
-
-  statusFilteredClasses.value.forEach(c => {
-    if (!c.fecha_hora) return;
-    const d = new Date(c.fecha_hora);
-    
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const dateOnly = `${y}-${m}-${day}`;
-
-    if (dateOnly === selectedDate.value) {
-      const actName = c.actividad || c.name;
-      if (actName) acts.add(actName);
+  const activities = new Set();
+  allClasses.value.forEach(c => {
+    const activityName = c.actividad || c.name;
+    if (activityName) {
+      activities.add(activityName);
     }
   });
-  return Array.from(acts).sort();
+  return Array.from(activities).sort();
 });
 
-const filteredClasses = computed(() => {
-  if (!selectedActivity.value) return [];
+const displayedClasses = computed(() => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
-  return statusFilteredClasses.value.filter(c => {
-    if (!c.fecha_hora) return false;
-    const d = new Date(c.fecha_hora);
+  let classes = allClasses.value;
 
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    const dateOnly = `${y}-${m}-${day}`;
+  // 1. Filter by Month
+  if (selectedMonth.value) {
+    classes = classes.filter(c => {
+      if (!c.fecha_hora) return false;
+      const d = new Date(c.fecha_hora);
+      const yearMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      return yearMonth === selectedMonth.value;
+    });
+  }
 
-    if (dateOnly !== selectedDate.value) return false;
-    
-    const actName = c.actividad || c.name;
-    return actName === selectedActivity.value;
-  }).sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora)); // Las ordena de la más cercana a la más lejana
+  // 2. Filter by Day
+  if (selectedDay.value) {
+    classes = classes.filter(c => c.fecha_hora && new Date(c.fecha_hora).getDate() === Number(selectedDay.value));
+  }
+
+  // 3. Filter by Activity
+  if (selectedActivityName.value) {
+    classes = classes.filter(c => (c.actividad || c.name) === selectedActivityName.value);
+  }
+  
+  // 4. Filter by Status
+  if (selectedStatus.value !== 'Todas') {
+    classes = classes.filter(c => getDisplayStatus(c) === selectedStatus.value);
+  }
+
+  // Ordenar por fecha descendente (más nuevas primero)
+  return classes.sort((a, b) => new Date(b.fecha_hora) - new Date(a.fecha_hora));
 });
 
-watch(selectedStatus, () => { selectedMonth.value = ''; selectedDate.value = ''; selectedActivity.value = ''; });
-watch(selectedMonth, () => { selectedDate.value = ''; selectedActivity.value = ''; });
-watch(selectedDate, () => { selectedActivity.value = ''; });
+// Watchers para resetear filtros en cascada
+watch(selectedStatus, () => { /* No resetea otros filtros */ });
+watch(selectedMonth, () => { selectedDay.value = ''; selectedActivityName.value = ''; });
+watch(selectedDay, () => { selectedActivityName.value = ''; });
+
+
+function goToAttendance(classId) {
+  router.push(`/pasar-asistencia/${classId}`);
+}
 
 async function cargarClases() {
   cargando.value = true;
   feedbackMessage.value = "";
   try {
     const response = await getAllClasses();
-    allClasses.value = ordenarClasesPorEstado(response.data.classes || []);
+    allClasses.value = response.data.classes || [];
   } catch (error) {
     feedbackType.value = "error";
     feedbackMessage.value = error.response?.data?.error || "No se pudieron cargar las clases.";
@@ -726,7 +701,6 @@ async function ejecutarCancelacion() {
     if (claseAfectada) {
       claseAfectada.estado = CLASS_STATUS.CANCELLED;
     }
-    allClasses.value = ordenarClasesPorEstado(allClasses.value);
     feedbackType.value = "success";
     feedbackMessage.value = response.data.message;
     cerrarConfirmacionCancelacion();
@@ -850,6 +824,15 @@ function getDisplayStatus(clase) {
 function formatFecha(fechaIso) {
   return formatShortDate(fechaIso);
 }
+
+function formatMonth(fechaIso) {
+  if (!fechaIso) return 'N/A';
+  const date = new Date(fechaIso);
+  const monthName = date.toLocaleString('es-AR', { month: 'long' });
+  // Capitalizar la primera letra del mes
+  return monthName.charAt(0).toUpperCase() + monthName.slice(1);
+}
+
 
 onMounted(() => {
   cargarClases();
