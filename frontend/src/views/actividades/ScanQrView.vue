@@ -245,8 +245,7 @@ async function startScanner() {
       onScanFailure
     );
   } catch (err) {
-    const errorMsg = err?.message || err?.toString() || String(err);
-    errorMessage.value = `No se pudo inicializar la cámara: ${errorMsg}`;
+    errorMessage.value = 'No se pudo inicar la cámara, verifque los permisos de su navegador';
     console.error('Camera initialization error:', err);
   }
 }

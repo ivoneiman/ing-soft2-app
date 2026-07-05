@@ -15,6 +15,26 @@ from app import (
 )
 from models import db, User, Class, Enrollment, Attendance, Actividades, Payment, Profesor
 
+ROOM_OPTIONS = ["Salón 1", "Salón 2", "Salón 3"]
+ROOM_BY_SCHEDULE = {}
+
+
+def assign_class_room(class_obj):
+    """Asigna un salón estable para clases con misma actividad, día y horario."""
+    key = (
+        class_obj.id_actividad,
+        class_obj.fecha_hora.weekday(),
+        class_obj.fecha_hora.hour,
+        class_obj.fecha_hora.minute,
+    )
+    if key not in ROOM_BY_SCHEDULE:
+        ROOM_BY_SCHEDULE[key] = ROOM_OPTIONS[len(ROOM_BY_SCHEDULE) % len(ROOM_OPTIONS)]
+
+    room = ROOM_BY_SCHEDULE[key]
+    if class_obj.room != room:
+        class_obj.room = room
+    return room
+
 
 def user_exists(email):
     """Verifica si un usuario ya exista por email."""
@@ -168,6 +188,11 @@ def create_test_class(name, fecha_hora, actividad, profesor_id, descuento=0, leg
             existing_by_name.profesor_id = profesor_id
             changed = True
 
+        assigned_room = assign_class_room(existing_by_name)
+        if existing_by_name.room != assigned_room:
+            existing_by_name.room = assigned_room
+            changed = True
+
         action = "actualizada" if changed else "ya existe"
         print_class_log(existing_by_name, action)
         return existing_by_name
@@ -184,6 +209,7 @@ def create_test_class(name, fecha_hora, actividad, profesor_id, descuento=0, leg
     )
     db.session.add(class_obj)
     db.session.flush()  # Para obtener el ID generado
+    assign_class_room(class_obj)
     print_class_log(class_obj, "creada")
     return class_obj
 
@@ -197,8 +223,8 @@ def print_class_log(class_obj, action):
     actividad = class_obj.actividad.name if class_obj.actividad else class_obj.id_actividad
     print(
         f"   [OK] Clase {action}: {class_obj.name} | {actividad} | "
-        f"{fecha} | {payable_text} | descuento esperado hoy: {expected_discount}% "
-        f"| descuento clase: {class_obj.descuento}%"
+        f"{fecha} | {payable_text} | salón: {class_obj.room or 'sin asignar'} | "
+        f"descuento esperado hoy: {expected_discount}% | descuento clase: {class_obj.descuento}%"
     )
 
 
