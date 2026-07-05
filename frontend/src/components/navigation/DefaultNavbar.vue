@@ -117,9 +117,6 @@
             <router-link to="/admin/profesores" @click="handleAdminDropdownClick">
               Profesores
             </router-link>
-            <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" @click="handleAdminDropdownClick">
-              Pasar Asistencia
-            </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/configuracion/notificacion" @click="handleAdminDropdownClick">
               Configuración
             </router-link>
