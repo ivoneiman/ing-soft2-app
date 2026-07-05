@@ -174,6 +174,18 @@ CORS(
 
 # ─── Migración de esquema mínimo para SQLite antiguo ─────────────────────────────────────────────
 
+def _backfill_missing_class_rooms():
+    classes_without_room = Class.query.filter((Class.room == None) | (Class.room == "")).order_by(Class.fecha_hora, Class.id).all()
+    if not classes_without_room:
+        return
+
+    salon_options = ["Salón 1", "Salón 2", "Salón 3"]
+    for index, class_obj in enumerate(classes_without_room):
+        class_obj.room = salon_options[index % len(salon_options)]
+
+    db.session.commit()
+
+
 def upgrade_database_schema():
     inspector = inspect(db.engine)
     if "users" in inspector.get_table_names():
@@ -349,6 +361,7 @@ with app.app_context():
     db.create_all()
     upgrade_database_schema()
     ensure_default_activities()
+    _backfill_missing_class_rooms()
 
 # ─── Helpers para el Catálogo ──────────────────────────────────────────────────
 

@@ -20,6 +20,7 @@ const ConfiguracionNotificacionView = () => import("../views/configuracion/Notif
 const PagosView = () => import("../views/pagos/PagosView.vue");
 const ReportesView = () => import("../views/reportes/ReportesView.vue");
 const MyQrView = () => import("../views/actividades/MyQrView.vue");
+const AttendanceClassesView = () => import("../views/actividades/AttendanceClassesView.vue");
 const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
 const ReporteUsuariosView = () => import("../views/reportes/ReporteUsuariosView.vue");
 const ReportePagosView = () => import("../views/reportes/ReportePagosView.vue");
@@ -141,6 +142,18 @@ const routes = [
         name: "Dashboard",
         component: DashboardView,
         meta: { requiresAuth: true, requiresAdminOrEmployee: true },
+      },
+      {
+        path: "pasar-asistencia",
+        name: "PasarAsistencia",
+        component: AttendanceClassesView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true }
+      },
+      {
+        path: "pasar-asistencia/:classId",
+        name: "ScanQr",
+        component: ScanQrView,
+        meta: { requiresAuth: true, requiresAdminOrEmployee: true }
       },
       {
         path: "mis-clases",
