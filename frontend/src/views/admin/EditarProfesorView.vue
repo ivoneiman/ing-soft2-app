@@ -39,7 +39,9 @@
         <div v-if="successMessage" class="msg success">{{ successMessage }}</div>
 
         <div class="form-actions">
-          <RouterLink to="/admin/profesores/listar" class="btn-secondary">Volver al listado</RouterLink>
+          <button type="button" class="btn-secondary" @click="router.push('/admin/profesores/listar')">
+            Volver al listado
+          </button>
           <button type="submit" class="btn-primary" :disabled="loading">
             {{ loading ? 'Guardando...' : 'Guardar Cambios' }}
           </button>
@@ -51,7 +53,7 @@
 
 <script setup>
 import { reactive, ref, onMounted } from 'vue';
-import { useRoute, useRouter, RouterLink } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 
 const route = useRoute();
