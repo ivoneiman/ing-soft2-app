@@ -196,9 +196,8 @@
           <p class="asistencia-summary">
             Asistencias: {{ totalAsistencias }} / {{ listaAsistencia.length }}
           </p>
-          <div v-if="totalAsistencias === 0" class="empty-state">No hubo asistencias.</div>
-          <div v-else class="tabla-responsiva-contenedor" style="margin-top: 16px; max-height: 300px; overflow-y: auto;">
-            <table class="tabla-gestion-gym">
+          <div class="tabla-responsiva-contenedor" style="margin-top: 16px; max-height: 300px; overflow-y: auto;">
+            <table class="tabla-gestion-gym" aria-live="polite">
             <thead>
               <tr>
                 <th>Alumno</th>
@@ -751,6 +750,13 @@ async function ejecutarEdicion() {
   if (formEdicion.cupoMaximo < 1) {
     editFeedbackType.value = "error";
     editFeedbackMessage.value = "El cupo mínimo es 1";
+    return;
+  }
+
+  // Validación de cupo contra inscriptos
+  if (formEdicion.cupoMaximo < claseParaEditar.value.enrolled) {
+    editFeedbackType.value = "error";
+    editFeedbackMessage.value = "La cantidad de inscriptos supera el nuevo cupo ingresado";
     return;
   }
 
