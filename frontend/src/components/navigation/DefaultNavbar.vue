@@ -16,7 +16,7 @@
     <div class="center-menu" :class="{ active: isMobileMenuOpen }">
       <router-link to="/" class="nav-item" @click="closeMobileMenu">Home</router-link>
       <!-- Dashboard para admin y employee -->
-      <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/dashboard" class="nav-item" @click="closeMobileMenu">Dashboard</router-link>
+      <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/dashboard" class="nav-item" @click="closeMobileMenu">Listar Clases</router-link>
       <!-- Crear clase como botón principal para admin y employee -->
       <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/admin/clases/crear" class="nav-item" @click="closeMobileMenu">Crear clase</router-link>
       <!-- Solo clientes pueden ver Actividades -->
