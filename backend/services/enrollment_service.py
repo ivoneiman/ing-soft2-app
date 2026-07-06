@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 try:
-    from constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, PAYMENT_OPTION_FULL
+    from constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, ENROLLMENT_TYPE_MONTHLY, PAYMENT_OPTION_FULL
     from models import Enrollment
     from services.credit_service import available_credit_for_user_activity, consume_credit_for_enrollment
     from services.datetime_service import current_datetime, datetime_in_app_timezone

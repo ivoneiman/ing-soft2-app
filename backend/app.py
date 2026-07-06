@@ -382,7 +382,7 @@ def _enrollment_counts():
     
     monthly_enrollments = Enrollment.query.filter(
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+        Enrollment.estado == Enrollment.STATUS_PAID
     ).all()
     
     if not monthly_enrollments:
@@ -399,7 +399,7 @@ def _enrollment_counts():
     # Obtenemos también las inscripciones activas para no sumar cupos por duplicado
     explicit_enrs = Enrollment.query.filter(
         Enrollment.user_id.in_(user_ids),
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+        Enrollment.estado == Enrollment.STATUS_PAID
     ).all()
     explicit_map = {(ee.user_id, ee.class_id) for ee in explicit_enrs}
 
@@ -971,7 +971,7 @@ def _materialize_implicit_enrollments_for_cancellation(class_obj):
 
     monthly_enrs = Enrollment.query.join(Class).filter(
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Enrollment.estado == Enrollment.STATUS_PAID,
         Class.id_actividad == class_obj.id_actividad,
         Class.fecha_hora >= month_start,
         Class.fecha_hora <= month_end
@@ -1728,7 +1728,7 @@ def cancel_class_attendance(class_id):
         implicit_enrs = Enrollment.query.join(Class).filter(
             Enrollment.user_id == current_user.id,
             Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-            Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+            Enrollment.estado == Enrollment.STATUS_PAID,
             Class.id_actividad == class_obj.id_actividad,
             Class.fecha_hora >= month_start,
             Class.fecha_hora <= month_end
@@ -1814,7 +1814,7 @@ def create_enrollment():
     existing_monthly_enrs = Enrollment.query.join(Class).filter(
         Enrollment.user_id == current_user.id,
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Enrollment.estado == Enrollment.STATUS_PAID,
         Class.id_actividad == class_obj.id_actividad,
         Class.fecha_hora >= month_start,
         Class.fecha_hora <= month_end
@@ -1877,7 +1877,7 @@ def create_enrollment():
                 user_id=current_user.id,
                 class_id=class_obj.id
             ).filter(
-                Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+                Enrollment.estado == Enrollment.STATUS_PAID
             ).first()
 
             if existing_enr:
@@ -1986,7 +1986,7 @@ def create_waitlist_entry():
     existing_monthly_enrs = Enrollment.query.join(Class).filter(
         Enrollment.user_id == current_user.id,
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Enrollment.estado == Enrollment.STATUS_PAID,
         Class.id_actividad == class_obj.id_actividad,
         Class.fecha_hora >= month_start,
         Class.fecha_hora <= month_end
@@ -3045,6 +3045,23 @@ def create_payment():
         title = f"Seña - {title}"
     elif requested_payment_type == PAYMENT_TYPE_BALANCE:
         title = f"Saldo - {title}"
+    back_urls = {
+        "success": _mercado_pago_callback_url(
+            "PAYMENT_SUCCESS_URL",
+            "/api/payments/return/success",
+            "http://localhost:5000/api/payments/return/success",
+        ),
+        "failure": _mercado_pago_callback_url(
+            "PAYMENT_FAILURE_URL",
+            "/api/payments/return/failure",
+            "http://localhost:5000/api/payments/return/failure",
+        ),
+        "pending": _mercado_pago_callback_url(
+            "PAYMENT_PENDING_URL",
+            f"/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+            f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+        ),
+    }
     preference_data = {
         "items": [
             {
@@ -3056,26 +3073,11 @@ def create_payment():
         ],
         "payer": _mercado_pago_payer_payload(current_user),
         "external_reference": str(payment.id),
-        "back_urls": {
-            "success": _mercado_pago_callback_url(
-                "PAYMENT_SUCCESS_URL",
-                "/api/payments/return/success",
-                "http://localhost:5000/api/payments/return/success",
-            ),
-            "failure": _mercado_pago_callback_url(
-                "PAYMENT_FAILURE_URL",
-                "/api/payments/return/failure",
-                "http://localhost:5000/api/payments/return/failure",
-            ),
-            "pending": _mercado_pago_callback_url(
-                "PAYMENT_PENDING_URL",
-                f"/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
-                f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
-            ),
-        },
+        "back_urls": back_urls,
         "notification_url": _mercado_pago_notification_url(),
-        "auto_return": "approved",
     }
+    if payment_service.supports_mercado_pago_auto_return(back_urls["success"]):
+        preference_data["auto_return"] = "approved"
     timings["build_preference_payload"] = _elapsed_ms(preference_payload_start)
 
     validate_urls_start = time.perf_counter()

@@ -22,65 +22,67 @@
         </div>
       </section>
 
-      <!-- Paso 2 y 3: Día y Horario en grid horizontal -->
+      <!-- Paso 2 y 3: Dia y horario -->
       <div v-if="selectedActivityId" class="selection-grid">
-        <!-- Columna izquierda: Calendario -->
         <section class="selection-col">
-          <h2 class="step-title"><span class="step-num">2</span> Día</h2>
-          <CatalogCalendario
-            :key="selectedActivityId"
-            :enabled-date-keys="calendarEnabledKeys"
-            @date-selected="onDateSelected"
-            @month-change="onMonthChange"
-          />
-        </section>
-
-        <!-- Columna derecha: Horarios -->
-        <section class="selection-col">
-          <h2 class="step-title"><span class="step-num">3</span> Horario</h2>
-          
-          <div v-if="loadingDays" class="info-box">Buscando disponibilidad...</div>
-          <div v-else-if="!enabledDateKeys || Object.keys(enabledDateKeys).length === 0" class="info-box">
+          <h2 class="step-title"><span class="step-num">2</span> Dia</h2>
+          <div v-if="loadingDays" class="info-box">Buscando dias disponibles...</div>
+          <div v-else-if="availableWeekdays.length === 0" class="info-box">
             No se encontraron turnos para la actividad seleccionada.
           </div>
-          <div v-else-if="!selectedDate" class="info-box">
-            Seleccioná un día en el calendario.
+          <div v-else class="weekday-grid">
+            <button
+              v-for="day in availableWeekdays"
+              :key="day.value"
+              type="button"
+              class="weekday-btn"
+              :class="{ active: selectedWeekday === day.value }"
+              @click="onWeekdaySelected(day.value)"
+            >
+              <span>{{ day.label }}</span>
+              <small>{{ day.nextLabel }}</small>
+            </button>
+          </div>
+        </section>
+
+        <section class="selection-col">
+          <h2 class="step-title"><span class="step-num">3</span> Horario</h2>
+          <div v-if="loadingSlots" class="info-box">Cargando horarios...</div>
+          <div v-else-if="selectedWeekday === null" class="info-box">
+            Selecciona un dia.
           </div>
           <template v-else>
-            <div v-if="loadingSlots" class="info-box">Cargando horarios...</div>
-            <template v-else>
-              <div class="slots-grid">
-                <button
-                  v-for="slot in availableSlots"
-                  :key="slot.id"
-                  type="button"
-                  class="slot-btn"
-                  :class="{ active: selectedClassId === slot.id }"
-                  @click="onSlotSelected(slot)">
-                  <div class="slot-time">{{ slot.time }} hs</div>
-                  <div class="slot-cupo">
-                    <template v-if="slot.available_spots > 0">
-                      {{ slot.available_spots }} {{ slot.available_spots === 1 ? 'cupo' : 'cupos' }}
-                    </template>
-                    <template v-else>
-                      Sin cupo
-                    </template>
-                  </div>
-                </button>
-              </div>
+            <div class="slots-grid">
+              <button
+                v-for="slot in availableSlots"
+                :key="slot.id"
+                type="button"
+                class="slot-btn"
+                :class="{ active: selectedClassId === slot.id }"
+                @click="onSlotSelected(slot)">
+                <div class="slot-time">{{ slot.time }} hs</div>
+                <div class="slot-cupo">
+                  <template v-if="slot.available_spots > 0">
+                    {{ slot.available_spots }} {{ slot.available_spots === 1 ? 'cupo' : 'cupos' }}
+                  </template>
+                  <template v-else>
+                    Sin cupo
+                  </template>
+                </div>
+                <small>{{ formatShortDate(slot.fecha_hora) }}</small>
+              </button>
+            </div>
 
-              <p v-if="!availableSlots.length" class="info-box">
-                No hay horarios con cupo para este día.
-              </p>
+            <p v-if="!availableSlots.length" class="info-box">
+              No hay horarios para este dia.
+            </p>
 
-              <p v-if="fullCount > 0" class="waitlist-note">
-                {{ fullCount }} horario{{ fullCount === 1 ? '' : 's' }} completo{{ fullCount === 1 ? '' : 's' }}.
-              </p>
-            </template>
+            <p v-if="fullCount > 0" class="waitlist-note">
+              {{ fullCount }} horario{{ fullCount === 1 ? '' : 's' }} completo{{ fullCount === 1 ? '' : 's' }}.
+            </p>
           </template>
         </section>
       </div>
-
       <!-- Resumen de selección -->
       <section v-if="selectedClass" class="summary">
         <h3>Tu selección</h3>
@@ -157,11 +159,8 @@
 
 <script setup>
 import { ref, computed, onMounted, onActivated } from "vue";
-import { useRouter } from "vue-router";
-import CatalogCalendario from "@/components/calendario/CatalogCalendario.vue";
-import { PAYMENT_TAB } from "../../constants/payments";
-import { createEnrollment, getActivities, getCatalogAvailability, getCatalogDays, getMyClasses } from "../../services/api";
-import { ENROLLMENT_TYPE } from "../../constants/statuses";
+import { createEnrollment, createPayment, getActivities, getAllClasses, getCatalogAvailability, getMyClasses } from "../../services/api";
+import { ENROLLMENT_TYPE, PAYMENT_METHOD } from "../../constants/statuses";
 import { formatLongDate } from "../../utils/formatters";
 
 const DEFAULT_ACTIVITIES = [
@@ -173,9 +172,10 @@ const DEFAULT_ACTIVITIES = [
 const activities = ref(DEFAULT_ACTIVITIES.slice());
 const selectedActivityId = ref(null);
 const selectedDate = ref(null);
+const selectedWeekday = ref(null);
 const selectedClassId = ref("");
+const catalogClasses = ref([]);
 const availableSlots = ref([]);
-const enabledDateKeys = ref([]);
 const fullCount = ref(0);
 const loadingDays = ref(false);
 const loadingSlots = ref(false);
@@ -183,10 +183,17 @@ const myEnrolledClasses = ref([]);
 const isSubmittingEnrollment = ref(false);
 const error = ref("");
 const successMessage = ref("");
-const router = useRouter();
-
 const TIPO_SUELTA = ENROLLMENT_TYPE?.SINGLE || 'Suelta';
 const TIPO_MENSUAL = ENROLLMENT_TYPE?.MONTHLY || 'Mensual';
+const WEEKDAYS = [
+  { value: 1, label: "Lunes" },
+  { value: 2, label: "Martes" },
+  { value: 3, label: "Miercoles" },
+  { value: 4, label: "Jueves" },
+  { value: 5, label: "Viernes" },
+  { value: 6, label: "Sabado" },
+  { value: 0, label: "Domingo" },
+];
 
 const enrollmentType = ref(TIPO_SUELTA);
 const checkingMensual = ref(false);
@@ -195,14 +202,48 @@ const hasSelectedType = ref(false);
 
 const getWeekdayName = (date) => {
   if (!date) return "";
-  const days = ["Domingos", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábados"];
+  const days = ["Domingos", "Lunes", "Martes", "Miercoles", "Jueves", "Viernes", "Sabados"];
   return days[date.getDay()];
 };
 
+function parseClassDate(cls) {
+  const date = new Date(cls?.fecha_hora);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function classBelongsToActivity(cls) {
+  return Number(cls?.id_actividad) === Number(selectedActivityId.value);
+}
+
+function isFutureClass(cls) {
+  const date = parseClassDate(cls);
+  return date && date > new Date();
+}
+
+function formatShortDate(dateTime) {
+  const date = new Date(dateTime);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-AR", { day: "2-digit", month: "2-digit" }).format(date);
+}
 const selectedActivityName = computed(() => {
   const act = activities.value.find((a) => a.id === selectedActivityId.value);
   return act?.name || "";
 });
+
+const activityFutureClasses = computed(() =>
+  catalogClasses.value
+    .filter((cls) => classBelongsToActivity(cls) && isFutureClass(cls))
+    .sort((a, b) => parseClassDate(a) - parseClassDate(b))
+);
+
+const availableWeekdays = computed(() =>
+  WEEKDAYS
+    .map((day) => {
+      const nextClass = activityFutureClasses.value.find((cls) => parseClassDate(cls)?.getDay() === day.value);
+      return nextClass ? { ...day, nextLabel: `Proxima: ${formatShortDate(nextClass.fecha_hora)}` } : null;
+    })
+    .filter(Boolean)
+);
 
 const selectedDateLabel = computed(() => {
   if (!selectedDate.value) return "";
@@ -213,7 +254,7 @@ const selectedClass = computed(() =>
   availableSlots.value.find((s) => s.id === Number(selectedClassId.value)) || null
 );
 
-const selectedClassFull = computed(() => selectedClass.value && selectedClass.value.available_spots === 0);
+const selectedClassFull = computed(() => selectedClass.value && Number(selectedClass.value.available_spots || 0) <= 0);
 
 const isWaitlistAction = computed(() => {
   if (!selectedClass.value) return false;
@@ -229,11 +270,6 @@ const isAlreadyEnrolled = computed(() => {
     const estado = (c.estado_inscripcion || '').toLowerCase();
     return !estado.includes('cancel');
   });
-});
-
-const calendarEnabledKeys = computed(() => {
-  if (!selectedActivityId.value || loadingDays.value) return undefined;
-  return enabledDateKeys.value;
 });
 
 function toDateKey(date) {
@@ -262,9 +298,9 @@ async function loadActivities() {
   }
 }
 
-function selectActivity(id) {
-  selectedActivityId.value = id;
+function resetSelection() {
   selectedDate.value = null;
+  selectedWeekday.value = null;
   selectedClassId.value = "";
   enrollmentType.value = TIPO_SUELTA;
   hasSelectedType.value = false;
@@ -272,74 +308,62 @@ function selectActivity(id) {
   isMensualAvailable.value = false;
   availableSlots.value = [];
   fullCount.value = 0;
-  enabledDateKeys.value = [];
-  error.value = "";
-  successMessage.value = "";
-  
-  const now = new Date();
-  loadMonthDays(now.getFullYear(), now.getMonth() + 1);
 }
 
-async function loadMonthDays(year, month) {
+function selectActivity(id) {
+  selectedActivityId.value = id;
+  resetSelection();
+  error.value = "";
+  successMessage.value = "";
+  loadCatalogClasses();
+}
+
+async function loadCatalogClasses() {
   if (!selectedActivityId.value) return;
   loadingDays.value = true;
   error.value = "";
   try {
-    const res = await getCatalogDays(selectedActivityId.value, year, month);
-    enabledDateKeys.value = res.data?.dates || [];
+    const res = await getAllClasses();
+    catalogClasses.value = res.data?.classes || [];
+    if (selectedWeekday.value !== null) {
+      buildSlotsForWeekday(selectedWeekday.value);
+    }
   } catch (err) {
-    enabledDateKeys.value = [];
-    error.value = err.response?.data?.error || "No se pudieron cargar los días disponibles.";
+    catalogClasses.value = [];
+    error.value = err.response?.data?.error || "No se pudieron cargar los dias disponibles.";
   } finally {
     loadingDays.value = false;
   }
 }
 
-function onMonthChange({ year, month }) {
-  loadMonthDays(year, month);
+function buildSlotsForWeekday(weekday) {
+  const byTime = new Map();
+  for (const cls of activityFutureClasses.value) {
+    const date = parseClassDate(cls);
+    if (!date || date.getDay() !== weekday) continue;
+    const key = cls.time || date.toTimeString().slice(0, 5);
+    if (!byTime.has(key)) {
+      byTime.set(key, cls);
+    }
+  }
+
+  const slots = Array.from(byTime.values()).sort((a, b) => (a.time || "").localeCompare(b.time || ""));
+  availableSlots.value = slots;
+  fullCount.value = slots.filter((slot) => Number(slot.available_spots || 0) <= 0).length;
 }
 
-async function onDateSelected(date) {
-  selectedDate.value = date;
+function onWeekdaySelected(weekday) {
+  selectedWeekday.value = weekday;
+  selectedDate.value = null;
   selectedClassId.value = "";
   enrollmentType.value = TIPO_SUELTA;
   hasSelectedType.value = false;
-  availableSlots.value = [];
-  fullCount.value = 0;
-  if (!date || !selectedActivityId.value) return;
-
-  loadingSlots.value = true;
-  error.value = "";
-  try {
-    const dateKey = toDateKey(date);
-    const res = await getCatalogAvailability(selectedActivityId.value, dateKey);
-    
-    let slots = res.data?.slots || res.data?.available || [];
-    
-    // Filtrar horarios que ya pasaron si el día seleccionado es hoy
-    const todayKey = toDateKey(new Date());
-    if (dateKey === todayKey) {
-      const now = new Date();
-      const currentHours = now.getHours();
-      const currentMinutes = now.getMinutes();
-      
-      slots = slots.filter(slot => {
-        const [slotHours, slotMinutes] = slot.time.split(':').map(Number);
-        return slotHours > currentHours || (slotHours === currentHours && slotMinutes > currentMinutes);
-      });
-    }
-
-    availableSlots.value = slots;
-    fullCount.value = res.data?.full_count || 0;
-  } catch (err) {
-    error.value = err.response?.data?.error || "No se pudieron cargar los horarios.";
-  } finally {
-    loadingSlots.value = false;
-  }
+  isMensualAvailable.value = false;
+  buildSlotsForWeekday(weekday);
 }
-
 async function onSlotSelected(slot) {
   selectedClassId.value = slot.id;
+  selectedDate.value = parseClassDate(slot);
   enrollmentType.value = TIPO_SUELTA;
   hasSelectedType.value = false;
   
@@ -407,39 +431,36 @@ async function handleEnrollment() {
       waitlist_type: waitlistType,
     });
     
-    if (res.data?.redirect_to_payment) {
-      const enrollmentId = res.data?.enrollment_id;
-      router.push({
-        path: "/pagos",
-        query: {
-          tab: PAYMENT_TAB.PENDING,
-          ...(enrollmentId ? { enrollment_id: enrollmentId } : {}),
-        },
-      });
-      return;
-    }
-
     if (res.data?.credit_used) {
       successMessage.value = res.data?.message || "Inscripción realizada utilizando crédito";
       selectedClassId.value = "";
-      await onDateSelected(selectedDate.value);
+      await loadCatalogClasses();
       return;
     }
     if (res.data?.waitlist) {
       successMessage.value = res.data?.message || "Te agregamos a la lista de espera.";
       error.value = "";
       selectedClassId.value = "";
-      await onDateSelected(selectedDate.value);
+      await loadCatalogClasses();
       return;
     }
-    const enrollmentId = res.data?.enrollment?.id;
-    router.push({
-      path: "/pagos",
-      query: {
-        tab: PAYMENT_TAB.PENDING,
-        ...(enrollmentId ? { enrollment_id: enrollmentId } : {}),
-      },
+    const enrollmentId = res.data?.enrollment?.id || res.data?.enrollment_id;
+    if (!enrollmentId) {
+      throw new Error("No se pudo iniciar el pago de la inscripcion.");
+    }
+
+    const paymentRes = await createPayment({
+      enrollment_id: enrollmentId,
+      payment_method: PAYMENT_METHOD.MERCADO_PAGO,
+      payment_type: "full",
     });
+
+    const checkoutUrl = paymentRes.data?.init_point;
+    if (!checkoutUrl) {
+      throw new Error("Mercado Pago no devolvio el enlace de checkout.");
+    }
+
+    window.location.href = checkoutUrl;
   } catch (err) {
     if (err.response && err.response.status === 409) {
       const mensajeError = err.response.data.error;
@@ -454,7 +475,7 @@ async function handleEnrollment() {
       }
       error.value = mensajeError;
     } else {
-      error.value = err.response?.data?.error || "No se pudo crear la inscripción.";
+      error.value = err.response?.data?.error || err.message || "No se pudo crear la inscripción.";
     }
   } finally {
     isSubmittingEnrollment.value = false;
@@ -473,7 +494,7 @@ async function unirseListaEspera(claseId, waitlistType) {
     successMessage.value = res.data?.message || "Te agregamos a la lista de espera.";
     error.value = "";
     selectedClassId.value = "";
-    await onDateSelected(selectedDate.value);
+    await loadCatalogClasses();
   } catch (err) {
     error.value = err.response?.data?.error || "Error al anotarse en la lista de espera.";
   }
@@ -486,8 +507,7 @@ onMounted(() => {
 
 onActivated(() => {
   if (selectedActivityId.value) {
-    const now = new Date();
-    loadMonthDays(now.getFullYear(), now.getMonth() + 1);
+    loadCatalogClasses();
     loadMyClasses();
   }
 });
@@ -594,6 +614,41 @@ onActivated(() => {
 
 .selection-col {
   min-width: 0;
+}
+
+.weekday-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.weekday-btn {
+  min-height: 72px;
+  padding: 0.85rem;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.weekday-btn span,
+.weekday-btn small {
+  display: block;
+}
+
+.weekday-btn small {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
+.weekday-btn:hover {
+  transform: translateY(-2px);
+}
+
+.weekday-btn.active {
+  border-color: #f6ea98;
+  background: #f6ea98;
+  color: #9f5f91;
 }
 
 /* Botones de horarios en grid */

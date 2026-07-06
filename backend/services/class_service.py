@@ -32,6 +32,7 @@ def class_slot_payload(class_obj, enrolled_count):
 
     return {
         "id": class_obj.id,
+        "id_actividad": class_obj.id_actividad,
         "name": class_obj.name,
         "actividad": class_obj.actividad.name if hasattr(class_obj, "actividad") and class_obj.actividad else None,
         "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj.fecha_hora else None,

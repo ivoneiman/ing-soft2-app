@@ -552,6 +552,10 @@ def is_absolute_http_url(value):
     return isinstance(value, str) and value.strip().startswith(("http://", "https://"))
 
 
+def supports_mercado_pago_auto_return(success_url):
+    return isinstance(success_url, str) and success_url.strip().startswith("https://")
+
+
 def validate_mercado_pago_back_urls(preference_data):
     if "back_url" in preference_data:
         return "back_urls debe llamarse en plural"
@@ -575,12 +579,12 @@ def validate_mercado_pago_back_urls(preference_data):
         if not is_absolute_http_url(value):
             return f"back_urls.{key} debe ser una URL absoluta http:// o https://"
 
-    if preference_data.get("auto_return") == "approved" and not is_absolute_http_url(back_urls.get("success")):
-        return "auto_return approved requiere back_urls.success válido"
     if "auto_return" not in preference_data:
-        return "auto_return debe estar definido como approved"
+        return None
     if preference_data.get("auto_return") != "approved":
         return "auto_return debe estar definido como approved"
+    if not supports_mercado_pago_auto_return(back_urls.get("success")):
+        return "auto_return approved requiere back_urls.success https"
     return None
 
 
