@@ -1115,17 +1115,14 @@ def admin_login_verify():
     pending_code = session.get("admin_login_code")
     expires_at = session.get("admin_login_code_expires_at")
 
-    if not pending_email or not pending_code or not expires_at:
-        return jsonify({"error": "No hay un código pendiente. Solicitá uno primero."}), 400
-
     if email != pending_email or code != pending_code:
-        return jsonify({"error": "Código incorrecto"}), 401
+        return jsonify({"error": "Código inválido o expirado"}), 401
 
     if datetime.utcnow().timestamp() > expires_at:
         session.pop("admin_login_email", None)
         session.pop("admin_login_code", None)
         session.pop("admin_login_code_expires_at", None)
-        return jsonify({"error": "El código expiró. Solicitá uno nuevo."}), 401
+        return jsonify({"error": "Código inválido o expirado"}), 401
 
     user = User.query.filter_by(email=email, role="admin").first()
     if not user:

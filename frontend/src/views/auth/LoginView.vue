@@ -85,7 +85,7 @@ async function onSubmit() {
       if (ok) {
         redirectAfterLogin()
       } else {
-        error.value = authStore.error || 'El código es incorrecto o ha expirado.'
+        error.value = authStore.error || 'Código inválido o expirado'
       }
     } else {
       // Paso inicial: enviar email y contraseña
