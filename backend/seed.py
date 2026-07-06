@@ -239,7 +239,7 @@ def create_enrollment(user, class_obj):
     print(f"   [OK] Enrollment creado: {user.email} -> {class_obj.name}")
 
 
-def ensure_enrollment(user, class_obj, estado=Enrollment.STATUS_ACTIVE, tipo="Suelta"):
+def ensure_enrollment(user, class_obj, estado=Enrollment.STATUS_PAID, tipo="Suelta"):
     """Crea o actualiza una inscripcion de ejemplo para un usuario y clase."""
     enrollment = Enrollment.query.filter_by(user_id=user.id, class_id=class_obj.id).first()
     if enrollment:
