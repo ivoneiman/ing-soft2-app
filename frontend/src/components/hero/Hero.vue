@@ -19,7 +19,7 @@
         <button class="btn-primary" @click="handleAsociateClick">
           {{ authStore.isLoggedIn ? 'PERFIL' : 'ASOCIATE' }}
         </button>
-        <button class="btn-secondary" @click="handleActividadesClick">ACTIVIDADES</button>
+        <button class="btn-secondary" @click="handleActividadesClick" >ACTIVIDADES</button>
       </div>
     </div>
   </section>
@@ -44,15 +44,15 @@ const handleAsociateClick = () => {
 
 // Función para manejar el click del botón ACTIVIDADES
 const handleActividadesClick = () => {
-  if (authStore.isClient) {
-    // Si es cliente, ir a actividades
+  if (!authStore.isLoggedIn) {
     router.push('/actividades')
-  } else if (authStore.isEmployee || authStore.isAdmin) {
-    // Si es employee o admin, ir a dashboard
+  } else if (
+    authStore.user.role === 'admin' ||
+    authStore.user.role === 'employee'
+  ) {
     router.push('/dashboard')
   } else {
-    // Si no está autenticado, ir a login
-    router.push('/login')
+    router.push('/actividades')
   }
 }
 </script>
