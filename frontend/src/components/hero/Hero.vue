@@ -11,8 +11,8 @@
       </h1>
 
       <p class="hero-subtitle">
-        Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
-        eiusmod tempor incididunt ut labore et dolore magna aliqua.
+        Entrenamientos personalizados, profesores especializados
+        y una comunidad que te impulsa a dar siempre un paso más.
       </p>
 
       <div class="hero-buttons">

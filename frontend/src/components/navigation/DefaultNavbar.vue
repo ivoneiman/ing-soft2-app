@@ -134,16 +134,6 @@
         </a>
       </div>
     </div>
-
-    <!-- Derecha: acceso rápido a asistencia para employee (desktop) -->
-    <router-link
-      v-if="authStore.isLoggedIn && roleHelpers.isEmployee()"
-      :to="attendanceShortcutRoute"
-      class="right-section"
-    >
-      <span class="present-text">PASAR <br /> PRESENTE</span>
-      <img src="/codigo-qr.png" alt="QR" class="qr-image" />
-    </router-link>
   </nav>
 </template>
 

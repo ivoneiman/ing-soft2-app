@@ -60,7 +60,7 @@
           <thead>
             <tr>
               <th>Actividad</th>
-              <th>Fecha / Día</th>
+              <th>Día</th>
               <th>Mes</th>
               <th>Sala</th>
               <th>Profesor</th>
@@ -76,7 +76,7 @@
               :class="{ 'fila-cancelada': isCancelled(clase) }"
             >
               <td class="col-actividad">{{ clase.actividad || clase.name }}</td>
-              <td class="texto-celda">{{ formatFecha(clase.fecha_hora) }}</td>
+              <td class="texto-celda">{{ formatDay(clase.fecha_hora) }}</td>
               <td class="texto-celda">{{ formatMonth(clase.fecha_hora) }}</td>
               <td class="texto-celda">{{ clase.room || 'N/A' }}</td>
               <td class="texto-celda">{{ clase.profesor_nombre || 'N/A' }}</td>
@@ -823,6 +823,13 @@ function getDisplayStatus(clase) {
 
 function formatFecha(fechaIso) {
   return formatShortDate(fechaIso);
+}
+
+function formatDay(fechaIso) {
+  if (!fechaIso) return 'N/A';
+  const date = new Date(fechaIso);
+  const weekday = date.toLocaleString('es-AR', { weekday: 'long' });
+  return `${weekday.charAt(0).toUpperCase() + weekday.slice(1)} ${date.getDate()}`;
 }
 
 function formatMonth(fechaIso) {
