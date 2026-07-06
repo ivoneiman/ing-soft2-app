@@ -239,7 +239,7 @@ def create_enrollment(user, class_obj):
     print(f"   [OK] Enrollment creado: {user.email} -> {class_obj.name}")
 
 
-def ensure_enrollment(user, class_obj, estado=Enrollment.STATUS_PENDING_PAYMENT, tipo="Suelta"):
+def ensure_enrollment(user, class_obj, estado=Enrollment.STATUS_ACTIVE, tipo="Suelta"):
     """Crea o actualiza una inscripcion de ejemplo para un usuario y clase."""
     enrollment = Enrollment.query.filter_by(user_id=user.id, class_id=class_obj.id).first()
     if enrollment:
@@ -348,23 +348,6 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
         created_at=expired_class.fecha_hora - timedelta(minutes=1),
     )
 
-    pending_class = create_test_class(
-        "Funcional",
-        at_app_time(today + timedelta(days=1), 18),
-        actividad_funcional,
-        profesor.id,
-        legacy_names=["Funcional Intensivo", "Seed Pago Pendiente - Funcional"],
-    )
-    pending_enrollment = ensure_enrollment(
-        client,
-        pending_class,
-        estado=Enrollment.STATUS_PENDING_PAYMENT,
-    )
-    ensure_payment(
-        pending_enrollment,
-        Payment.STATUS_PENDING,
-        created_at=today - timedelta(minutes=30),
-    )
 
     paid_class = create_test_class(
         "Pilates",
@@ -394,7 +377,7 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
     rejected_enrollment = ensure_enrollment(
         client,
         rejected_class,
-        estado=Enrollment.STATUS_PENDING_PAYMENT,
+        estado=Enrollment.STATUS_ACTIVE,
     )
     ensure_payment(
         rejected_enrollment,
