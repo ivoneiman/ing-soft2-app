@@ -58,7 +58,7 @@
         <p v-if="attendanceError" class="attendance-error">{{ attendanceError }}</p>
         <p v-else-if="loadingAttendance" class="attendance-empty">Cargando asistencias...</p>
         <p v-else-if="attendanceRoster.length === 0" class="attendance-empty">
-          Todavía no hay inscriptos pagos para esta clase.
+          No hay inscriptos pagos para esta clase.
         </p>
 
         <ul v-else class="attendance-list">
