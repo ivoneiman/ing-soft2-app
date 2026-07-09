@@ -23,6 +23,16 @@
         <h3>Filtros</h3>
       </div>
       <div class="filters-container">
+        <div class="date-filter-group">
+          <label for="start-date">Fecha Desde</label>
+          <input type="date" id="start-date" v-model="filterStartDate" class="filter-input" title="Fecha desde" />
+        </div>
+        <div class="date-filter-group">
+          <label for="end-date">Fecha Hasta</label>
+          <input type="date" id="end-date" v-model="filterEndDate" class="filter-input" title="Fecha hasta" :disabled="!filterStartDate" />
+        </div>
+      </div>
+      <div class="filters-container">
         <select v-model="filterActivity" class="filter-input" title="Filtrar por actividad">
           <option value="">Todas las actividades</option>
           <option v-for="act in availableActivities" :key="act" :value="act">
@@ -106,6 +116,8 @@ const filterActivity = ref('');
 const filterYear = ref('');
 const filterMonth = ref('');
 const filterDay = ref('');
+const filterStartDate = ref('');
+const filterEndDate = ref('');
 
 const availableActivities = computed(() => {
   const acts = new Set();
@@ -147,6 +159,7 @@ const filteredPayments = computed(() => {
     let matchYear = true;
     let matchMonth = true;
     let matchDay = true;
+    let matchDateRange = true;
 
     if (searchQuery.value) {
       const query = searchQuery.value.toLowerCase().trim();
@@ -187,7 +200,15 @@ const filteredPayments = computed(() => {
       }
     }
 
-    return matchQuery && matchActivity && matchYear && matchMonth && matchDay;
+    if (filterStartDate.value && filterEndDate.value) {
+      if (pay.created_at) {
+        const paymentDate = pay.created_at.split('T')[0];
+        matchDateRange = paymentDate >= filterStartDate.value && paymentDate <= filterEndDate.value;
+      } else {
+        matchDateRange = false;
+      }
+    }
+    return matchQuery && matchActivity && matchYear && matchMonth && matchDay && matchDateRange;
   });
 });
 
@@ -287,6 +308,15 @@ onMounted(() => {
   gap: 1rem;
   margin-bottom: 1rem;
   flex-wrap: wrap;
+}
+.date-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+.date-filter-group label {
+  font-size: 0.8rem; color: #572c57; margin-left: 4px;
 }
 .filter-input {
   flex: 1;
