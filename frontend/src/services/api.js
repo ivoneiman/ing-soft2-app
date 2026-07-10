@@ -274,6 +274,14 @@ export function cancelEnrollment({ enrollment_id }) {
   );
 }
 
+export function cancelMonthlySubscription(enrollmentId) {
+  return axios.post(
+    `${API_URL}/enrollments/${enrollmentId}/cancel-monthly-subscription`,
+    {},
+    REQUEST_CONFIG
+  );
+}
+
 export function declineWaitlistOffer(enrollmentId) {
   return axios.post(
     `${API_URL}/enrollments/${enrollmentId}/waitlist-decline`,

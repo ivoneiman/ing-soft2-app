@@ -86,8 +86,8 @@
           </button>
 
           <div v-if="isPaymentsDropdownOpen" class="dropdown-container">
-            <router-link to="/pagos?tab=pending" @click="handlePaymentsDropdownClick">
-              Inscripciones pendientes
+            <router-link to="/pagos?tab=credits" @click="handlePaymentsDropdownClick">
+              Créditos
             </router-link>
             <router-link to="/pagos?tab=history" @click="handlePaymentsDropdownClick">
               Historial de pagos

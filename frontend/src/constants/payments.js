@@ -1,5 +1,4 @@
 export const PAYMENT_TAB = {
-  PENDING: 'pending',
   HISTORY: 'history',
   CREDITS: 'credits',
   NOTIFICATIONS: 'notifications',

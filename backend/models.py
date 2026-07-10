@@ -260,6 +260,7 @@ class Credit(db.Model):
     used_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
     estado = db.Column(db.String(20), default=CREDIT_STATUS_AVAILABLE, nullable=False)
+    tipo = db.Column(db.String(20), default=ENROLLMENT_TYPE_SINGLE, nullable=False)
 
     user = db.relationship("User", backref=db.backref("creditos", cascade="all, delete-orphan"))
     actividad = db.relationship("Actividades")
@@ -285,6 +286,7 @@ class Credit(db.Model):
             "used_at": self.used_at.isoformat() if self.used_at else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "estado": estado,
+            "tipo": self.tipo,
         }
 
 

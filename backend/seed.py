@@ -3,6 +3,7 @@ Script para poblar la base de datos con datos de prueba.
 Crea tablas, usuarios, clases y enrollments de forma idempotente.
 Correr con: python seed.py
 """
+from calendar import monthrange
 from datetime import datetime, time, timedelta
 
 from app import (
@@ -432,21 +433,22 @@ def create_client_payment_examples(client, actividad_yoga, actividad_funcional, 
 
 
 def create_client_credit_examples(client, actividad_pilates, profesor, today):
-    """Crea un flujo claro para probar créditos por cancelación con client@test.com."""
-    print("Creando casos de créditos para client@test.com...")
+    """Crea un flujo claro para probar créditos (individual) por cancelación con client@test.com."""
+    print("Creando casos de créditos (individual) para client@test.com...")
 
     cancellable_class = create_test_class(
-        "Pilates",
+        "Pilates - Credito Individual (Origen)",
         at_app_time(today + timedelta(days=7), 15),
         actividad_pilates,
         profesor.id,
-        legacy_names=["Credito Test - Pilates Cancelable"],
+        legacy_names=["Pilates", "Credito Test - Pilates Cancelable"],
     )
     ensure_class_active(cancellable_class)
     paid_enrollment = ensure_enrollment(
         client,
         cancellable_class,
         estado=Enrollment.STATUS_PAID,
+        tipo="Suelta",
     )
     ensure_payment(
         paid_enrollment,
@@ -455,7 +457,7 @@ def create_client_credit_examples(client, actividad_pilates, profesor, today):
     )
 
     target_class = create_test_class(
-        "Pilates",
+        "Pilates - Credito Individual (Destino)",
         at_app_time(today + timedelta(days=8), 15),
         actividad_pilates,
         profesor.id,
@@ -463,8 +465,59 @@ def create_client_credit_examples(client, actividad_pilates, profesor, today):
     )
     ensure_class_active(target_class)
     print(
-        "   [INFO] Para probar creditos: cancelar la clase de Pilates "
-        "cancelable y luego inscribir client@test.com en la clase de Pilates destino."
+        "   [INFO] Para probar el credito individual: cancelar (dar de baja) la clase "
+        "'Pilates - Credito Individual (Origen)' desde Mis Clases -> se genera un "
+        "credito tipo 'individual'. Luego inscribir a client@test.com en 'Pilates - "
+        "Credito Individual (Destino)' -> el credito se consume automaticamente."
+    )
+
+
+def create_client_monthly_subscription(client, actividad_pilates, profesor, today):
+    """Crea una suscripcion mensual paga de Pilates para client@test.com, con varias
+    clases en el mismo mes/horario, para poder probar la baja de un solo dia (credito
+    individual) vs. la baja de toda la suscripcion (credito mensual)."""
+    print("Creando suscripcion mensual de Pilates para client@test.com...")
+
+    # Primer miercoles a partir de pasado mañana, a las 09:00hs.
+    first_class_date = today + timedelta(days=2)
+    while first_class_date.weekday() != 2:  # 0=lunes ... 2=miercoles
+        first_class_date += timedelta(days=1)
+
+    last_day = monthrange(first_class_date.year, first_class_date.month)[1]
+    month_end = datetime(first_class_date.year, first_class_date.month, last_day, 23, 59, 59)
+
+    monthly_classes = []
+    occurrence_date = first_class_date
+    week_index = 1
+    while at_app_time(occurrence_date, 9) <= month_end:
+        class_obj = create_test_class(
+            f"Pilates Mensual - Semana {week_index}",
+            at_app_time(occurrence_date, 9),
+            actividad_pilates,
+            profesor.id,
+        )
+        monthly_classes.append(class_obj)
+        occurrence_date += timedelta(days=7)
+        week_index += 1
+
+    parent_class = monthly_classes[0]
+    parent_enrollment = ensure_enrollment(
+        client,
+        parent_class,
+        estado=Enrollment.STATUS_PAID,
+        tipo="Mensual",
+    )
+    ensure_payment(
+        parent_enrollment,
+        Payment.STATUS_APPROVED,
+        created_at=today - timedelta(hours=1),
+    )
+
+    print(
+        f"   [INFO] Suscripcion mensual creada: {len(monthly_classes)} clase(s) los "
+        f"miercoles a las 09:00 en {actividad_pilates.name}. Para probar creditos desde "
+        "Mis Clases: dar de baja UN dia del grupo mensual -> credito tipo 'individual'; "
+        "dar de baja 'Cancelar suscripcion completa' -> credito tipo 'mensual'."
     )
 
 
@@ -820,10 +873,15 @@ def main():
         db.session.commit()
         print()
 
-        # ─── Casos para probar créditos por cancelación ─────────────────────
+        # ─── Casos para probar créditos por cancelación (individual) ────────
 
-        # COMENTADO: No hay clases para crear ejemplos de créditos
-        # create_client_credit_examples(client, actividad3, profesor_test, today)
+        create_client_credit_examples(client, actividad3, profesor_test, today)
+        db.session.commit()
+        print()
+
+        # ─── Suscripción mensual paga para probar créditos (mensual) ────────
+
+        create_client_monthly_subscription(client, actividad3, profesor_test, today)
         db.session.commit()
         print()
 

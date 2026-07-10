@@ -9,6 +9,7 @@ try:
         CREDIT_EXPIRATION_DAYS,
         CREDIT_STATUS_AVAILABLE,
         CREDIT_STATUS_USED,
+        ENROLLMENT_TYPE_SINGLE,
         PAYMENT_METHOD_CREDIT,
         PAYMENT_STATUS_APPROVED,
     )
@@ -23,6 +24,7 @@ except ModuleNotFoundError:
         CREDIT_EXPIRATION_DAYS,
         CREDIT_STATUS_AVAILABLE,
         CREDIT_STATUS_USED,
+        ENROLLMENT_TYPE_SINGLE,
         PAYMENT_METHOD_CREDIT,
         PAYMENT_STATUS_APPROVED,
     )
@@ -47,10 +49,10 @@ def is_credit_valid(credit, activity_id, current_dt=None):
     return bool(expires_at and expires_at > current_dt)
 
 
-def available_credit_for_user_activity(user_id, activity_id, current_dt=None):
+def available_credit_for_user_activity(user_id, activity_id, tipo, current_dt=None):
     credits = (
         Credit.query
-        .filter_by(user_id=user_id, activity_id=activity_id, used=False)
+        .filter_by(user_id=user_id, activity_id=activity_id, tipo=tipo, used=False)
         .order_by(Credit.expires_at.asc(), Credit.id.asc())
         .all()
     )
@@ -117,13 +119,13 @@ def credit_exists_for_cancelled_enrollment(enrollment, class_obj):
     )
 
 
-def generate_credit_for_paid_enrollment(enrollment, class_obj, current_dt=None):
+def generate_credit_for_paid_enrollment(enrollment, class_obj, current_dt=None, tipo=None, force_eligible=False):
     try:
         from services.payment_service import has_approved_payment
     except ModuleNotFoundError:
         from .payment_service import has_approved_payment
 
-    if not (enrollment.estado == enrollment.STATUS_PAID or has_approved_payment(enrollment)):
+    if not (force_eligible or enrollment.estado == enrollment.STATUS_PAID or has_approved_payment(enrollment)):
         return None
     if credit_exists_for_cancelled_enrollment(enrollment, class_obj):
         logger.info(
@@ -141,13 +143,15 @@ def generate_credit_for_paid_enrollment(enrollment, class_obj, current_dt=None):
         expires_at=credit_expiration_from(current_dt),
         used=False,
         estado=CREDIT_STATUS_AVAILABLE,
+        tipo=tipo or getattr(enrollment, "tipo", None) or ENROLLMENT_TYPE_SINGLE,
     )
     db.session.add(credit)
     logger.info(
-        "[Credits] creado user_id=%s activity_id=%s enrollment_id=%s",
+        "[Credits] creado user_id=%s activity_id=%s enrollment_id=%s tipo=%s",
         enrollment.user_id,
         class_obj.id_actividad,
         enrollment.id,
+        credit.tipo,
     )
     return credit
 

@@ -67,7 +67,18 @@
         <div v-for="group in monthlyGroups" :key="group.id" class="monthly-group">
           <div class="group-header" @click="toggleGroup(group.id)">
             <h2>{{ group.actividad }} - {{ group.dayName }} a las {{ group.time }} hs</h2>
-            <span class="arrow">{{ openGroups[group.id] ? '▲' : '▼' }}</span>
+            <div class="group-header-actions">
+              <button
+                v-if="group.parentEnrollmentId"
+                class="cancel-month-button"
+                type="button"
+                :disabled="isCancellingMonth === group.parentEnrollmentId"
+                @click.stop="confirmCancelMonth(group)"
+              >
+                {{ isCancellingMonth === group.parentEnrollmentId ? 'Cancelando...' : 'Cancelar suscripción completa' }}
+              </button>
+              <span class="arrow">{{ openGroups[group.id] ? '▲' : '▼' }}</span>
+            </div>
           </div>
           <div v-if="openGroups[group.id]" class="group-content cards-grid">
             <article v-for="cls in group.clases" :key="cls.class_id" class="class-card" :class="{'is-cancelled': isCancelled(cls)}">
@@ -146,18 +157,34 @@
       </div>
     </section>
 
-    <!-- Modal de confirmación -->
+    <!-- Modal de confirmación: baja de un día -->
     <div v-if="selectedClass" class="modal-backdrop" @click.self="selectedClass = null">
       <div class="modal">
         <h2>Confirmar Baja</h2>
         <p>¿Seguro querés cancelar tu asistencia a la clase de <strong>{{ selectedClass.actividad }}</strong> del <strong>{{ formatDateTime(selectedClass.fecha_hora) }}</strong>?</p>
         <p class="warning">
-          Si la clase ya estaba abonada, <strong>te otorgará los puntos (créditos) confirmando la selección</strong>.<br>
+          Si la clase ya estaba abonada (incluida como parte de una suscripción mensual), se generará un <strong>crédito para anotarte a una clase individual</strong> de la misma actividad.<br>
           Si aún debes el pago, liberarás el cupo para alguien más.
         </p>
         <div class="modal-actions">
           <button class="secondary-button" @click="selectedClass = null">Cerrar</button>
           <button class="danger-button" @click="submitCancel">Confirmar Baja</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de confirmación: baja de la suscripción mensual completa -->
+    <div v-if="monthToCancel" class="modal-backdrop" @click.self="monthToCancel = null">
+      <div class="modal">
+        <h2>Cancelar suscripción mensual</h2>
+        <p>¿Seguro querés cancelar el resto de tu suscripción mensual de <strong>{{ monthToCancel.actividad }} - {{ monthToCancel.dayName }} a las {{ monthToCancel.time }} hs</strong>?</p>
+        <p class="warning">
+          Se cancelarán todas las clases restantes del mes. Si la suscripción estaba abonada, se generará un <strong>crédito para otra suscripción mensual</strong> de la misma actividad.<br>
+          La acción no puede deshacerse.
+        </p>
+        <div class="modal-actions">
+          <button class="secondary-button" @click="monthToCancel = null">Cerrar</button>
+          <button class="danger-button" @click="submitCancelMonth">Cancelar suscripción</button>
         </div>
       </div>
     </div>
@@ -168,7 +195,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
-import { getPendingEnrollments, getMyWaitlists } from '../../services/api';
+import { cancelMonthlySubscription, getPendingEnrollments, getMyWaitlists } from '../../services/api';
 import { formatDateTime } from '../../utils/formatters';
 import { CLASS_STATUS, ENROLLMENT_STATUS } from '../../constants/statuses';
 
@@ -178,7 +205,9 @@ const route = useRoute();
 const myClasses = ref([]);
 const isLoading = ref(false);
 const isCancelling = ref(null);
+const isCancellingMonth = ref(null);
 const selectedClass = ref(null);
+const monthToCancel = ref(null);
 
 const filterType = ref('mensuales');
 const openGroups = ref({});
@@ -225,7 +254,16 @@ const monthlyGroups = computed(() => {
     }
     groups[key].clases.push(cls);
   });
-  return Object.values(groups).sort((a, b) => a.id.localeCompare(b.id));
+  return Object.values(groups)
+    .map((group) => ({
+      ...group,
+      parentEnrollmentId: (
+        group.clases.find((c) => c.enrollment_id)?.enrollment_id
+        ?? group.clases.find((c) => c.parent_enrollment_id)?.parent_enrollment_id
+        ?? null
+      ),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 });
 
 function isCancelled(cls) {
@@ -297,6 +335,27 @@ async function submitCancel() {
   }
 }
 
+function confirmCancelMonth(group) {
+  if (!group.parentEnrollmentId) return;
+  monthToCancel.value = group;
+}
+
+async function submitCancelMonth() {
+  if (!monthToCancel.value) return;
+  const group = monthToCancel.value;
+  isCancellingMonth.value = group.parentEnrollmentId;
+  monthToCancel.value = null;
+  try {
+    const response = await cancelMonthlySubscription(group.parentEnrollmentId);
+    alert(response.data.message);
+    loadClasses();
+  } catch (err) {
+    alert(err.response?.data?.error || 'Error al cancelar la suscripción.');
+  } finally {
+    isCancellingMonth.value = null;
+  }
+}
+
 onMounted(() => { loadClasses(); loadWaitlistInfo(); });
 </script>
 
@@ -321,6 +380,9 @@ onMounted(() => { loadClasses(); loadWaitlistInfo(); });
 .group-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; background: #f5e6f5; cursor: pointer; user-select: none; transition: background 0.2s; }
 .group-header:hover { background: #ede5f5; }
 .group-header h2 { margin: 0; color: #572c57; font-size: 1.2rem; }
+.group-header-actions { display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
+.cancel-month-button { background: #fee2e2; color: #b42318; border: 1px solid #fca5a5; padding: 0.5rem 0.9rem; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; white-space: nowrap; transition: 0.2s; }
+.cancel-month-button:hover:not(:disabled) { background: #fecaca; }
 .group-content { padding: 1.5rem; border-top: 2px solid #e8dce8; background: #fafafa; }
 .arrow { color: #9f5f91; font-size: 0.9rem; font-weight: 700; }
 

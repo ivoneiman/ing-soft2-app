@@ -336,6 +336,9 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE creditos ADD COLUMN used_at DATETIME"))
         if "created_at" not in columns:
             db.session.execute(text("ALTER TABLE creditos ADD COLUMN created_at DATETIME"))
+        if "tipo" not in columns:
+            db.session.execute(text(f"ALTER TABLE creditos ADD COLUMN tipo VARCHAR(20) DEFAULT '{ENROLLMENT_TYPE_SINGLE}'"))
+            db.session.execute(text("UPDATE creditos SET tipo = :tipo WHERE tipo IS NULL"), {"tipo": ENROLLMENT_TYPE_SINGLE})
         db.session.execute(text("UPDATE creditos SET used = 0 WHERE used IS NULL"))
         db.session.execute(text("UPDATE creditos SET used = 1 WHERE estado = :used_status"), {
             "used_status": Credit.STATUS_USED,
@@ -559,8 +562,8 @@ def _is_credit_valid(credit, activity_id, current_datetime=None):
     return credit_service.is_credit_valid(credit, activity_id, current_datetime)
 
 
-def _available_credit_for_user_activity(user_id, activity_id, current_datetime=None):
-    return credit_service.available_credit_for_user_activity(user_id, activity_id, current_datetime)
+def _available_credit_for_user_activity(user_id, activity_id, tipo, current_datetime=None):
+    return credit_service.available_credit_for_user_activity(user_id, activity_id, tipo, current_datetime)
 
 
 def _consume_credit_for_enrollment(credit, enrollment, current_datetime=None):
@@ -573,10 +576,6 @@ def _create_cancellation_notification(enrollment, class_obj, credited):
 
 def _credit_exists_for_cancelled_enrollment(enrollment, class_obj):
     return credit_service.credit_exists_for_cancelled_enrollment(enrollment, class_obj)
-
-
-def _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime=None):
-    return credit_service.generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
 
 
 def _expire_payment_for_enrollment(enrollment, current_datetime=None):
@@ -1817,14 +1816,36 @@ def cancel_class_attendance(class_id):
     enrollment = Enrollment.query.filter_by(user_id=current_user.id, class_id=class_id).first()
 
     if enrollment:
+        # Una suscripción mensual activa cancelada día a día no tiene pago propio en la
+        # fila que se cancela (el pago real queda en el parent): la elegibilidad de crédito
+        # se decide acá, con el parent original, antes de que _shift_monthly_parent_if_needed
+        # lo mueva o lo reemplace por un dummy.
+        is_monthly_active = (
+            enrollment.tipo == ENROLLMENT_TYPE_MONTHLY
+            and enrollment.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]
+        )
+        monthly_day_credit_eligible = is_monthly_active and _has_approved_payment(enrollment)
+
         # Si la clase es explícita usamos el flujo común que ya tienen.
         enrollment_to_cancel = _shift_monthly_parent_if_needed(enrollment)
-        result, error, status_code = cancellation_service.cancel_enrollment(enrollment_to_cancel, current_user, current_datetime)
+        result, error, status_code = cancellation_service.cancel_enrollment(
+            enrollment_to_cancel, current_user, current_datetime,
+            skip_credit_generation=is_monthly_active,
+        )
         if error:
             return api_error(error, status_code)
-        
-        credit = result.get("credit")
-        credit_generated = result.get("credit_generated")
+
+        if is_monthly_active:
+            # Un solo día cancelado dentro de un mes vigente solo puede generar un
+            # crédito individual: el resto de la suscripción sigue activa.
+            credit = credit_service.generate_credit_for_paid_enrollment(
+                enrollment_to_cancel, class_obj, current_datetime,
+                tipo=ENROLLMENT_TYPE_SINGLE, force_eligible=monthly_day_credit_eligible,
+            )
+            credit_generated = credit is not None
+        else:
+            credit = result.get("credit")
+            credit_generated = result.get("credit_generated")
     else:
         # Es una clase mensual implícita: debemos "materializarla" para poder cancelarla y liberar el cupo de ese día
         month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
@@ -1862,10 +1883,13 @@ def cancel_class_attendance(class_id):
         
         credit = None
         credit_generated = False
-        
+
         if parent_enr.estado == Enrollment.STATUS_PAID:
-            credit = _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
-            credit_generated = True
+            credit = credit_service.generate_credit_for_paid_enrollment(
+                enrollment, class_obj, current_datetime,
+                tipo=ENROLLMENT_TYPE_SINGLE, force_eligible=True,
+            )
+            credit_generated = credit is not None
 
     try:
         db.session.commit()
@@ -2021,7 +2045,7 @@ def create_enrollment():
         db.session.add(enrollment)
 
     db.session.flush()
-    credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_datetime)
+    credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, enrollment.tipo, current_datetime)
     if credit:
         _consume_credit_for_enrollment(credit, enrollment, current_datetime)
         db.session.commit()
@@ -2199,6 +2223,59 @@ def cancel_enrollment(enrollment_id):
         "Tu inscripción fue cancelada correctamente. Se generó un crédito para futuras reservas."
         if result["credit_generated"]
         else "Tu inscripción fue cancelada correctamente."
+    )
+    return api_success({
+        "message": message,
+        "enrollment_id": enrollment.id,
+        "estado": enrollment.estado,
+        "payment_status": enrollment.payment_status,
+        "credit_generated": result["credit_generated"],
+        "credit": credit_service.credit_payload(credit, current_datetime) if credit else None,
+        "email_sent": email_sent,
+        "pending_payments_expired": result["pending_payments_expired"],
+    }, message=message, status_code=200)
+
+
+@app.route("/api/enrollments/<int:enrollment_id>/cancel-monthly-subscription", methods=["POST"])
+def cancel_monthly_subscription(enrollment_id):
+    """Cancela el resto de una suscripción mensual completa (a diferencia de /cancel,
+    que sobre una inscripción mensual solo desplaza el parent y da de baja un día).
+    """
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    enrollment = Enrollment.query.get(enrollment_id)
+    if enrollment and enrollment.tipo != ENROLLMENT_TYPE_MONTHLY:
+        return api_error("Esta inscripción no es una suscripción mensual", 400)
+
+    current_datetime = _current_discount_datetime()
+    # A diferencia de /cancel, acá NO desplazamos el parent: queremos cancelar toda
+    # la suscripción de una vez, no saltear solo el próximo día.
+    result, error, status_code = cancellation_service.cancel_enrollment(enrollment, current_user, current_datetime)
+    if error:
+        return api_error(error, status_code)
+
+    class_obj = result["class"]
+    credit = result["credit"]
+
+    try:
+        db.session.commit()
+    except Exception as err:
+        db.session.rollback()
+        logger.exception("[Cancelaciones] error suscripción mensual enrollment_id=%s", enrollment_id)
+        return jsonify({"error": "Error interno al procesar la cancelación", "details": str(err)}), 500
+
+    email_sent = False
+    if credit:
+        email_sent = send_credit_generated_email(enrollment.user, class_obj, credit)
+
+    _promote_waitlist_for_class(class_obj)
+
+    message = (
+        "Tu suscripción mensual fue cancelada correctamente. Se generó un crédito para otra suscripción mensual."
+        if result["credit_generated"]
+        else "Tu suscripción mensual fue cancelada correctamente."
     )
     return api_success({
         "message": message,
