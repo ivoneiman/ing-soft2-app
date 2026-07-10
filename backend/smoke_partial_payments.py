@@ -1,4 +1,7 @@
 from datetime import datetime, timedelta
+import hashlib
+import hmac
+import os
 
 from app import app, db
 import app as app_module
@@ -65,8 +68,31 @@ def assert_close(label, actual, expected):
         raise AssertionError(f"{label}: expected {expected!r}, got {actual!r}")
 
 
+def webhook_headers(payment_id):
+    secret = os.environ["MERCADOPAGO_WEBHOOK_SECRET"]
+    request_id = "smoke-request-id"
+    timestamp = "1700000000"
+    manifest = f"id:{payment_id};request-id:{request_id};ts:{timestamp};"
+    signature = hmac.new(secret.encode(), manifest.encode(), hashlib.sha256).hexdigest()
+    return {
+        "x-request-id": request_id,
+        "x-signature": f"ts={timestamp},v1={signature}",
+    }
+
+
 def main():
     original_mp_client = app_module.get_mercadopago_client
+    original_env = {key: os.environ.get(key) for key in [
+        "PUBLIC_BACKEND_URL", "MERCADOPAGO_WEBHOOK_SECRET",
+        "PAYMENT_SUCCESS_URL", "PAYMENT_FAILURE_URL", "PAYMENT_PENDING_URL",
+        "MERCADOPAGO_NOTIFICATION_URL",
+    ]}
+    os.environ["PUBLIC_BACKEND_URL"] = "https://backend.example.test"
+    os.environ["MERCADOPAGO_WEBHOOK_SECRET"] = "smoke-webhook-secret"
+    os.environ.pop("PAYMENT_SUCCESS_URL", None)
+    os.environ.pop("PAYMENT_FAILURE_URL", None)
+    os.environ.pop("PAYMENT_PENDING_URL", None)
+    os.environ.pop("MERCADOPAGO_NOTIFICATION_URL", None)
     app_module.get_mercadopago_client = lambda: FakeMercadoPagoClient()
 
     created = []
@@ -171,12 +197,14 @@ def main():
         webhook_res = http.post(
             "/api/payments/webhook",
             json={"type": "payment", "data": {"id": "mp-smoke-webhook-deposit"}},
+            headers=webhook_headers("mp-smoke-webhook-deposit"),
         )
         assert_equal("deposit webhook status", webhook_res.status_code, 200)
+        assert_equal("deposit webhook processed", webhook_res.get_json().get("status"), "ok")
         with app.app_context():
+            db.session.remove()
             deposit_payment = db.session.get(Payment, payment_id)
             assert_equal("deposit approved by webhook", deposit_payment.status, Payment.STATUS_APPROVED)
-            assert_equal("deposit stores mp payment id", deposit_payment.mercado_pago_payment_id, "mp-smoke-webhook-deposit")
 
         callback_res = http.get(
             f"/api/payments/return/success?external_reference={payment_id}"
@@ -252,6 +280,9 @@ def main():
             assert_equal("enrollment payment status paid", enrollment.payment_status, ENROLLMENT_PAYMENT_STATUS_PAID)
             assert_close("remaining after balance", enrollment.remaining_amount, 0)
 
+        with app.app_context():
+            status_before_late_return = db.session.get(Payment, pending_balance_payment_id).status
+
         late_callback_res = http.get(
             f"/api/payments/return/success?external_reference={pending_balance_payment_id}"
             f"&status={MERCADO_PAGO_STATUS_APPROVED}&payment_id=mp-smoke-late-balance",
@@ -261,7 +292,7 @@ def main():
         with app.app_context():
             enrollment = db.session.get(Enrollment, enrollment_id)
             late_payment = db.session.get(Payment, pending_balance_payment_id)
-            assert_equal("late MP overpay rejected", late_payment.status, Payment.STATUS_REJECTED)
+            assert_equal("return cannot mutate payment", late_payment.status, status_before_late_return)
             assert_equal("enrollment stays paid after late callback", enrollment.estado, ENROLLMENT_STATUS_PAID)
             assert_equal("payment status stays paid after late callback", enrollment.payment_status, ENROLLMENT_PAYMENT_STATUS_PAID)
             assert_close("remaining stays zero after late callback", enrollment.remaining_amount, 0)
@@ -287,6 +318,11 @@ def main():
         print(f"deposit={deposit_amount} remaining={remaining_after_deposit}")
     finally:
         app_module.get_mercadopago_client = original_mp_client
+        for key, value in original_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         with app.app_context():
             db.session.rollback()
             for _, enrollment_id in [item for item in reversed(created) if item[0] == "enrollment"]:

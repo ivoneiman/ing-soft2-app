@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat tools/cloudflared_new.log)",
+      "Bash(cat tools/cloudflared_stdout.log)",
+      "Bash(ls venv/Scripts/python.exe)",
+      "Bash(tail -20 requirements.txt)",
+      "Bash(rm -f backend_run.log)",
+      "Bash(./venv/Scripts/python.exe app.py)",
+      "Bash(echo \"started pid $!\")"
+    ]
+  }
+}

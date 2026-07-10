@@ -67,7 +67,7 @@ def cancel_class(class_obj, current_dt):
     }
 
 
-def cancel_enrollment(enrollment, current_user, current_dt):
+def cancel_enrollment(enrollment, current_user, current_dt, skip_credit_generation=False):
     if not enrollment:
         return None, "Inscripción no encontrada", 404
     if enrollment.user_id != current_user.id and current_user.role not in ["admin", "employee"]:
@@ -84,7 +84,7 @@ def cancel_enrollment(enrollment, current_user, current_dt):
         return None, "La inscripción solo puede cancelarse hasta 24 horas antes del inicio de la clase", 400
 
     recompute_enrollment_payment_state(enrollment, current_dt)
-    should_generate_credit = has_approved_payment(enrollment)
+    should_generate_credit = not skip_credit_generation and has_approved_payment(enrollment)
 
     credit = None
     notification = None

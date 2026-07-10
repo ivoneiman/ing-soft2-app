@@ -155,6 +155,7 @@
           />
         </div>
         <p>¿Está seguro que desea eliminar su cuenta? Esta acción no se puede deshacer.</p>
+        <p class="delete-warning">Si tiene clases activas, debe darse de baja antes de eliminar su perfil.</p>
         <div class="buttons">
           <button @click="confirmDelete" class="btn-danger" :disabled="isDeleting">
             {{ isDeleting ? 'Eliminando...' : 'Confirmar' }}
@@ -511,6 +512,14 @@ const confirmDelete = async () => {
   margin-bottom: 20px;
   font-size: 1.1rem;
   color: #333;
+}
+
+.delete-warning {
+  margin-top: -0.5rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.95rem;
+  color: #ee2704;
+  font-weight: 600;
 }
 
 .buttons {

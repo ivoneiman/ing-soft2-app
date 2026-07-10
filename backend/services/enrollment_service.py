@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 try:
-    from constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, PAYMENT_OPTION_FULL
+    from constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, ENROLLMENT_TYPE_MONTHLY, PAYMENT_OPTION_FULL, WAITLIST_PROMOTION_EXPIRY_HOURS
     from models import Enrollment
     from services.credit_service import available_credit_for_user_activity, consume_credit_for_enrollment
     from services.datetime_service import current_datetime, datetime_in_app_timezone
@@ -9,13 +9,14 @@ try:
         class_has_finished,
         enrollment_payment_quote,
         expire_payment_for_enrollment,
+        expire_pending_payments_for_enrollment,
         has_approved_payment,
         payment_expires_at,
         payment_type_for_enrollment,
         recompute_enrollment_payment_state,
     )
 except ModuleNotFoundError:
-    from ..constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, PAYMENT_OPTION_FULL
+    from ..constants import ENROLLMENT_REOPENABLE_STATUSES, ENROLLMENT_TYPE_SINGLE, PAYMENT_OPTION_FULL, WAITLIST_PROMOTION_EXPIRY_HOURS
     from ..models import Enrollment
     from .credit_service import available_credit_for_user_activity, consume_credit_for_enrollment
     from .datetime_service import current_datetime, datetime_in_app_timezone
@@ -23,6 +24,7 @@ except ModuleNotFoundError:
         class_has_finished,
         enrollment_payment_quote,
         expire_payment_for_enrollment,
+        expire_pending_payments_for_enrollment,
         has_approved_payment,
         payment_expires_at,
         payment_type_for_enrollment,
@@ -39,6 +41,25 @@ def cancellation_deadline_for_class(class_obj):
     if not class_datetime:
         return None
     return (class_datetime - timedelta(hours=24)).replace(tzinfo=None)
+
+
+def _pending_payment_is_stale(enrollment, current_dt=None):
+    if not enrollment or enrollment.estado != Enrollment.STATUS_PENDING_PAYMENT:
+        return False
+
+    current_dt = datetime_in_app_timezone(current_dt or current_datetime())
+    if not current_dt:
+        return False
+
+    waitlist_promoted_at = datetime_in_app_timezone(getattr(enrollment, "waitlist_promoted_at", None))
+    if waitlist_promoted_at:
+        return current_dt - waitlist_promoted_at > timedelta(hours=WAITLIST_PROMOTION_EXPIRY_HOURS)
+
+    created_at = datetime_in_app_timezone(getattr(enrollment, "created_at", None))
+    if not created_at:
+        return False
+
+    return current_dt - created_at > timedelta(minutes=5)
 
 
 def enrollment_is_cancelable(enrollment, current_dt=None):
@@ -69,9 +90,18 @@ def validate_class_available_for_enrollment(class_obj, current_dt):
     return None, None
 
 
-def expire_enrollment_if_needed(enrollment, current_dt=None):
+def expire_enrollment_if_needed(enrollment, current_dt=None, on_waitlist_promotion_expired=None):
     if not enrollment or enrollment.estado != Enrollment.STATUS_PENDING_PAYMENT:
         return False
+
+    if _pending_payment_is_stale(enrollment, current_dt):
+        was_waitlist_promotion = bool(enrollment.waitlist_promoted_at)
+        class_obj = enrollment.class_
+        enrollment.estado = Enrollment.STATUS_CANCELLED
+        expire_pending_payments_for_enrollment(enrollment)
+        if was_waitlist_promotion and on_waitlist_promotion_expired and class_obj:
+            on_waitlist_promotion_expired(class_obj)
+        return True
 
     if class_has_finished(enrollment.class_, current_dt):
         enrollment.estado = Enrollment.STATUS_EXPIRED
@@ -108,17 +138,21 @@ def restore_future_expired_enrollment_if_needed(enrollment, current_dt=None):
     return changed
 
 
-def validate_enrollment_payable(enrollment, current_user, current_dt):
+def validate_enrollment_payable(enrollment, current_user, current_dt, on_waitlist_promotion_expired=None):
     if not enrollment or enrollment.user_id != current_user.id:
         return "Inscripción no encontrada", 404
 
     class_obj = enrollment.class_
     if not class_obj:
         return "Clase no encontrada", 404
+
+    was_pending = enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT
+    expired_now = expire_enrollment_if_needed(
+        enrollment, current_dt, on_waitlist_promotion_expired=on_waitlist_promotion_expired
+    )
+    if was_pending and expired_now and enrollment.estado == Enrollment.STATUS_CANCELLED:
+        return "La inscripción expiró por falta de pago", 400
     if class_has_finished(class_obj, current_dt):
-        if enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
-            enrollment.estado = Enrollment.STATUS_EXPIRED
-            expire_payment_for_enrollment(enrollment, current_dt)
         return "No se puede pagar una clase ya finalizada", 400
     if enrollment.estado != Enrollment.STATUS_PENDING_PAYMENT:
         return "La inscripción no está pendiente de pago", 400
@@ -143,6 +177,7 @@ def enrollment_payload(enrollment, current_dt=None):
         "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj and class_obj.fecha_hora else None,
         "estado": enrollment.estado,
         "tipo": enrollment.tipo,
+        "waitlist_offer": bool(enrollment.waitlist_promoted_at),
         "expires_at": expires_at.isoformat() if expires_at else None,
         "product_type": payment_type_for_enrollment(enrollment),
         "payment_type": payment_type_for_enrollment(enrollment),
@@ -187,13 +222,11 @@ def create_or_reopen_enrollment(current_user, class_obj, tipo, enrollment_map, c
             return enrollment, "already_paid"
 
         if enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT:
-            # Identación corregida para evitar que Python se rompa
-            if enrollment.tipo != ENROLLMENT_TYPE_MONTHLY:
-                credit = available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_dt)
-                if credit:
-                    consume_credit_for_enrollment(credit, enrollment, current_dt)
-                    enrollment._used_credit = credit
-                    return enrollment, "credit_used"
+            credit = available_credit_for_user_activity(current_user.id, class_obj.id_actividad, enrollment.tipo, current_dt)
+            if credit:
+                consume_credit_for_enrollment(credit, enrollment, current_dt)
+                enrollment._used_credit = credit
+                return enrollment, "credit_used"
             return enrollment, "already_pending"
 
         if enrollment.estado in ENROLLMENT_REOPENABLE_STATUSES:
@@ -202,6 +235,7 @@ def create_or_reopen_enrollment(current_user, class_obj, tipo, enrollment_map, c
             enrollment.estado = Enrollment.STATUS_PENDING_PAYMENT
             enrollment.requiere_reembolso = False
             enrollment.tipo = tipo or enrollment.tipo or ENROLLMENT_TYPE_SINGLE
+            enrollment.waitlist_promoted_at = None
             return enrollment, "created"
 
     if enrollment_map.get(class_obj.id, 0) >= capacity:

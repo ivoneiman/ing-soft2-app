@@ -3,7 +3,7 @@ import os
 from calendar import monthrange
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import timedelta, datetime
-from urllib.parse import quote
+from urllib.parse import quote, urlparse, urlunparse
 
 try:
     from constants import (
@@ -537,7 +537,15 @@ def payment_error_message(status_detail):
 
 
 def frontend_payments_url(status, message=None):
-    url = f"{os.getenv('FRONTEND_PAYMENTS_URL', DEFAULT_FRONTEND_PAYMENTS_URL)}?status={status}"
+    base_url = os.getenv('FRONTEND_PAYMENTS_URL', DEFAULT_FRONTEND_PAYMENTS_URL)
+    parsed = urlparse(base_url)
+    target_path = "/mis-clases" if status == "success" else "/actividades"
+    if parsed.scheme and parsed.netloc:
+        base_url = urlunparse((parsed.scheme, parsed.netloc, target_path, "", "", ""))
+    else:
+        base_url = target_path
+
+    url = f"{base_url}?status={status}"
     if message:
         url = f"{url}&message={quote(message)}"
     return url
@@ -550,6 +558,10 @@ def configured_url(name, default):
 
 def is_absolute_http_url(value):
     return isinstance(value, str) and value.strip().startswith(("http://", "https://"))
+
+
+def supports_mercado_pago_auto_return(success_url):
+    return isinstance(success_url, str) and success_url.strip().startswith("https://")
 
 
 def validate_mercado_pago_back_urls(preference_data):
@@ -575,12 +587,12 @@ def validate_mercado_pago_back_urls(preference_data):
         if not is_absolute_http_url(value):
             return f"back_urls.{key} debe ser una URL absoluta http:// o https://"
 
-    if preference_data.get("auto_return") == "approved" and not is_absolute_http_url(back_urls.get("success")):
-        return "auto_return approved requiere back_urls.success válido"
     if "auto_return" not in preference_data:
-        return "auto_return debe estar definido como approved"
+        return None
     if preference_data.get("auto_return") != "approved":
         return "auto_return debe estar definido como approved"
+    if not supports_mercado_pago_auto_return(back_urls.get("success")):
+        return "auto_return approved requiere back_urls.success https"
     return None
 
 

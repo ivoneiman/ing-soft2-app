@@ -1,4 +1,6 @@
 import os
+import hashlib
+import hmac
 import logging
 import re
 import random
@@ -292,6 +294,8 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE enrollments ADD COLUMN remaining_amount FLOAT DEFAULT 0"))
         if "payment_status" not in columns:
             db.session.execute(text(f"ALTER TABLE enrollments ADD COLUMN payment_status VARCHAR(20) DEFAULT '{ENROLLMENT_PAYMENT_STATUS_PENDING}'"))
+        if "waitlist_promoted_at" not in columns:
+            db.session.execute(text("ALTER TABLE enrollments ADD COLUMN waitlist_promoted_at DATETIME"))
         db.session.commit()
 
         db.session.execute(text("UPDATE enrollments SET estado = :new_status WHERE estado = :legacy_status"), {
@@ -332,6 +336,9 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE creditos ADD COLUMN used_at DATETIME"))
         if "created_at" not in columns:
             db.session.execute(text("ALTER TABLE creditos ADD COLUMN created_at DATETIME"))
+        if "tipo" not in columns:
+            db.session.execute(text(f"ALTER TABLE creditos ADD COLUMN tipo VARCHAR(20) DEFAULT '{ENROLLMENT_TYPE_SINGLE}'"))
+            db.session.execute(text("UPDATE creditos SET tipo = :tipo WHERE tipo IS NULL"), {"tipo": ENROLLMENT_TYPE_SINGLE})
         db.session.execute(text("UPDATE creditos SET used = 0 WHERE used IS NULL"))
         db.session.execute(text("UPDATE creditos SET used = 1 WHERE estado = :used_status"), {
             "used_status": Credit.STATUS_USED,
@@ -382,7 +389,7 @@ def _enrollment_counts():
     
     monthly_enrollments = Enrollment.query.filter(
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+        Enrollment.estado == Enrollment.STATUS_PAID
     ).all()
     
     if not monthly_enrollments:
@@ -399,7 +406,7 @@ def _enrollment_counts():
     # Obtenemos también las inscripciones activas para no sumar cupos por duplicado
     explicit_enrs = Enrollment.query.filter(
         Enrollment.user_id.in_(user_ids),
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+        Enrollment.estado == Enrollment.STATUS_PAID
     ).all()
     explicit_map = {(ee.user_id, ee.class_id) for ee in explicit_enrs}
 
@@ -538,7 +545,9 @@ def _payment_type_for_enrollment(enrollment):
 
 
 def _expire_enrollment_if_needed(enrollment, current_datetime=None):
-    return enrollment_service.expire_enrollment_if_needed(enrollment, current_datetime)
+    return enrollment_service.expire_enrollment_if_needed(
+        enrollment, current_datetime, on_waitlist_promotion_expired=_promote_waitlist_for_class
+    )
 
 
 def _has_approved_payment(enrollment):
@@ -553,8 +562,8 @@ def _is_credit_valid(credit, activity_id, current_datetime=None):
     return credit_service.is_credit_valid(credit, activity_id, current_datetime)
 
 
-def _available_credit_for_user_activity(user_id, activity_id, current_datetime=None):
-    return credit_service.available_credit_for_user_activity(user_id, activity_id, current_datetime)
+def _available_credit_for_user_activity(user_id, activity_id, tipo, current_datetime=None):
+    return credit_service.available_credit_for_user_activity(user_id, activity_id, tipo, current_datetime)
 
 
 def _consume_credit_for_enrollment(credit, enrollment, current_datetime=None):
@@ -567,10 +576,6 @@ def _create_cancellation_notification(enrollment, class_obj, credited):
 
 def _credit_exists_for_cancelled_enrollment(enrollment, class_obj):
     return credit_service.credit_exists_for_cancelled_enrollment(enrollment, class_obj)
-
-
-def _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime=None):
-    return credit_service.generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
 
 
 def _expire_payment_for_enrollment(enrollment, current_datetime=None):
@@ -590,7 +595,9 @@ def _validate_class_available_for_enrollment(class_obj, current_datetime):
 
 
 def _validate_enrollment_payable(enrollment, current_user, current_datetime):
-    error, status_code = enrollment_service.validate_enrollment_payable(enrollment, current_user, current_datetime)
+    error, status_code = enrollment_service.validate_enrollment_payable(
+        enrollment, current_user, current_datetime, on_waitlist_promotion_expired=_promote_waitlist_for_class
+    )
     if error and enrollment:
         db.session.commit()
     return error, status_code
@@ -762,6 +769,63 @@ def _mercado_pago_notification_url():
     return "http://localhost:5000/api/payments/webhook"
 
 
+def _mercado_pago_webhook_signature_is_valid(payment_id):
+    """Validate Mercado Pago's Webhooks v1 signature before trusting a notification."""
+    secret = os.getenv("MERCADOPAGO_WEBHOOK_SECRET", "").strip()
+    if not secret:
+        # Local development and the smoke tests can run without a Dashboard secret.
+        # Deployments must set it; otherwise anyone could forge a notification.
+        if _is_production():
+            logger.error("[MercadoPago Webhook] falta MERCADOPAGO_WEBHOOK_SECRET en producción")
+            return False
+        logger.warning("[MercadoPago Webhook] firma no verificada: MERCADOPAGO_WEBHOOK_SECRET no configurado")
+        return True
+
+    signature = request.headers.get("x-signature", "")
+    request_id = request.headers.get("x-request-id", "")
+    signature_parts = dict(
+        part.strip().split("=", 1) for part in signature.split(",") if "=" in part
+    )
+    timestamp = signature_parts.get("ts", "")
+    received_hash = signature_parts.get("v1", "")
+    if not timestamp or not received_hash:
+        logger.warning("[MercadoPago Webhook] firma ausente o incompleta")
+        return False
+
+    manifest = f"id:{payment_id};request-id:{request_id};ts:{timestamp};"
+    expected_hash = hmac.new(
+        secret.encode("utf-8"), manifest.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected_hash, received_hash)
+
+
+def _mercado_pago_urls_error(preference_data):
+    """Valida forma/paths de back_urls y notification_url (no exige alcance público)."""
+    back_urls_error = _validate_mercado_pago_back_urls(preference_data)
+    if back_urls_error:
+        return back_urls_error
+
+    notification_url = preference_data.get("notification_url")
+    if not _is_absolute_http_url(notification_url):
+        return "notification_url debe ser una URL absoluta http:// o https://"
+
+    expected_paths = {
+        "success": "/api/payments/return/success",
+        "failure": "/api/payments/return/failure",
+        "pending": f"/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+    }
+    for name, expected_path in expected_paths.items():
+        if urllib.parse.urlparse(preference_data["back_urls"][name]).path != expected_path:
+            return f"back_urls.{name} debe apuntar a {expected_path}"
+    if urllib.parse.urlparse(notification_url).path != "/api/payments/webhook":
+        return "notification_url debe apuntar a /api/payments/webhook"
+
+    # Proyecto académico en modo local: no se exige que notification_url sea
+    # pública/HTTPS. La confirmación de pago se resuelve vía el return
+    # (ver mercado_pago_return), no depende de que Mercado Pago alcance el webhook.
+    return None
+
+
 def _mercado_pago_payment_response(mercado_pago_payment_id):
     if not mercado_pago_payment_id:
         return None
@@ -830,6 +894,9 @@ def _apply_mercado_pago_status(payment, mercado_pago_status, status_detail=None,
     if mercado_pago_status == MERCADO_PAGO_STATUS_APPROVED:
         if _payment_would_overpay(payment):
             payment.status = Payment.STATUS_REJECTED
+            if payment.enrollment:
+                payment.enrollment.estado = Enrollment.STATUS_CANCELLED
+                payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
             return PAYMENT_RETURN_STATUS_FAILURE, "El pago supera el saldo pendiente"
 
         payment.status = Payment.STATUS_APPROVED
@@ -843,6 +910,9 @@ def _apply_mercado_pago_status(payment, mercado_pago_status, status_detail=None,
         return PAYMENT_RETURN_STATUS_PENDING, None
 
     payment.status = Payment.STATUS_REJECTED
+    if payment.enrollment:
+        payment.enrollment.estado = Enrollment.STATUS_CANCELLED
+        payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
     return PAYMENT_RETURN_STATUS_FAILURE, _payment_error_message(status_detail)
 
 
@@ -878,6 +948,7 @@ def _promote_waitlist_for_class(class_obj):
                 continue
             
             new_tipo = ENROLLMENT_TYPE_MONTHLY if next_in_waitlist.type == WAITLIST_TYPE_MONTHLY else ENROLLMENT_TYPE_SINGLE
+            promotion_datetime = _current_discount_datetime()
 
             if existing_enr:
                 existing_enr.estado = Enrollment.STATUS_PENDING_PAYMENT
@@ -887,6 +958,7 @@ def _promote_waitlist_for_class(class_obj):
                 existing_enr.paid_amount = 0
                 existing_enr.remaining_amount = 0
                 existing_enr.payment_status = Enrollment.PAYMENT_STATUS_PENDING
+                existing_enr.waitlist_promoted_at = promotion_datetime
                 new_enrollment = existing_enr
             else:
                 new_enrollment = Enrollment(
@@ -894,9 +966,10 @@ def _promote_waitlist_for_class(class_obj):
                     class_id=class_obj.id,
                     tipo=new_tipo,
                     estado=Enrollment.STATUS_PENDING_PAYMENT,
+                    waitlist_promoted_at=promotion_datetime,
                 )
                 db.session.add(new_enrollment)
-            
+
             db.session.delete(next_in_waitlist)
             notification_service.create_waitlist_promotion_notification(user_to_promote, class_obj)
             db.session.commit()
@@ -906,6 +979,7 @@ def _promote_waitlist_for_class(class_obj):
                 Enrollment.id != new_enrollment.id,
                 Enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT,
             ).all()
+
             send_waitlist_promotion_email(user_to_promote, class_obj, new_enrollment, other_pending_enrollments)
             promoted = True
             break
@@ -971,7 +1045,7 @@ def _materialize_implicit_enrollments_for_cancellation(class_obj):
 
     monthly_enrs = Enrollment.query.join(Class).filter(
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Enrollment.estado == Enrollment.STATUS_PAID,
         Class.id_actividad == class_obj.id_actividad,
         Class.fecha_hora >= month_start,
         Class.fecha_hora <= month_end
@@ -996,6 +1070,37 @@ def _materialize_implicit_enrollments_for_cancellation(class_obj):
                     )
                     db.session.add(dummy_enr)
     db.session.flush()
+
+# ─── Chequeo periódico de promociones de lista de espera vencidas ─────────────
+# Proyecto sin cron/worker separado: aprovechamos que la app recibe requests
+# seguido y barremos con un throttle en memoria para no consultar en cada request.
+_last_waitlist_sweep_at = None
+_WAITLIST_SWEEP_INTERVAL_SECONDS = 60
+
+
+@app.before_request
+def _sweep_expired_waitlist_promotions():
+    global _last_waitlist_sweep_at
+    now = datetime.utcnow()
+    if _last_waitlist_sweep_at and (now - _last_waitlist_sweep_at).total_seconds() < _WAITLIST_SWEEP_INTERVAL_SECONDS:
+        return
+    _last_waitlist_sweep_at = now
+
+    try:
+        current_dt = _current_discount_datetime()
+        promoted_pending = Enrollment.query.filter(
+            Enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT,
+            Enrollment.waitlist_promoted_at.isnot(None),
+        ).all()
+        changed = False
+        for enrollment in promoted_pending:
+            changed = _expire_enrollment_if_needed(enrollment, current_dt) or changed
+        if changed:
+            db.session.commit()
+    except Exception:
+        db.session.rollback()
+        logger.exception("[Lista de espera] Error en el sweep periódico de promociones vencidas")
+
 
 # ─── Rutas API: Autenticación ─────────────────────────────────────────────────
 
@@ -1115,17 +1220,14 @@ def admin_login_verify():
     pending_code = session.get("admin_login_code")
     expires_at = session.get("admin_login_code_expires_at")
 
-    if not pending_email or not pending_code or not expires_at:
-        return jsonify({"error": "No hay un código pendiente. Solicitá uno primero."}), 400
-
     if email != pending_email or code != pending_code:
-        return jsonify({"error": "Código incorrecto"}), 401
+        return jsonify({"error": "Código inválido o expirado"}), 401
 
     if datetime.utcnow().timestamp() > expires_at:
         session.pop("admin_login_email", None)
         session.pop("admin_login_code", None)
         session.pop("admin_login_code_expires_at", None)
-        return jsonify({"error": "El código expiró. Solicitá uno nuevo."}), 401
+        return jsonify({"error": "Código inválido o expirado"}), 401
 
     user = User.query.filter_by(email=email, role="admin").first()
     if not user:
@@ -1358,7 +1460,7 @@ def get_user_details(user_id):
     enrollments_data = []
     
     explicit_enrollments = Enrollment.query.filter_by(user_id=user.id).all()
-    explicit_map = {enr.class_id: enr for enr in explicit_enrollments}
+    explicit_map = {enr.class_id: enr for enr in explicit_enrollments if enr.estado == Enrollment.STATUS_PAID}
     
     # Filtramos las inscripciones mensuales
     monthly_enrollments = [enr for enr in explicit_enrollments if enr.tipo == ENROLLMENT_TYPE_MONTHLY and enr.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]]
@@ -1618,13 +1720,14 @@ def get_my_classes():
     state_changed = False
     for enr in explicit_enrollments:
         state_changed = payment_service.recompute_enrollment_payment_state(enr, current_datetime) or state_changed
+        state_changed = _expire_enrollment_if_needed(enr, current_datetime) or state_changed
     if state_changed:
         db.session.commit()
 
     explicit_map = {enr.class_id: enr for enr in explicit_enrollments}
     
     # 2. Filtrar mensuales para desglosar el resto de sus clases implícitas
-    monthly_enrollments = [enr for enr in explicit_enrollments if enr.tipo == ENROLLMENT_TYPE_MONTHLY and enr.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]]
+    monthly_enrollments = [enr for enr in explicit_enrollments if enr.tipo == ENROLLMENT_TYPE_MONTHLY and enr.estado == Enrollment.STATUS_PAID]
 
     rooms = dict(db.session.execute(text("SELECT id, room FROM classes")).fetchall())
 
@@ -1633,6 +1736,8 @@ def get_my_classes():
     for enr in explicit_enrollments:
         class_obj = enr.class_
         if not class_obj: continue
+        if enr.estado != Enrollment.STATUS_PAID:
+            continue
         # Ocultar clases que ya pasaron por más de un día
         if class_obj.fecha_hora and class_obj.fecha_hora < now - timedelta(days=1):
             continue
@@ -1711,14 +1816,36 @@ def cancel_class_attendance(class_id):
     enrollment = Enrollment.query.filter_by(user_id=current_user.id, class_id=class_id).first()
 
     if enrollment:
+        # Una suscripción mensual activa cancelada día a día no tiene pago propio en la
+        # fila que se cancela (el pago real queda en el parent): la elegibilidad de crédito
+        # se decide acá, con el parent original, antes de que _shift_monthly_parent_if_needed
+        # lo mueva o lo reemplace por un dummy.
+        is_monthly_active = (
+            enrollment.tipo == ENROLLMENT_TYPE_MONTHLY
+            and enrollment.estado in [Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]
+        )
+        monthly_day_credit_eligible = is_monthly_active and _has_approved_payment(enrollment)
+
         # Si la clase es explícita usamos el flujo común que ya tienen.
         enrollment_to_cancel = _shift_monthly_parent_if_needed(enrollment)
-        result, error, status_code = cancellation_service.cancel_enrollment(enrollment_to_cancel, current_user, current_datetime)
+        result, error, status_code = cancellation_service.cancel_enrollment(
+            enrollment_to_cancel, current_user, current_datetime,
+            skip_credit_generation=is_monthly_active,
+        )
         if error:
             return api_error(error, status_code)
-        
-        credit = result.get("credit")
-        credit_generated = result.get("credit_generated")
+
+        if is_monthly_active:
+            # Un solo día cancelado dentro de un mes vigente solo puede generar un
+            # crédito individual: el resto de la suscripción sigue activa.
+            credit = credit_service.generate_credit_for_paid_enrollment(
+                enrollment_to_cancel, class_obj, current_datetime,
+                tipo=ENROLLMENT_TYPE_SINGLE, force_eligible=monthly_day_credit_eligible,
+            )
+            credit_generated = credit is not None
+        else:
+            credit = result.get("credit")
+            credit_generated = result.get("credit_generated")
     else:
         # Es una clase mensual implícita: debemos "materializarla" para poder cancelarla y liberar el cupo de ese día
         month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
@@ -1728,7 +1855,7 @@ def cancel_class_attendance(class_id):
         implicit_enrs = Enrollment.query.join(Class).filter(
             Enrollment.user_id == current_user.id,
             Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-            Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+            Enrollment.estado == Enrollment.STATUS_PAID,
             Class.id_actividad == class_obj.id_actividad,
             Class.fecha_hora >= month_start,
             Class.fecha_hora <= month_end
@@ -1756,10 +1883,13 @@ def cancel_class_attendance(class_id):
         
         credit = None
         credit_generated = False
-        
+
         if parent_enr.estado == Enrollment.STATUS_PAID:
-            credit = _generate_credit_for_paid_enrollment(enrollment, class_obj, current_datetime)
-            credit_generated = True
+            credit = credit_service.generate_credit_for_paid_enrollment(
+                enrollment, class_obj, current_datetime,
+                tipo=ENROLLMENT_TYPE_SINGLE, force_eligible=True,
+            )
+            credit_generated = credit is not None
 
     try:
         db.session.commit()
@@ -1814,7 +1944,7 @@ def create_enrollment():
     existing_monthly_enrs = Enrollment.query.join(Class).filter(
         Enrollment.user_id == current_user.id,
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Enrollment.estado == Enrollment.STATUS_PAID,
         Class.id_actividad == class_obj.id_actividad,
         Class.fecha_hora >= month_start,
         Class.fecha_hora <= month_end
@@ -1857,6 +1987,7 @@ def create_enrollment():
             existing_cancelled.paid_amount = 0
             existing_cancelled.remaining_amount = 0
             existing_cancelled.payment_status = ENROLLMENT_PAYMENT_STATUS_PENDING
+            existing_cancelled.waitlist_promoted_at = None
             enrollment = existing_cancelled
             result = "new"
     else:
@@ -1870,14 +2001,14 @@ def create_enrollment():
 
     if result == "already_paid":
         db.session.commit()
-        return api_error("Ya estás inscripto y pagaste esta clase", 409)
+        return api_error("Ya se encuentra inscripto a esta clase", 409)
     if result == "full":
         if data.get("waitlist") or data.get("waitlist_type"):
             existing_enr = Enrollment.query.filter_by(
                 user_id=current_user.id,
                 class_id=class_obj.id
             ).filter(
-                Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID])
+                Enrollment.estado == Enrollment.STATUS_PAID
             ).first()
 
             if existing_enr:
@@ -1914,7 +2045,7 @@ def create_enrollment():
         db.session.add(enrollment)
 
     db.session.flush()
-    credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, current_datetime)
+    credit = _available_credit_for_user_activity(current_user.id, class_obj.id_actividad, enrollment.tipo, current_datetime)
     if credit:
         _consume_credit_for_enrollment(credit, enrollment, current_datetime)
         db.session.commit()
@@ -1947,7 +2078,7 @@ def delete_user_by_admin(user_id):
     approved_payments = [p for p in user_to_delete.payments if p.status == Payment.STATUS_APPROVED]
 
     if active_enrollments or approved_payments:
-        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas o pagos registrados."}), 409
+        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas."}), 409
 
     try:
         db.session.delete(user_to_delete)
@@ -1957,6 +2088,38 @@ def delete_user_by_admin(user_id):
         db.session.rollback()
         logger.error(f"Error al eliminar usuario por admin: {e}")
         return jsonify({"error": "Error interno al eliminar el usuario"}), 500
+
+
+@app.route("/api/waitlists/my", methods=["GET"])
+def my_waitlist_entries():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    if current_user.role != "client":
+        return api_success({"waitlists": []}, status_code=200)
+
+    entries = (
+        WaitlistEntry.query
+        .filter_by(user_id=current_user.id)
+        .order_by(WaitlistEntry.created_at.asc())
+        .all()
+    )
+    payload = []
+    for entry in entries:
+        class_obj = entry.class_
+        if not class_obj:
+            continue
+        payload.append({
+            "id": entry.id,
+            "class_id": entry.class_id,
+            "type": entry.type,
+            "actividad": class_obj.actividad.name if class_obj.actividad else None,
+            "class_name": class_obj.name,
+            "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj.fecha_hora else None,
+        })
+
+    return api_success({"waitlists": payload}, status_code=200)
 
 
 @app.route("/api/waitlists", methods=["POST"])
@@ -1986,7 +2149,7 @@ def create_waitlist_entry():
     existing_monthly_enrs = Enrollment.query.join(Class).filter(
         Enrollment.user_id == current_user.id,
         Enrollment.tipo == ENROLLMENT_TYPE_MONTHLY,
-        Enrollment.estado.in_([Enrollment.STATUS_PENDING_PAYMENT, Enrollment.STATUS_PAID]),
+        Enrollment.estado == Enrollment.STATUS_PAID,
         Class.id_actividad == class_obj.id_actividad,
         Class.fecha_hora >= month_start,
         Class.fecha_hora <= month_end
@@ -2070,6 +2233,94 @@ def cancel_enrollment(enrollment_id):
         "credit": credit_service.credit_payload(credit, current_datetime) if credit else None,
         "email_sent": email_sent,
         "pending_payments_expired": result["pending_payments_expired"],
+    }, message=message, status_code=200)
+
+
+@app.route("/api/enrollments/<int:enrollment_id>/cancel-monthly-subscription", methods=["POST"])
+def cancel_monthly_subscription(enrollment_id):
+    """Cancela el resto de una suscripción mensual completa (a diferencia de /cancel,
+    que sobre una inscripción mensual solo desplaza el parent y da de baja un día).
+    """
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    enrollment = Enrollment.query.get(enrollment_id)
+    if enrollment and enrollment.tipo != ENROLLMENT_TYPE_MONTHLY:
+        return api_error("Esta inscripción no es una suscripción mensual", 400)
+
+    current_datetime = _current_discount_datetime()
+    # A diferencia de /cancel, acá NO desplazamos el parent: queremos cancelar toda
+    # la suscripción de una vez, no saltear solo el próximo día.
+    result, error, status_code = cancellation_service.cancel_enrollment(enrollment, current_user, current_datetime)
+    if error:
+        return api_error(error, status_code)
+
+    class_obj = result["class"]
+    credit = result["credit"]
+
+    try:
+        db.session.commit()
+    except Exception as err:
+        db.session.rollback()
+        logger.exception("[Cancelaciones] error suscripción mensual enrollment_id=%s", enrollment_id)
+        return jsonify({"error": "Error interno al procesar la cancelación", "details": str(err)}), 500
+
+    email_sent = False
+    if credit:
+        email_sent = send_credit_generated_email(enrollment.user, class_obj, credit)
+
+    _promote_waitlist_for_class(class_obj)
+
+    message = (
+        "Tu suscripción mensual fue cancelada correctamente. Se generó un crédito para otra suscripción mensual."
+        if result["credit_generated"]
+        else "Tu suscripción mensual fue cancelada correctamente."
+    )
+    return api_success({
+        "message": message,
+        "enrollment_id": enrollment.id,
+        "estado": enrollment.estado,
+        "payment_status": enrollment.payment_status,
+        "credit_generated": result["credit_generated"],
+        "credit": credit_service.credit_payload(credit, current_datetime) if credit else None,
+        "email_sent": email_sent,
+        "pending_payments_expired": result["pending_payments_expired"],
+    }, message=message, status_code=200)
+
+
+@app.route("/api/enrollments/<int:enrollment_id>/waitlist-decline", methods=["POST"])
+def decline_waitlist_offer(enrollment_id):
+    """Permite a un cliente 'arrepentirse' de un cupo ofrecido por promoción de lista de espera.
+
+    A diferencia de /cancel, esto no exige estar a más de 24hs de la clase: el cliente nunca
+    confirmó ni pagó esta inscripción, solo se le ofreció el cupo, así que puede liberarlo en
+    cualquier momento antes de la clase.
+    """
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    enrollment = Enrollment.query.get(enrollment_id)
+    if not enrollment or enrollment.user_id != current_user.id:
+        return api_error("Inscripción no encontrada", 404)
+
+    if enrollment.estado != Enrollment.STATUS_PENDING_PAYMENT or not enrollment.waitlist_promoted_at:
+        return api_error("Esta inscripción no es una oferta de lista de espera pendiente", 400)
+
+    class_obj = enrollment.class_
+    enrollment.estado = Enrollment.STATUS_CANCELLED
+    payment_service.expire_pending_payments_for_enrollment(enrollment)
+    db.session.commit()
+
+    if class_obj:
+        _promote_waitlist_for_class(class_obj)
+
+    message = "Liberaste tu lugar. Se lo ofrecimos a la siguiente persona en la lista de espera."
+    return api_success({
+        "message": message,
+        "enrollment_id": enrollment.id,
+        "estado": enrollment.estado,
     }, message=message, status_code=200)
 
 
@@ -2246,6 +2497,19 @@ def get_profesores():
     return jsonify({
         "profesores": profesores_data
     }), 200
+
+@app.route("/api/profesores/<int:profesor_id>", methods=["GET"])
+def get_profesor_by_id(profesor_id):
+    """Devuelve un profesor específico para edición."""
+    current_user = _get_authenticated_user()
+    if not current_user or current_user.role not in ["admin", "employee"]:
+        return jsonify({"error": "No tienes permisos para ver profesores"}), 403
+
+    profesor = db.session.get(Profesor, profesor_id)
+    if not profesor:
+        return jsonify({"error": "Profesor no encontrado"}), 404
+
+    return jsonify({"profesor": profesor.to_dict()}), 200
 
 @app.route("/api/profesores/<int:profesor_id>", methods=["PUT"])
 def update_profesor(profesor_id):
@@ -2834,7 +3098,13 @@ def get_payment_history():
 
     # Los clientes ven su propio historial. Admins/empleados ven todos.
     if current_user.role == "client":
-        payments = Payment.query.filter_by(user_id=current_user.id).order_by(Payment.created_at.desc()).all()
+        payments = (
+            Payment.query
+            .filter_by(user_id=current_user.id)
+            .filter(Payment.status == Payment.STATUS_APPROVED)
+            .order_by(Payment.created_at.desc())
+            .all()
+        )
     else:
         payments = Payment.query.order_by(Payment.created_at.desc()).all()
 
@@ -2877,6 +3147,197 @@ def get_admin_payment_enrollments():
         payload.append(payment_dict)
 
     return jsonify({"payments": payload}), 200
+
+
+class MercadoPagoCheckoutError(Exception):
+    """Error de negocio o de integración al generar un checkout de Mercado Pago."""
+
+    def __init__(self, message, status_code=502, outcome="mercadopago_error", should_commit=False):
+        super().__init__(message)
+        self.status_code = status_code
+        self.outcome = outcome
+        self.should_commit = should_commit
+
+
+def _prepare_payment_for_mercado_pago_checkout(enrollment, current_user, payment_method, requested_payment_type, current_datetime):
+    """Calcula monto/quote y crea (o reutiliza) el Payment pendiente para una inscripción.
+
+    Misma lógica que usaba POST /api/payments/create, factorizada para que también
+    la use la promoción automática desde lista de espera.
+    """
+    class_obj = enrollment.class_
+    product_type = _payment_type_for_enrollment(enrollment)
+
+    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
+    discount_percentage = int(quote.get("discount_percentage", 0))
+
+    if product_type == "single_class" or enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
+        amount = 3000.0
+    else:
+        amount = _get_monthly_base_price(class_obj)
+
+    full_final_amount = _calculate_final_amount(amount, discount_percentage)
+    if not float(enrollment.paid_amount or 0):
+        enrollment.total_amount = round(full_final_amount, 2)
+    else:
+        enrollment.total_amount = float(enrollment.total_amount or 0) or round(full_final_amount, 2)
+    payment_service.recompute_enrollment_payment_state(enrollment, current_datetime)
+    remaining_amount = float(enrollment.remaining_amount or 0)
+    if requested_payment_type == PAYMENT_TYPE_FULL and float(enrollment.paid_amount or 0) > 0:
+        requested_payment_type = PAYMENT_TYPE_BALANCE
+
+    if remaining_amount <= 0:
+        enrollment.estado = Enrollment.STATUS_PAID
+        payment_service.recompute_enrollment_payment_state(enrollment, current_datetime)
+        raise MercadoPagoCheckoutError("La inscripción ya está pagada", 409, outcome="already_paid", should_commit=True)
+
+    amount, final_amount = payment_service.payment_amounts_for_type(
+        enrollment,
+        requested_payment_type,
+        amount,
+        full_final_amount,
+    )
+
+    if final_amount <= 0:
+        raise MercadoPagoCheckoutError("No hay saldo pendiente para este tipo de pago", 400, outcome="no_pending_balance")
+    if final_amount > remaining_amount + 0.01:
+        raise MercadoPagoCheckoutError("El pago supera el saldo pendiente", 400, outcome="overpay")
+
+    _log_discount_quote(current_datetime, class_obj, discount_percentage, amount, final_amount)
+
+    payment = payment_service.reusable_pending_payment(
+        enrollment.id,
+        current_user.id,
+        payment_method,
+        requested_payment_type,
+    )
+    reused_payment = payment is not None
+    if payment:
+        payment_service.prepare_payment_for_checkout(
+            payment,
+            product_type,
+            requested_payment_type,
+            payment_method,
+            amount,
+            discount_percentage,
+            final_amount,
+            current_datetime,
+        )
+    else:
+        payment = Payment(
+            user_id=current_user.id,
+            enrollment_id=enrollment.id,
+            product_type=product_type,
+            payment_type=requested_payment_type,
+            payment_method=payment_method,
+            amount=amount,
+            discount_percentage=discount_percentage,
+            final_amount=final_amount,
+            status=Payment.STATUS_PENDING,
+        )
+        db.session.add(payment)
+        db.session.flush()
+    payment_service.expire_equivalent_pending_payments(payment)
+
+    return payment, product_type, requested_payment_type, amount, discount_percentage, final_amount
+
+
+def _create_mercado_pago_preference(payment, current_user, product_type, requested_payment_type, final_amount, class_obj):
+    """Arma preference_data, la envía a Mercado Pago y devuelve (init_point, preference_id).
+
+    Misma lógica que usaba POST /api/payments/create, factorizada para que también
+    la use la promoción automática desde lista de espera.
+    """
+    activity_name = class_obj.actividad.name if class_obj.actividad else class_obj.name
+    title = f"Suscripción mensual - {activity_name}" if product_type == "monthly_subscription" else f"Clase individual - {activity_name}"
+    if requested_payment_type == PAYMENT_TYPE_DEPOSIT:
+        title = f"Seña - {title}"
+    elif requested_payment_type == PAYMENT_TYPE_BALANCE:
+        title = f"Saldo - {title}"
+    back_urls = {
+        "success": _mercado_pago_callback_url(
+            "PAYMENT_SUCCESS_URL",
+            "/api/payments/return/success",
+            "http://localhost:5000/api/payments/return/success",
+        ),
+        "failure": _mercado_pago_callback_url(
+            "PAYMENT_FAILURE_URL",
+            "/api/payments/return/failure",
+            "http://localhost:5000/api/payments/return/failure",
+        ),
+        "pending": _mercado_pago_callback_url(
+            "PAYMENT_PENDING_URL",
+            f"/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+            f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
+        ),
+    }
+    preference_data = {
+        "items": [
+            {
+                "title": title,
+                "quantity": 1,
+                "unit_price": float(final_amount),
+                "currency_id": "ARS",
+            }
+        ],
+        "payer": _mercado_pago_payer_payload(current_user),
+        "external_reference": str(payment.id),
+        "back_urls": back_urls,
+        "notification_url": _mercado_pago_notification_url(),
+    }
+    if payment_service.supports_mercado_pago_auto_return(back_urls["success"]):
+        preference_data["auto_return"] = "approved"
+
+    back_urls_error = _mercado_pago_urls_error(preference_data)
+    if back_urls_error:
+        logger.error("[MercadoPago] back_urls_invalidas error=%s payload=%s", back_urls_error, preference_data)
+        raise MercadoPagoCheckoutError(f"Configuración inválida de Mercado Pago: {back_urls_error}", 500, outcome="invalid_back_urls")
+
+    try:
+        _log_mercado_pago_payload(preference_data)
+        preference_result = get_mercadopago_client().preference().create(preference_data)
+        _log_mercado_pago_response(preference_result)
+    except RuntimeError as err:
+        logger.exception("[MercadoPago] configuracion_invalida")
+        raise MercadoPagoCheckoutError(str(err), 500, outcome="mercadopago_config_error")
+    except Exception as err:
+        logger.exception("[MercadoPago] sdk_error")
+        raise MercadoPagoCheckoutError(f"Error del SDK de Mercado Pago: {str(err)}", 502, outcome="mercadopago_sdk_error")
+
+    if not isinstance(preference_result, dict):
+        logger.error("[MercadoPago] respuesta_invalida response=%s", preference_result)
+        raise MercadoPagoCheckoutError("Mercado Pago devolvió una respuesta inválida", 502, outcome="mercadopago_invalid_response")
+
+    if preference_result.get("status") not in [200, 201]:
+        logger.error("[MercadoPago] preferencia_rechazada response=%s", preference_result)
+        response_body = preference_result.get("response") or {}
+        mp_message = response_body.get("message") or response_body.get("error") or "Error del servidor de pagos"
+        raise MercadoPagoCheckoutError(f"Mercado Pago rechazó la preferencia: {mp_message}", 502, outcome="mercadopago_rejected")
+
+    preference_response = preference_result.get("response", {})
+    if not isinstance(preference_response, dict):
+        logger.error("[MercadoPago] body_invalido body=%s response=%s", preference_response, preference_result)
+        raise MercadoPagoCheckoutError("Mercado Pago no devolvió un body válido", 502, outcome="mercadopago_invalid_body")
+
+    init_point = _mercado_pago_checkout_url(preference_response)
+    preference_id = preference_response.get("id")
+    logger.info(
+        "[MercadoPago] preferencia_creada payment_id=%s preference_id=%s checkout_url=%s",
+        payment.id,
+        preference_id,
+        init_point,
+    )
+
+    if not init_point:
+        logger.error("[MercadoPago] init_point_faltante response=%s", preference_result)
+        raise MercadoPagoCheckoutError("Mercado Pago no devolvió init_point para el checkout", 502, outcome="missing_init_point")
+
+    if not preference_id:
+        logger.error("[MercadoPago] preference_id_faltante response=%s", preference_result)
+        raise MercadoPagoCheckoutError("Mercado Pago no devolvió id de preferencia", 502, outcome="missing_preference_id")
+
+    payment.mercado_pago_preference_id = preference_id
+    return init_point, preference_id
 
 
 @app.route("/api/payments/create", methods=["POST"])
@@ -2933,216 +3394,38 @@ def create_payment():
         finish_timing("validation_error")
         return jsonify({"error": error}), status_code
 
-    calculate_start = time.perf_counter()
     class_obj = enrollment.class_
-    product_type = _payment_type_for_enrollment(enrollment)
-
-    quote = payment_service.enrollment_payment_quote(enrollment, current_datetime)
-    discount_percentage = int(quote.get("discount_percentage", 0))
-
-    if product_type == "single_class" or enrollment.tipo == ENROLLMENT_TYPE_SINGLE:
-        amount = 3000.0
-    else:
-        amount = _get_monthly_base_price(class_obj)
-
-    full_final_amount = _calculate_final_amount(amount, discount_percentage)
-    timings["calculate_amounts"] = _elapsed_ms(calculate_start)
-    if not float(enrollment.paid_amount or 0):
-        enrollment.total_amount = round(full_final_amount, 2)
-    else:
-        enrollment.total_amount = float(enrollment.total_amount or 0) or round(full_final_amount, 2)
-    recompute_start = time.perf_counter()
-    payment_service.recompute_enrollment_payment_state(enrollment, current_datetime)
-    timings["recompute"] = _elapsed_ms(recompute_start)
-    remaining_amount = float(enrollment.remaining_amount or 0)
-    if requested_payment_type == PAYMENT_TYPE_FULL and float(enrollment.paid_amount or 0) > 0:
-        requested_payment_type = PAYMENT_TYPE_BALANCE
-
-    if remaining_amount <= 0:
-        enrollment.estado = Enrollment.STATUS_PAID
-        recompute_start = time.perf_counter()
-        payment_service.recompute_enrollment_payment_state(enrollment, current_datetime)
-        timings["recompute"] = round(timings.get("recompute", 0) + _elapsed_ms(recompute_start), 2)
-        commit_start = time.perf_counter()
-        db.session.commit()
-        timings["commit"] = _elapsed_ms(commit_start)
-        finish_timing("already_paid")
-        return jsonify({"error": "La inscripción ya está pagada"}), 409
-
-    payment_amounts_start = time.perf_counter()
-    amount, final_amount = payment_service.payment_amounts_for_type(
-        enrollment,
-        requested_payment_type,
-        amount,
-        full_final_amount,
-    )
-    timings["payment_amounts_for_type"] = _elapsed_ms(payment_amounts_start)
-
-    if final_amount <= 0:
-        finish_timing("no_pending_balance")
-        return jsonify({"error": "No hay saldo pendiente para este tipo de pago"}), 400
-    if final_amount > remaining_amount + 0.01:
-        finish_timing("overpay")
-        return jsonify({"error": "El pago supera el saldo pendiente"}), 400
-
-    log_discount_start = time.perf_counter()
-    _log_discount_quote(current_datetime, class_obj, discount_percentage, amount, final_amount)
-    timings["log_discount"] = _elapsed_ms(log_discount_start)
-
-    create_record_start = time.perf_counter()
-    payment = payment_service.reusable_pending_payment(
-        enrollment.id,
-        current_user.id,
-        payment_method,
-        requested_payment_type,
-    )
-    reused_payment = payment is not None
-    if payment:
-        payment_service.prepare_payment_for_checkout(
-            payment,
-            product_type,
-            requested_payment_type,
-            payment_method,
-            amount,
-            discount_percentage,
-            final_amount,
-            current_datetime,
-        )
-    else:
-        payment = Payment(
-            user_id=current_user.id,
-            enrollment_id=enrollment.id,
-            product_type=product_type,
-            payment_type=requested_payment_type,
-            payment_method=payment_method,
-            amount=amount,
-            discount_percentage=discount_percentage,
-            final_amount=final_amount,
-            status=Payment.STATUS_PENDING,
-        )
-        db.session.add(payment)
-        db.session.flush()
-    payment_service.expire_equivalent_pending_payments(payment)
-    timings["reuse_payment_record" if reused_payment else "create_payment_record"] = _elapsed_ms(create_record_start)
-
-    preference_payload_start = time.perf_counter()
-    activity_name = class_obj.actividad.name if class_obj.actividad else class_obj.name
-    title = f"Suscripción mensual - {activity_name}" if product_type == "monthly_subscription" else f"Clase individual - {activity_name}"
-    if requested_payment_type == PAYMENT_TYPE_DEPOSIT:
-        title = f"Seña - {title}"
-    elif requested_payment_type == PAYMENT_TYPE_BALANCE:
-        title = f"Saldo - {title}"
-    preference_data = {
-        "items": [
-            {
-                "title": title,
-                "quantity": 1,
-                "unit_price": float(final_amount),
-                "currency_id": "ARS",
-            }
-        ],
-        "payer": _mercado_pago_payer_payload(current_user),
-        "external_reference": str(payment.id),
-        "back_urls": {
-            "success": _mercado_pago_callback_url(
-                "PAYMENT_SUCCESS_URL",
-                "/api/payments/return/success",
-                "http://localhost:5000/api/payments/return/success",
-            ),
-            "failure": _mercado_pago_callback_url(
-                "PAYMENT_FAILURE_URL",
-                "/api/payments/return/failure",
-                "http://localhost:5000/api/payments/return/failure",
-            ),
-            "pending": _mercado_pago_callback_url(
-                "PAYMENT_PENDING_URL",
-                f"/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
-                f"http://localhost:5000/api/payments/return/{PAYMENT_RETURN_STATUS_PENDING}",
-            ),
-        },
-        "notification_url": _mercado_pago_notification_url(),
-        "auto_return": "approved",
-    }
-    timings["build_preference_payload"] = _elapsed_ms(preference_payload_start)
-
-    validate_urls_start = time.perf_counter()
-    back_urls_error = _validate_mercado_pago_back_urls(preference_data)
-    timings["validate_back_urls"] = _elapsed_ms(validate_urls_start)
-    if back_urls_error:
-        logger.error("[MercadoPago] back_urls_invalidas error=%s payload=%s", back_urls_error, preference_data)
-        db.session.rollback()
-        finish_timing("invalid_back_urls")
-        return jsonify({"error": f"Configuración inválida de Mercado Pago: {back_urls_error}"}), 500
-
+    prepare_start = time.perf_counter()
     try:
-        mp_start = time.perf_counter()
-        _log_mercado_pago_payload(preference_data)
-        preference_result = get_mercadopago_client().preference().create(preference_data)
-        _log_mercado_pago_response(preference_result)
-        timings["mercadopago_preference"] = _elapsed_ms(mp_start)
-    except RuntimeError as err:
-        logger.exception("[MercadoPago] configuracion_invalida")
-        db.session.rollback()
-        timings["mercadopago_preference"] = _elapsed_ms(mp_start)
-        finish_timing("mercadopago_config_error")
-        return jsonify({"error": str(err)}), 500
-    except Exception as err:
-        logger.exception("[MercadoPago] sdk_error")
-        db.session.rollback()
-        timings["mercadopago_preference"] = _elapsed_ms(mp_start)
-        finish_timing("mercadopago_sdk_error")
-        return jsonify({"error": f"Error del SDK de Mercado Pago: {str(err)}"}), 502
+        payment, product_type, requested_payment_type, amount, discount_percentage, final_amount = (
+            _prepare_payment_for_mercado_pago_checkout(
+                enrollment, current_user, payment_method, requested_payment_type, current_datetime
+            )
+        )
+    except MercadoPagoCheckoutError as err:
+        if err.should_commit:
+            db.session.commit()
+        else:
+            db.session.rollback()
+        finish_timing(err.outcome)
+        return jsonify({"error": str(err)}), err.status_code
+    timings["prepare_payment"] = _elapsed_ms(prepare_start)
 
-    if not isinstance(preference_result, dict):
-        logger.error("[MercadoPago] respuesta_invalida response=%s", preference_result)
+    preference_start = time.perf_counter()
+    try:
+        init_point, preference_id = _create_mercado_pago_preference(
+            payment, current_user, product_type, requested_payment_type, final_amount, class_obj
+        )
+    except MercadoPagoCheckoutError as err:
         db.session.rollback()
-        finish_timing("mercadopago_invalid_response")
-        return jsonify({"error": "Mercado Pago devolvió una respuesta inválida"}), 502
-
-    if preference_result.get("status") not in [200, 201]:
-        logger.error("[MercadoPago] preferencia_rechazada response=%s", preference_result)
-        db.session.rollback()
-        response_body = preference_result.get("response") or {}
-        mp_message = response_body.get("message") or response_body.get("error") or "Error del servidor de pagos"
-        finish_timing("mercadopago_rejected")
-        return jsonify({"error": f"Mercado Pago rechazó la preferencia: {mp_message}"}), 502
-
-    preference_response = preference_result.get("response", {})
-    if not isinstance(preference_response, dict):
-        logger.error("[MercadoPago] body_invalido body=%s response=%s", preference_response, preference_result)
-        db.session.rollback()
-        finish_timing("mercadopago_invalid_body")
-        return jsonify({"error": "Mercado Pago no devolvió un body válido"}), 502
-
-    parse_mp_start = time.perf_counter()
-    init_point = _mercado_pago_checkout_url(preference_response)
-    preference_id = preference_response.get("id")
-    timings["parse_mercadopago_response"] = _elapsed_ms(parse_mp_start)
-    logger.info(
-        "[MercadoPago] preferencia_creada payment_id=%s preference_id=%s checkout_url=%s",
-        payment.id,
-        preference_id,
-        init_point,
-    )
-
-    if not init_point:
-        logger.error("[MercadoPago] init_point_faltante response=%s", preference_result)
-        db.session.rollback()
-        finish_timing("missing_init_point")
-        return jsonify({"error": "Mercado Pago no devolvió init_point para el checkout"}), 502
-
-    if not preference_id:
-        logger.error("[MercadoPago] preference_id_faltante response=%s", preference_result)
-        db.session.rollback()
-        finish_timing("missing_preference_id")
-        return jsonify({"error": "Mercado Pago no devolvió id de preferencia"}), 502
+        finish_timing(err.outcome)
+        return jsonify({"error": str(err)}), err.status_code
+    timings["mercadopago_preference"] = _elapsed_ms(preference_start)
 
     commit_start = time.perf_counter()
-    payment.mercado_pago_preference_id = preference_id
     db.session.commit()
     timings["commit"] = _elapsed_ms(commit_start)
 
-    response_start = time.perf_counter()
     response_payload = {
         "payment_id": payment.id,
         "enrollment_id": enrollment.id,
@@ -3155,7 +3438,6 @@ def create_payment():
         "product_type": payment.product_type,
         "remaining_amount": enrollment.remaining_amount,
     }
-    timings["build_response"] = _elapsed_ms(response_start)
     finish_timing("success")
     return jsonify({
         **response_payload,
@@ -3164,6 +3446,8 @@ def create_payment():
 
 @app.route("/api/payments/return/<result>", methods=["GET"])
 def mercado_pago_return(result):
+    # Proyecto académico: se confía en el return de Mercado Pago (simulado)
+    # como confirmación de pago, sin depender de que el webhook sea alcanzable.
     logger.info("[MercadoPago Callback] result=%s query=%s", result, request.args.to_dict())
     current_datetime = _current_discount_datetime()
     payment_reference = request.args.get("external_reference")
@@ -3240,22 +3524,41 @@ def mercado_pago_webhook():
 
     topic = query.get("topic") or query.get("type") or payload.get("type")
 
-    if topic in ["payment", "merchant_order"]:
+    if topic == "payment":
         payment_id = query.get("data.id") or query.get("id") or (payload.get("data") or {}).get("id")
-        if payment_id:
-            mp_payment = _mercado_pago_payment_response(payment_id)
-            if mp_payment:
-                payment = _payment_from_mercado_pago_response(mp_payment)
-                if payment:
-                    current_datetime = _current_discount_datetime()
-                    _apply_mercado_pago_status(
-                        payment,
-                        mp_payment.get("status"),
-                        mp_payment.get("status_detail"),
-                        payment_id,
-                        current_datetime,
-                    )
-                    db.session.commit()
+        if not payment_id:
+            return jsonify({"error": "Notificación de pago sin id"}), 400
+        if not _mercado_pago_webhook_signature_is_valid(str(payment_id)):
+            return jsonify({"error": "Firma de webhook inválida"}), 401
+
+        mp_payment = _mercado_pago_payment_response(payment_id)
+        if not mp_payment:
+            # A non-2xx response makes Mercado Pago retry a transient lookup/API
+            # failure instead of silently losing a successful payment.
+            return jsonify({"error": "No se pudo consultar el pago en Mercado Pago"}), 503
+
+        payment = _payment_from_mercado_pago_response(mp_payment)
+        if not payment:
+            logger.info("[MercadoPago Webhook] pago ajeno o sin referencia local mp_payment_id=%s", payment_id)
+            return jsonify({"status": "ignored"}), 200
+
+        try:
+            _apply_mercado_pago_status(
+                payment,
+                mp_payment.get("status"),
+                mp_payment.get("status_detail"),
+                payment_id,
+                _current_discount_datetime(),
+            )
+            db.session.commit()
+            logger.info(
+                "[MercadoPago Webhook] procesado local_payment_id=%s mp_payment_id=%s status=%s",
+                payment.id, payment_id, payment.status,
+            )
+        except Exception:
+            db.session.rollback()
+            logger.exception("[MercadoPago Webhook] no_se_pudo_persistir mp_payment_id=%s", payment_id)
+            return jsonify({"error": "No se pudo registrar el pago"}), 500
 
     return jsonify({"status": "ok"}), 200
 

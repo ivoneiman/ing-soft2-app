@@ -58,7 +58,7 @@
         <p v-if="attendanceError" class="attendance-error">{{ attendanceError }}</p>
         <p v-else-if="loadingAttendance" class="attendance-empty">Cargando asistencias...</p>
         <p v-else-if="attendanceRoster.length === 0" class="attendance-empty">
-          Todavía no hay inscriptos pagos para esta clase.
+          No hay inscriptos pagos para esta clase.
         </p>
 
         <ul v-else class="attendance-list">
@@ -245,8 +245,7 @@ async function startScanner() {
       onScanFailure
     );
   } catch (err) {
-    const errorMsg = err?.message || err?.toString() || String(err);
-    errorMessage.value = `No se pudo inicializar la cámara: ${errorMsg}`;
+    errorMessage.value = 'No se pudo inicar la cámara, verifque los permisos de su navegador';
     console.error('Camera initialization error:', err);
   }
 }

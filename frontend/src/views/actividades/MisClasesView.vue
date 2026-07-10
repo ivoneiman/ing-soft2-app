@@ -8,22 +8,77 @@
       <router-link to="/" class="back-button">Volver al Inicio</router-link>
     </header>
 
+    <p v-if="returnMessage" :class="['return-message', returnMessage.type]">
+      {{ returnMessage.text }}
+    </p>
+
     <section class="classes-list">
       <div class="filters">
         <button @click="filterType = 'mensuales'" :class="{ active: filterType === 'mensuales' }" class="filter-btn">Suscripciones Mensuales</button>
         <button @click="filterType = 'individuales'" :class="{ active: filterType === 'individuales' }" class="filter-btn">Clases Individuales</button>
+        <button @click="filterType = 'lista-espera'" :class="{ active: filterType === 'lista-espera' }" class="filter-btn">Confirmación pendiente desde lista de espera</button>
       </div>
 
-      <div v-if="isLoading" class="empty-state">Cargando tus clases...</div>
+      <!-- Confirmación pendiente desde lista de espera -->
+      <div v-if="filterType === 'lista-espera'" class="cards-grid waitlist-tab">
+        <div v-if="isLoadingWaitlistInfo" class="empty-state" style="grid-column: 1 / -1;">Cargando tu lista de espera...</div>
+
+        <template v-else-if="pendingWaitlistOffers.length > 0">
+          <article v-for="offer in pendingWaitlistOffers" :key="offer.id" class="class-card offer-card">
+            <div class="card-header">
+              <h2>{{ offer.actividad }}</h2>
+              <span class="status-pill pending">Confirmación pendiente</span>
+            </div>
+            <dl class="class-details">
+              <div>
+                <dt>Fecha y Hora</dt>
+                <dd>{{ formatDateTime(offer.fecha_hora) }}</dd>
+              </div>
+              <div>
+                <dt>Clase</dt>
+                <dd>{{ offer.class_name }}</dd>
+              </div>
+            </dl>
+            <p class="text-info small">Se liberó un cupo y fuiste seleccionado/a. Entrá para decidir si te inscribís o liberás el lugar.</p>
+            <div class="card-actions">
+              <router-link :to="`/lista-espera/oferta/${offer.id}`" class="cancel-button decide-button">Ver y decidir</router-link>
+            </div>
+          </article>
+        </template>
+
+        <div v-else-if="activeWaitlistEntries.length > 0" class="empty-state" style="grid-column: 1 / -1;">
+          <p v-for="entry in activeWaitlistEntries" :key="entry.id">
+            Aún no has sido seleccionado/a para la clase a la cual te has inscripto a la lista de espera de la clase
+            <strong>{{ entry.actividad }} - {{ entry.class_name }}</strong> ({{ formatDateTime(entry.fecha_hora) }}).
+          </p>
+        </div>
+
+        <div v-else class="empty-state" style="grid-column: 1 / -1;">
+          No estás anotado/a en ninguna lista de espera actualmente.
+        </div>
+      </div>
+
+      <div v-else-if="isLoading" class="empty-state">Cargando tus clases...</div>
       <div v-else-if="myClasses.length === 0" class="empty-state">No tenés turnos próximos registrados.</div>
-      
+
       <!-- Clases Mensuales (Agrupadas) -->
       <div v-else-if="filterType === 'mensuales'" class="groups-container">
         <div v-if="monthlyGroups.length === 0" class="empty-state">No tenés suscripciones mensuales registradas.</div>
         <div v-for="group in monthlyGroups" :key="group.id" class="monthly-group">
           <div class="group-header" @click="toggleGroup(group.id)">
             <h2>{{ group.actividad }} - {{ group.dayName }} a las {{ group.time }} hs</h2>
-            <span class="arrow">{{ openGroups[group.id] ? '▲' : '▼' }}</span>
+            <div class="group-header-actions">
+              <button
+                v-if="group.parentEnrollmentId"
+                class="cancel-month-button"
+                type="button"
+                :disabled="isCancellingMonth === group.parentEnrollmentId"
+                @click.stop="confirmCancelMonth(group)"
+              >
+                {{ isCancellingMonth === group.parentEnrollmentId ? 'Cancelando...' : 'Cancelar suscripción completa' }}
+              </button>
+              <span class="arrow">{{ openGroups[group.id] ? '▲' : '▼' }}</span>
+            </div>
           </div>
           <div v-if="openGroups[group.id]" class="group-content cards-grid">
             <article v-for="cls in group.clases" :key="cls.class_id" class="class-card" :class="{'is-cancelled': isCancelled(cls)}">
@@ -102,13 +157,13 @@
       </div>
     </section>
 
-    <!-- Modal de confirmación -->
+    <!-- Modal de confirmación: baja de un día -->
     <div v-if="selectedClass" class="modal-backdrop" @click.self="selectedClass = null">
       <div class="modal">
         <h2>Confirmar Baja</h2>
         <p>¿Seguro querés cancelar tu asistencia a la clase de <strong>{{ selectedClass.actividad }}</strong> del <strong>{{ formatDateTime(selectedClass.fecha_hora) }}</strong>?</p>
         <p class="warning">
-          Si la clase ya estaba abonada, <strong>te otorgará los puntos (créditos) confirmando la selección</strong>.<br>
+          Si la clase ya estaba abonada (incluida como parte de una suscripción mensual), se generará un <strong>crédito para anotarte a una clase individual</strong> de la misma actividad.<br>
           Si aún debes el pago, liberarás el cupo para alguien más.
         </p>
         <div class="modal-actions">
@@ -117,24 +172,57 @@
         </div>
       </div>
     </div>
+
+    <!-- Modal de confirmación: baja de la suscripción mensual completa -->
+    <div v-if="monthToCancel" class="modal-backdrop" @click.self="monthToCancel = null">
+      <div class="modal">
+        <h2>Cancelar suscripción mensual</h2>
+        <p>¿Seguro querés cancelar el resto de tu suscripción mensual de <strong>{{ monthToCancel.actividad }} - {{ monthToCancel.dayName }} a las {{ monthToCancel.time }} hs</strong>?</p>
+        <p class="warning">
+          Se cancelarán todas las clases restantes del mes. Si la suscripción estaba abonada, se generará un <strong>crédito para otra suscripción mensual</strong> de la misma actividad.<br>
+          La acción no puede deshacerse.
+        </p>
+        <div class="modal-actions">
+          <button class="secondary-button" @click="monthToCancel = null">Cerrar</button>
+          <button class="danger-button" @click="submitCancelMonth">Cancelar suscripción</button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import axios from 'axios';
+import { cancelMonthlySubscription, getPendingEnrollments, getMyWaitlists } from '../../services/api';
 import { formatDateTime } from '../../utils/formatters';
 import { CLASS_STATUS, ENROLLMENT_STATUS } from '../../constants/statuses';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const route = useRoute();
 
 const myClasses = ref([]);
 const isLoading = ref(false);
 const isCancelling = ref(null);
+const isCancellingMonth = ref(null);
 const selectedClass = ref(null);
+const monthToCancel = ref(null);
 
 const filterType = ref('mensuales');
 const openGroups = ref({});
+
+const isLoadingWaitlistInfo = ref(false);
+const pendingWaitlistOffers = ref([]);
+const activeWaitlistEntries = ref([]);
+
+const returnMessage = computed(() => {
+  const status = route.query.status;
+  if (status === 'success') {
+    return { type: 'success', text: 'Inscripción exitosa' };
+  }
+  return null;
+});
 
 function toggleGroup(groupId) {
   openGroups.value[groupId] = !openGroups.value[groupId];
@@ -166,7 +254,16 @@ const monthlyGroups = computed(() => {
     }
     groups[key].clases.push(cls);
   });
-  return Object.values(groups).sort((a, b) => a.id.localeCompare(b.id));
+  return Object.values(groups)
+    .map((group) => ({
+      ...group,
+      parentEnrollmentId: (
+        group.clases.find((c) => c.enrollment_id)?.enrollment_id
+        ?? group.clases.find((c) => c.parent_enrollment_id)?.parent_enrollment_id
+        ?? null
+      ),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id));
 });
 
 function isCancelled(cls) {
@@ -204,6 +301,22 @@ async function loadClasses() {
   }
 }
 
+async function loadWaitlistInfo() {
+  isLoadingWaitlistInfo.value = true;
+  try {
+    const [pendingResponse, waitlistResponse] = await Promise.all([
+      getPendingEnrollments(),
+      getMyWaitlists(),
+    ]);
+    pendingWaitlistOffers.value = (pendingResponse.data.enrollments || []).filter((e) => e.waitlist_offer);
+    activeWaitlistEntries.value = waitlistResponse.data.waitlists || [];
+  } catch (err) {
+    console.error("Error cargando la lista de espera:", err);
+  } finally {
+    isLoadingWaitlistInfo.value = false;
+  }
+}
+
 function confirmCancel(cls) { selectedClass.value = cls; }
 
 async function submitCancel() {
@@ -222,7 +335,28 @@ async function submitCancel() {
   }
 }
 
-onMounted(() => { loadClasses(); });
+function confirmCancelMonth(group) {
+  if (!group.parentEnrollmentId) return;
+  monthToCancel.value = group;
+}
+
+async function submitCancelMonth() {
+  if (!monthToCancel.value) return;
+  const group = monthToCancel.value;
+  isCancellingMonth.value = group.parentEnrollmentId;
+  monthToCancel.value = null;
+  try {
+    const response = await cancelMonthlySubscription(group.parentEnrollmentId);
+    alert(response.data.message);
+    loadClasses();
+  } catch (err) {
+    alert(err.response?.data?.error || 'Error al cancelar la suscripción.');
+  } finally {
+    isCancellingMonth.value = null;
+  }
+}
+
+onMounted(() => { loadClasses(); loadWaitlistInfo(); });
 </script>
 
 <style scoped>
@@ -232,6 +366,9 @@ onMounted(() => { loadClasses(); });
 .header p { color: #e0c0e0; margin: 0; font-size: 1.05rem; }
 .back-button { background: #f6ea98; padding: 10px 16px; border-radius: 8px; color: #572c57; text-decoration: none; font-weight: 700; white-space: nowrap;}
 .empty-state { background: #fff; padding: 2rem; text-align: center; border-radius: 12px; color: #8a6a8a; border: 2px solid #d0c0d0; }
+.return-message { margin-bottom: 1.5rem; padding: 1rem; border-radius: 10px; border-left: 4px solid transparent; font-weight: 700; }
+.return-message.success { color: #027a48; background: #ecfdf3; border-left-color: #12b76a; }
+.return-message.error { color: #b91c1c; background: #fee2e2; border-left-color: #b91c1c; }
 
 .filters { display: flex; gap: 1rem; margin-bottom: 2rem; }
 .filter-btn { background: transparent; border: 2px solid #f0e6f0; border-radius: 8px; color: #8a6a8a; font-size: 1.05rem; font-weight: 700; padding: 0.75rem 1.5rem; cursor: pointer; transition: 0.2s; }
@@ -243,6 +380,9 @@ onMounted(() => { loadClasses(); });
 .group-header { display: flex; justify-content: space-between; align-items: center; padding: 1.25rem 1.5rem; background: #f5e6f5; cursor: pointer; user-select: none; transition: background 0.2s; }
 .group-header:hover { background: #ede5f5; }
 .group-header h2 { margin: 0; color: #572c57; font-size: 1.2rem; }
+.group-header-actions { display: flex; align-items: center; gap: 1rem; flex-shrink: 0; }
+.cancel-month-button { background: #fee2e2; color: #b42318; border: 1px solid #fca5a5; padding: 0.5rem 0.9rem; border-radius: 8px; font-weight: 600; font-size: 0.85rem; cursor: pointer; white-space: nowrap; transition: 0.2s; }
+.cancel-month-button:hover:not(:disabled) { background: #fecaca; }
 .group-content { padding: 1.5rem; border-top: 2px solid #e8dce8; background: #fafafa; }
 .arrow { color: #9f5f91; font-size: 0.9rem; font-weight: 700; }
 
@@ -262,7 +402,11 @@ dd { margin: 0; font-weight: 700; color: #4a3a4a; }
 .cancel-button { width: 100%; background: #fee2e2; color: #b42318; border: 1px solid #fca5a5; padding: 0.75rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
 .cancel-button:hover:not(:disabled) { background: #fecaca; }
 .text-danger { color: #b42318; margin: 0; text-align: center; font-weight: 600; }
+.text-info { color: #572c57; margin: 0 0 1rem 0; }
 .small { font-size: 0.85rem; }
+.decide-button { display: inline-block; text-align: center; text-decoration: none; }
+.waitlist-tab .empty-state p { margin: 0 0 0.75rem 0; }
+.waitlist-tab .empty-state p:last-child { margin-bottom: 0; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 100; padding: 1rem;}
 .modal { background: #fff; padding: 2rem; border-radius: 12px; max-width: 450px; width: 100%; }
 .modal h2 { margin-top: 0; color: #572c57; }

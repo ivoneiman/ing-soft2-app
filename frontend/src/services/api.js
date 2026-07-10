@@ -259,9 +259,32 @@ export function createWaitlist({ class_id, type }) {
   );
 }
 
+export function getMyWaitlists() {
+  return axios.get(
+    `${API_URL}/waitlists/my`,
+    REQUEST_CONFIG
+  );
+}
+
 export function cancelEnrollment({ enrollment_id }) {
   return axios.post(
     `${API_URL}/enrollments/${enrollment_id}/cancel`,
+    {},
+    REQUEST_CONFIG
+  );
+}
+
+export function cancelMonthlySubscription(enrollmentId) {
+  return axios.post(
+    `${API_URL}/enrollments/${enrollmentId}/cancel-monthly-subscription`,
+    {},
+    REQUEST_CONFIG
+  );
+}
+
+export function declineWaitlistOffer(enrollmentId) {
+  return axios.post(
+    `${API_URL}/enrollments/${enrollmentId}/waitlist-decline`,
     {},
     REQUEST_CONFIG
   );

@@ -16,7 +16,7 @@
     <div class="center-menu" :class="{ active: isMobileMenuOpen }">
       <router-link to="/" class="nav-item" @click="closeMobileMenu">Home</router-link>
       <!-- Dashboard para admin y employee -->
-      <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/dashboard" class="nav-item" @click="closeMobileMenu">Dashboard</router-link>
+      <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/dashboard" class="nav-item" @click="closeMobileMenu">Listar Clases</router-link>
       <!-- Crear clase como botón principal para admin y employee -->
       <router-link v-if="authStore.isLoggedIn && (roleHelpers.isAdmin() || roleHelpers.isEmployee())" to="/admin/clases/crear" class="nav-item" @click="closeMobileMenu">Crear clase</router-link>
       <!-- Solo clientes pueden ver Actividades -->
@@ -86,8 +86,8 @@
           </button>
 
           <div v-if="isPaymentsDropdownOpen" class="dropdown-container">
-            <router-link to="/pagos?tab=pending" @click="handlePaymentsDropdownClick">
-              Inscripciones pendientes
+            <router-link to="/pagos?tab=credits" @click="handlePaymentsDropdownClick">
+              Créditos
             </router-link>
             <router-link to="/pagos?tab=history" @click="handlePaymentsDropdownClick">
               Historial de pagos
@@ -117,9 +117,6 @@
             <router-link to="/admin/profesores" @click="handleAdminDropdownClick">
               Profesores
             </router-link>
-            <router-link v-if="roleHelpers.isEmployee()" to="/pasar-asistencia" @click="handleAdminDropdownClick">
-              Pasar Asistencia
-            </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/configuracion/notificacion" @click="handleAdminDropdownClick">
               Configuración
             </router-link>
@@ -137,16 +134,6 @@
         </a>
       </div>
     </div>
-
-    <!-- Derecha: acceso rápido a asistencia para employee (desktop) -->
-    <router-link
-      v-if="authStore.isLoggedIn && roleHelpers.isEmployee()"
-      :to="attendanceShortcutRoute"
-      class="right-section"
-    >
-      <span class="present-text">PASAR <br /> PRESENTE</span>
-      <img src="/codigo-qr.png" alt="QR" class="qr-image" />
-    </router-link>
   </nav>
 </template>
 

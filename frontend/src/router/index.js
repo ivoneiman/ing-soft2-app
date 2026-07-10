@@ -25,6 +25,7 @@ const ScanQrView = () => import("../views/actividades/ScanQrView.vue");
 const ReporteUsuariosView = () => import("../views/reportes/ReporteUsuariosView.vue");
 const ReportePagosView = () => import("../views/reportes/ReportePagosView.vue");
 const MisClasesView = () => import("../views/actividades/MisClasesView.vue");
+const OfertaListaEsperaView = () => import("../views/lista-espera/OfertaListaEsperaView.vue");
 const CrearUsuarioView = () => import("../views/usuarios/CrearUsuarioView.vue");
 // Vistas de Administración de Profesores
 const ProfesoresAdminView = () => import("../views/admin/ProfesoresAdminView.vue");
@@ -159,6 +160,12 @@ const routes = [
         path: "mis-clases",
         name: "MisClases",
         component: MisClasesView,
+        meta: { requiresAuth: true, requiresClient: true }
+      },
+      {
+        path: "lista-espera/oferta/:enrollmentId",
+        name: "OfertaListaEspera",
+        component: OfertaListaEsperaView,
         meta: { requiresAuth: true, requiresClient: true }
       }
     ],
