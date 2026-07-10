@@ -177,6 +177,7 @@ def enrollment_payload(enrollment, current_dt=None):
         "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj and class_obj.fecha_hora else None,
         "estado": enrollment.estado,
         "tipo": enrollment.tipo,
+        "waitlist_offer": bool(enrollment.waitlist_promoted_at),
         "expires_at": expires_at.isoformat() if expires_at else None,
         "product_type": payment_type_for_enrollment(enrollment),
         "payment_type": payment_type_for_enrollment(enrollment),

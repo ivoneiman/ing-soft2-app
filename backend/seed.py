@@ -14,6 +14,7 @@ from app import (
     app,
 )
 from models import db, User, Class, Enrollment, Attendance, Actividades, Payment, Profesor, WaitlistEntry
+from constants import WAITLIST_TYPE_INDIVIDUAL
 
 ROOM_OPTIONS = ["Salón 1", "Salón 2", "Salón 3"]
 ROOM_BY_SCHEDULE = {}
@@ -556,6 +557,7 @@ def main():
             "Pilates - 30 Julio (Jueves)",
             "Pilates - 29 Junio 2026 (Asistencia)", "Pilates - 29 Junio 2026 (Sin Inscriptos)",
             "Pilates - 29 Junio 2026",
+            "Pilates - Oferta Lista de Espera (Demo)",
         ])
         db.session.commit()
         print()
@@ -600,6 +602,15 @@ def main():
             profesor_test.id,
             cupo_maximo=1,
             legacy_names=["Pilates Sin Cupo"],
+        )
+
+        print("   Creando clase con oferta de lista de espera lista para demo (client@test.com)...")
+        class_oferta_demo = create_test_class(
+            "Pilates - Oferta Lista de Espera (Demo)",
+            at_app_time(today + timedelta(days=5), 12),
+            actividad3,
+            profesor_test.id,
+            cupo_maximo=1,
         )
 
         print("   Creando Clase de prueba para cupos (19/20)...")
@@ -772,6 +783,32 @@ def main():
             password="password123", dni="99999999", telefono="11111111", role="client"
         )
         ensure_enrollment(dummy_julio, class_jul16, estado=Enrollment.STATUS_PAID, tipo="Suelta")
+
+        print("   Dejando a client@test.com con una oferta de lista de espera pendiente de decidir (demo en vivo)...")
+        oferta_enrollment = ensure_enrollment(
+            client, class_oferta_demo, estado=Enrollment.STATUS_PENDING_PAYMENT, tipo="Suelta"
+        )
+        oferta_enrollment.waitlist_promoted_at = today
+        oferta_enrollment.total_amount = 0
+        oferta_enrollment.paid_amount = 0
+        oferta_enrollment.remaining_amount = 0
+        oferta_enrollment.payment_status = Enrollment.PAYMENT_STATUS_PENDING
+
+        print("   Anotando un segundo usuario en la misma lista de espera (para mostrar el caso 'aún no seleccionado')...")
+        espera_demo_user = create_test_user(
+            username="EsperaDemo", apellido="Pilates", email="espera_demo@test.com",
+            password="client123", dni="55555510", telefono="221 5555510", role="client"
+        )
+        existing_waitlist_demo = WaitlistEntry.query.filter_by(
+            user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_INDIVIDUAL
+        ).first()
+        if not existing_waitlist_demo:
+            db.session.add(WaitlistEntry(
+                user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_INDIVIDUAL
+            ))
+            print(f"   [OK] {espera_demo_user.email} anotado en lista de espera de {class_oferta_demo.name}")
+        else:
+            print(f"   [SKIP] {espera_demo_user.email} ya estaba en la lista de espera de {class_oferta_demo.name}")
 
         db.session.commit()
         print()

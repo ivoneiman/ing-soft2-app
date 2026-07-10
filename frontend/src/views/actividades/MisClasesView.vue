@@ -16,11 +16,51 @@
       <div class="filters">
         <button @click="filterType = 'mensuales'" :class="{ active: filterType === 'mensuales' }" class="filter-btn">Suscripciones Mensuales</button>
         <button @click="filterType = 'individuales'" :class="{ active: filterType === 'individuales' }" class="filter-btn">Clases Individuales</button>
+        <button @click="filterType = 'lista-espera'" :class="{ active: filterType === 'lista-espera' }" class="filter-btn">Confirmación pendiente desde lista de espera</button>
       </div>
 
-      <div v-if="isLoading" class="empty-state">Cargando tus clases...</div>
+      <!-- Confirmación pendiente desde lista de espera -->
+      <div v-if="filterType === 'lista-espera'" class="cards-grid waitlist-tab">
+        <div v-if="isLoadingWaitlistInfo" class="empty-state" style="grid-column: 1 / -1;">Cargando tu lista de espera...</div>
+
+        <template v-else-if="pendingWaitlistOffers.length > 0">
+          <article v-for="offer in pendingWaitlistOffers" :key="offer.id" class="class-card offer-card">
+            <div class="card-header">
+              <h2>{{ offer.actividad }}</h2>
+              <span class="status-pill pending">Confirmación pendiente</span>
+            </div>
+            <dl class="class-details">
+              <div>
+                <dt>Fecha y Hora</dt>
+                <dd>{{ formatDateTime(offer.fecha_hora) }}</dd>
+              </div>
+              <div>
+                <dt>Clase</dt>
+                <dd>{{ offer.class_name }}</dd>
+              </div>
+            </dl>
+            <p class="text-info small">Se liberó un cupo y fuiste seleccionado/a. Entrá para decidir si te inscribís o liberás el lugar.</p>
+            <div class="card-actions">
+              <router-link :to="`/lista-espera/oferta/${offer.id}`" class="cancel-button decide-button">Ver y decidir</router-link>
+            </div>
+          </article>
+        </template>
+
+        <div v-else-if="activeWaitlistEntries.length > 0" class="empty-state" style="grid-column: 1 / -1;">
+          <p v-for="entry in activeWaitlistEntries" :key="entry.id">
+            Aún no has sido seleccionado/a para la clase a la cual te has inscripto a la lista de espera de la clase
+            <strong>{{ entry.actividad }} - {{ entry.class_name }}</strong> ({{ formatDateTime(entry.fecha_hora) }}).
+          </p>
+        </div>
+
+        <div v-else class="empty-state" style="grid-column: 1 / -1;">
+          No estás anotado/a en ninguna lista de espera actualmente.
+        </div>
+      </div>
+
+      <div v-else-if="isLoading" class="empty-state">Cargando tus clases...</div>
       <div v-else-if="myClasses.length === 0" class="empty-state">No tenés turnos próximos registrados.</div>
-      
+
       <!-- Clases Mensuales (Agrupadas) -->
       <div v-else-if="filterType === 'mensuales'" class="groups-container">
         <div v-if="monthlyGroups.length === 0" class="empty-state">No tenés suscripciones mensuales registradas.</div>
@@ -128,6 +168,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
+import { getPendingEnrollments, getMyWaitlists } from '../../services/api';
 import { formatDateTime } from '../../utils/formatters';
 import { CLASS_STATUS, ENROLLMENT_STATUS } from '../../constants/statuses';
 
@@ -141,6 +182,10 @@ const selectedClass = ref(null);
 
 const filterType = ref('mensuales');
 const openGroups = ref({});
+
+const isLoadingWaitlistInfo = ref(false);
+const pendingWaitlistOffers = ref([]);
+const activeWaitlistEntries = ref([]);
 
 const returnMessage = computed(() => {
   const status = route.query.status;
@@ -218,6 +263,22 @@ async function loadClasses() {
   }
 }
 
+async function loadWaitlistInfo() {
+  isLoadingWaitlistInfo.value = true;
+  try {
+    const [pendingResponse, waitlistResponse] = await Promise.all([
+      getPendingEnrollments(),
+      getMyWaitlists(),
+    ]);
+    pendingWaitlistOffers.value = (pendingResponse.data.enrollments || []).filter((e) => e.waitlist_offer);
+    activeWaitlistEntries.value = waitlistResponse.data.waitlists || [];
+  } catch (err) {
+    console.error("Error cargando la lista de espera:", err);
+  } finally {
+    isLoadingWaitlistInfo.value = false;
+  }
+}
+
 function confirmCancel(cls) { selectedClass.value = cls; }
 
 async function submitCancel() {
@@ -236,7 +297,7 @@ async function submitCancel() {
   }
 }
 
-onMounted(() => { loadClasses(); });
+onMounted(() => { loadClasses(); loadWaitlistInfo(); });
 </script>
 
 <style scoped>
@@ -279,7 +340,11 @@ dd { margin: 0; font-weight: 700; color: #4a3a4a; }
 .cancel-button { width: 100%; background: #fee2e2; color: #b42318; border: 1px solid #fca5a5; padding: 0.75rem; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; }
 .cancel-button:hover:not(:disabled) { background: #fecaca; }
 .text-danger { color: #b42318; margin: 0; text-align: center; font-weight: 600; }
+.text-info { color: #572c57; margin: 0 0 1rem 0; }
 .small { font-size: 0.85rem; }
+.decide-button { display: inline-block; text-align: center; text-decoration: none; }
+.waitlist-tab .empty-state p { margin: 0 0 0.75rem 0; }
+.waitlist-tab .empty-state p:last-child { margin-bottom: 0; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 100; padding: 1rem;}
 .modal { background: #fff; padding: 2rem; border-radius: 12px; max-width: 450px; width: 100%; }
 .modal h2 { margin-top: 0; color: #572c57; }

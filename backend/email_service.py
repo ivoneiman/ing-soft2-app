@@ -11,10 +11,8 @@ from dotenv import load_dotenv
 
 try:
     from models import SystemSetting
-    from constants import WAITLIST_PROMOTION_EXPIRY_HOURS
 except ModuleNotFoundError:
     from .models import SystemSetting
-    from .constants import WAITLIST_PROMOTION_EXPIRY_HOURS
 
 
 load_dotenv(Path(__file__).with_name(".env"))
@@ -215,15 +213,14 @@ def send_credit_generated_email(user, class_obj, credit):
     )
 
 
-def send_waitlist_promotion_email(user, class_obj, new_enrollment, other_pending_enrollments=None, init_point=None):
+def send_waitlist_promotion_email(user, class_obj, new_enrollment, other_pending_enrollments=None):
     if not _has_valid_email(user):
         return False
 
     activity_name = escape(_activity_name(class_obj))
     class_datetime = escape(_format_class_datetime(class_obj))
     site_url = _gym_site_url()
-    payments_url = f"{site_url}/pagos?tab=pending&enrollment_id={new_enrollment.id}"
-    checkout_url = init_point or payments_url
+    offer_url = f"{site_url}/lista-espera/oferta/{new_enrollment.id}"
 
     pending_enrollments_section = ""
     if other_pending_enrollments:
@@ -242,10 +239,9 @@ def send_waitlist_promotion_email(user, class_obj, new_enrollment, other_pending
     <h1>¡Conseguiste un lugar de la lista de espera!</h1>
     <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
     <p>Fuiste seleccionado/a de la lista de espera para la clase <strong>{activity_name} {class_datetime}</strong>, ya que se liberó un cupo.</p>
-    <p><strong>Tenés que pagar en el siguiente link para confirmar tu inscripción:</strong><br>
-    <a href="{checkout_url}"><b>Pagar mi inscripción ahora</b></a></p>
-    <p>Tenés <strong>{WAITLIST_PROMOTION_EXPIRY_HOURS} horas</strong> para completar el pago. Si no pagás dentro de ese plazo,
-    perdés la oportunidad y el cupo pasará automáticamente a la siguiente persona en la lista de espera.</p>
+    <p>Entrá al siguiente link para decidir qué hacer: <a href="{offer_url}"><b>Ver mi lugar en la lista de espera</b></a></p>
+    <p>Ahí vas a poder <strong>inscribirte y pagar</strong> para confirmar tu lugar, o <strong>liberarlo</strong> si en
+    realidad ya no te interesa, para que se lo ofrezcamos a la siguiente persona en la lista de espera.</p>
     <p>También podés gestionarlo entrando a la página del gimnasio: <a href="{site_url}">{site_url}</a></p>
     {pending_enrollments_section}
     """

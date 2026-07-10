@@ -981,27 +981,7 @@ def _promote_waitlist_for_class(class_obj):
                 Enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT,
             ).all()
 
-            # Generamos el link directo de checkout de Mercado Pago reusando la misma lógica
-            # de /api/payments/create, para que el mail lleve directo a pagar sin pasos intermedios.
-            init_point = None
-            try:
-                payment, product_type, requested_payment_type, _amount, _discount_percentage, final_amount = (
-                    _prepare_payment_for_mercado_pago_checkout(
-                        new_enrollment, user_to_promote, Payment.METHOD_MERCADO_PAGO, PAYMENT_TYPE_FULL, promotion_datetime
-                    )
-                )
-                init_point, _preference_id = _create_mercado_pago_preference(
-                    payment, user_to_promote, product_type, requested_payment_type, final_amount, class_obj
-                )
-                db.session.commit()
-            except MercadoPagoCheckoutError as err:
-                db.session.rollback()
-                logger.error("[Lista de espera] No se pudo generar el link directo de pago: %s", err)
-            except Exception as err:
-                db.session.rollback()
-                logger.exception("[Lista de espera] Error inesperado generando el checkout de Mercado Pago: %s", err)
-
-            send_waitlist_promotion_email(user_to_promote, class_obj, new_enrollment, other_pending_enrollments, init_point=init_point)
+            send_waitlist_promotion_email(user_to_promote, class_obj, new_enrollment, other_pending_enrollments)
             promoted = True
             break
             
@@ -2086,6 +2066,38 @@ def delete_user_by_admin(user_id):
         return jsonify({"error": "Error interno al eliminar el usuario"}), 500
 
 
+@app.route("/api/waitlists/my", methods=["GET"])
+def my_waitlist_entries():
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    if current_user.role != "client":
+        return api_success({"waitlists": []}, status_code=200)
+
+    entries = (
+        WaitlistEntry.query
+        .filter_by(user_id=current_user.id)
+        .order_by(WaitlistEntry.created_at.asc())
+        .all()
+    )
+    payload = []
+    for entry in entries:
+        class_obj = entry.class_
+        if not class_obj:
+            continue
+        payload.append({
+            "id": entry.id,
+            "class_id": entry.class_id,
+            "type": entry.type,
+            "actividad": class_obj.actividad.name if class_obj.actividad else None,
+            "class_name": class_obj.name,
+            "fecha_hora": class_obj.fecha_hora.isoformat() if class_obj.fecha_hora else None,
+        })
+
+    return api_success({"waitlists": payload}, status_code=200)
+
+
 @app.route("/api/waitlists", methods=["POST"])
 def create_waitlist_entry():
     current_user = _get_authenticated_user()
@@ -2197,6 +2209,41 @@ def cancel_enrollment(enrollment_id):
         "credit": credit_service.credit_payload(credit, current_datetime) if credit else None,
         "email_sent": email_sent,
         "pending_payments_expired": result["pending_payments_expired"],
+    }, message=message, status_code=200)
+
+
+@app.route("/api/enrollments/<int:enrollment_id>/waitlist-decline", methods=["POST"])
+def decline_waitlist_offer(enrollment_id):
+    """Permite a un cliente 'arrepentirse' de un cupo ofrecido por promoción de lista de espera.
+
+    A diferencia de /cancel, esto no exige estar a más de 24hs de la clase: el cliente nunca
+    confirmó ni pagó esta inscripción, solo se le ofreció el cupo, así que puede liberarlo en
+    cualquier momento antes de la clase.
+    """
+    current_user = _get_authenticated_user()
+    if not current_user:
+        return jsonify({"error": "No autenticado"}), 401
+
+    enrollment = Enrollment.query.get(enrollment_id)
+    if not enrollment or enrollment.user_id != current_user.id:
+        return api_error("Inscripción no encontrada", 404)
+
+    if enrollment.estado != Enrollment.STATUS_PENDING_PAYMENT or not enrollment.waitlist_promoted_at:
+        return api_error("Esta inscripción no es una oferta de lista de espera pendiente", 400)
+
+    class_obj = enrollment.class_
+    enrollment.estado = Enrollment.STATUS_CANCELLED
+    payment_service.expire_pending_payments_for_enrollment(enrollment)
+    db.session.commit()
+
+    if class_obj:
+        _promote_waitlist_for_class(class_obj)
+
+    message = "Liberaste tu lugar. Se lo ofrecimos a la siguiente persona en la lista de espera."
+    return api_success({
+        "message": message,
+        "enrollment_id": enrollment.id,
+        "estado": enrollment.estado,
     }, message=message, status_code=200)
 
 
