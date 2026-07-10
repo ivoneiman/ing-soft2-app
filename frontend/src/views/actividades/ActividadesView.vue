@@ -5,6 +5,10 @@
       <p class="lead">Elegí actividad, día y horario con cupo disponible.</p>
     </header>
 
+    <p v-if="returnMessage" :class="['return-message', returnMessage.type]">
+      {{ returnMessage.text }}
+    </p>
+
     <div class="catalog-card">
       <!-- Paso 1: Actividad -->
       <section class="step">
@@ -145,11 +149,24 @@
           class="btn-inscribe"
           style="margin-top: 1.5rem;"
           :disabled="isSubmittingEnrollment"
-          @click="handleEnrollment"
+          @click="openEnrollmentModal"
         >
           {{ isSubmittingEnrollment ? (isWaitlistAction ? 'Enviando a lista de espera...' : 'Creando inscripción...') : (isWaitlistAction ? 'Confirmar inscripción a lista de espera' : 'Confirmar Inscripción') }}
         </button>
       </section>
+
+      <div v-if="showEnrollmentModal" class="modal-backdrop" @click.self="closeEnrollmentModal">
+        <div class="modal">
+          <h3>Confirmar inscripción</h3>
+          <p>
+            Al confirmar la inscripción serás redirigido al pago. Tu lugar solo quedará reservado cuando el pago sea aprobado. Si no completás el pago, la inscripción será cancelada automáticamente y el cupo permanecerá disponible.
+          </p>
+          <div class="modal-actions">
+            <button type="button" class="secondary-button" @click="closeEnrollmentModal">Volver</button>
+            <button type="button" class="danger-button" :disabled="isSubmittingEnrollment" @click="confirmEnrollment">Confirmar inscripción</button>
+          </div>
+        </div>
+      </div>
 
       <p v-if="successMessage" class="success">{{ successMessage }}</p>
       <p v-if="error" class="error">{{ error }}</p>
@@ -158,7 +175,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onActivated } from "vue";
+import { ref, computed, onMounted, onActivated, nextTick } from "vue";
+import { useRoute } from "vue-router";
 import { createEnrollment, createPayment, getActivities, getAllClasses, getCatalogAvailability, getMyClasses } from "../../services/api";
 import { ENROLLMENT_TYPE, PAYMENT_METHOD } from "../../constants/statuses";
 import { formatLongDate } from "../../utils/formatters";
@@ -181,8 +199,11 @@ const loadingDays = ref(false);
 const loadingSlots = ref(false);
 const myEnrolledClasses = ref([]);
 const isSubmittingEnrollment = ref(false);
+const showEnrollmentModal = ref(false);
 const error = ref("");
 const successMessage = ref("");
+const route = useRoute();
+
 const TIPO_SUELTA = ENROLLMENT_TYPE?.SINGLE || 'Suelta';
 const TIPO_MENSUAL = ENROLLMENT_TYPE?.MONTHLY || 'Mensual';
 const WEEKDAYS = [
@@ -248,6 +269,18 @@ const availableWeekdays = computed(() =>
 const selectedDateLabel = computed(() => {
   if (!selectedDate.value) return "";
   return formatLongDate(selectedDate.value);
+});
+
+const returnMessage = computed(() => {
+  const status = route.query.status;
+  if (!status) return null;
+  if (status === 'success') {
+    return { type: 'success', text: 'Inscripción exitosa' };
+  }
+  if (status === 'failure' || status === 'pending') {
+    return { type: 'error', text: 'No se ha realizado el pago correctamente, no se pudo llevar a cabo la inscripción' };
+  }
+  return null;
 });
 
 const selectedClass = computed(() =>
@@ -411,6 +444,23 @@ async function onSlotSelected(slot) {
 function selectType(type) {
   enrollmentType.value = type;
   hasSelectedType.value = true;
+}
+
+function openEnrollmentModal() {
+  if (isWaitlistAction.value) {
+    confirmEnrollment();
+    return;
+  }
+  showEnrollmentModal.value = true;
+}
+
+function closeEnrollmentModal() {
+  showEnrollmentModal.value = false;
+}
+
+async function confirmEnrollment() {
+  closeEnrollmentModal();
+  await handleEnrollment();
 }
 
 async function handleEnrollment() {
@@ -835,6 +885,84 @@ onActivated(() => {
   border-radius: 10px;
   border-left: 4px solid #12b76a;
   font-weight: 700;
+  white-space: pre-line;
+}
+
+.return-message {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border-radius: 10px;
+  border-left: 4px solid transparent;
+  font-weight: 700;
+  white-space: pre-line;
+}
+
+.return-message.success {
+  color: #027a48;
+  background: #ecfdf3;
+  border-left-color: #12b76a;
+}
+
+.return-message.error {
+  color: #b91c1c;
+  background: #fee2e2;
+  border-left-color: #b91c1c;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 200;
+}
+
+.modal {
+  background: #fff;
+  border-radius: 16px;
+  max-width: 520px;
+  width: 100%;
+  padding: 1.5rem;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+
+.modal h3 {
+  margin-top: 0;
+  color: #572c57;
+}
+
+.modal p {
+  color: #4a3a4a;
+  line-height: 1.6;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+.secondary-button,
+.danger-button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary-button {
+  background: #f1f1f1;
+  color: #4a3a4a;
+}
+
+.danger-button {
+  background: #9f5f91;
+  color: #fff;
 }
 
 /* Responsive */

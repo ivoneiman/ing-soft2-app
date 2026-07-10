@@ -108,6 +108,8 @@ WAITLIST_TYPES = (
     WAITLIST_TYPE_MONTHLY,
 )
 
+WAITLIST_PROMOTION_EXPIRY_HOURS = 24  # Ventana para pagar tras ser promovido desde lista de espera
+
 PAYMENT_RETURN_STATUS_SUCCESS = "success"
 PAYMENT_RETURN_STATUS_FAILURE = "failure"
 PAYMENT_RETURN_STATUS_PENDING = "pending"

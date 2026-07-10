@@ -109,6 +109,7 @@ Variables principales:
 - `PAYMENT_FAILURE_URL`: override opcional de retorno para pagos fallidos.
 - `PAYMENT_PENDING_URL`: override opcional de retorno para pagos pendientes.
 - `MERCADOPAGO_NOTIFICATION_URL`: override opcional del webhook para confirmar pagos automáticamente.
+- `MERCADOPAGO_WEBHOOK_SECRET`: secreto de firma del webhook configurado en el panel de Mercado Pago. Es obligatorio en producción.
 - `FRONTEND_PAYMENTS_URL`: URL del frontend donde se muestra el resultado del pago. Para develop: `https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app/pagos`.
 - `GYM_SITE_URL`: URL base del frontend para links en emails. Para develop: `https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app`.
 - `RESEND_API_KEY`: API key de Resend para envío de emails.
@@ -134,6 +135,7 @@ Flujo recomendado con Cloudflare Tunnel:
 
 ```env
 PUBLIC_BACKEND_URL=https://tu-url.trycloudflare.com
+MERCADOPAGO_WEBHOOK_SECRET=tu-secreto-de-firma-del-webhook
 FRONTEND_PAYMENTS_URL=https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app/pagos
 GYM_SITE_URL=https://ing-soft2-app-git-develop-ivoneimans-projects.vercel.app
 ```
@@ -146,6 +148,8 @@ Con `PUBLIC_BACKEND_URL`, el backend arma automáticamente:
 - `https://tu-url.trycloudflare.com/api/payments/webhook`
 
 Si Cloudflare genera una URL nueva, solo hay que actualizar `PUBLIC_BACKEND_URL` y reiniciar Flask.
+
+El webhook (`/api/payments/webhook`) es la única fuente de verdad que consulta la API de Mercado Pago y actualiza la inscripción/pago. Los `back_urls` únicamente devuelven al navegador a `Mis Clases` o `Actividades`; cerrar la pestaña o no recibir el retorno no impide la confirmación. Todas las URLs de retorno y webhook deben ser públicas y HTTPS: el backend rechaza una preferencia configurada con `localhost` para evitar pagos que queden pendientes silenciosamente.
 
 ## Funcionalidades principales
 

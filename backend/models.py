@@ -182,6 +182,7 @@ class Enrollment(db.Model):
     remaining_amount = db.Column(db.Float, nullable=False, default=0)
     payment_status = db.Column(db.String(20), default=ENROLLMENT_PAYMENT_STATUS_PENDING, nullable=False)
     created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
+    waitlist_promoted_at = db.Column(db.DateTime, nullable=True)  # Seteado cuando la inscripción viene de una promoción de lista de espera
 
     user = db.relationship("User", backref=db.backref("enrollments", cascade="all, delete-orphan"))
     class_ = db.relationship("Class", back_populates="enrollments")

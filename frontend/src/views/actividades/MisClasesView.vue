@@ -8,6 +8,10 @@
       <router-link to="/" class="back-button">Volver al Inicio</router-link>
     </header>
 
+    <p v-if="returnMessage" :class="['return-message', returnMessage.type]">
+      {{ returnMessage.text }}
+    </p>
+
     <section class="classes-list">
       <div class="filters">
         <button @click="filterType = 'mensuales'" :class="{ active: filterType === 'mensuales' }" class="filter-btn">Suscripciones Mensuales</button>
@@ -122,11 +126,13 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import axios from 'axios';
 import { formatDateTime } from '../../utils/formatters';
 import { CLASS_STATUS, ENROLLMENT_STATUS } from '../../constants/statuses';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const route = useRoute();
 
 const myClasses = ref([]);
 const isLoading = ref(false);
@@ -135,6 +141,14 @@ const selectedClass = ref(null);
 
 const filterType = ref('mensuales');
 const openGroups = ref({});
+
+const returnMessage = computed(() => {
+  const status = route.query.status;
+  if (status === 'success') {
+    return { type: 'success', text: 'Inscripción exitosa' };
+  }
+  return null;
+});
 
 function toggleGroup(groupId) {
   openGroups.value[groupId] = !openGroups.value[groupId];
@@ -232,6 +246,9 @@ onMounted(() => { loadClasses(); });
 .header p { color: #e0c0e0; margin: 0; font-size: 1.05rem; }
 .back-button { background: #f6ea98; padding: 10px 16px; border-radius: 8px; color: #572c57; text-decoration: none; font-weight: 700; white-space: nowrap;}
 .empty-state { background: #fff; padding: 2rem; text-align: center; border-radius: 12px; color: #8a6a8a; border: 2px solid #d0c0d0; }
+.return-message { margin-bottom: 1.5rem; padding: 1rem; border-radius: 10px; border-left: 4px solid transparent; font-weight: 700; }
+.return-message.success { color: #027a48; background: #ecfdf3; border-left-color: #12b76a; }
+.return-message.error { color: #b91c1c; background: #fee2e2; border-left-color: #b91c1c; }
 
 .filters { display: flex; gap: 1rem; margin-bottom: 2rem; }
 .filter-btn { background: transparent; border: 2px solid #f0e6f0; border-radius: 8px; color: #8a6a8a; font-size: 1.05rem; font-weight: 700; padding: 0.75rem 1.5rem; cursor: pointer; transition: 0.2s; }
