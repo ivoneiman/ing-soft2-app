@@ -375,14 +375,9 @@ with app.app_context():
 # ─── Helpers para el Catálogo ──────────────────────────────────────────────────
 
 def _get_monthly_base_price(class_obj):
-    y = class_obj.fecha_hora.year
-    m = class_obj.fecha_hora.month
-    wd = class_obj.fecha_hora.weekday()
-    total_classes = 0
-    for day in range(1, monthrange(y, m)[1] + 1):
-        if datetime(y, m, day).weekday() == wd:
-            total_classes += 1
-    return 3000.0 * total_classes
+    # Se cobran únicamente las clases que quedan por asistir desde la clase elegida
+    # (inclusive) hasta fin de mes, no todas las clases del mes completo.
+    return 3000.0 * payment_service.remaining_classes_in_monthly_series(class_obj)
 
 def _enrollment_counts():
     base_counts = class_service.enrollment_counts()
