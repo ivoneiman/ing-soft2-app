@@ -15,18 +15,6 @@
       {{ returnMessage.text }}
     </p>
 
-    <nav class="payments-tabs" aria-label="Secciones de pagos">
-      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.HISTORY }" @click="activeTab = PAYMENT_TAB.HISTORY">
-        Historial de pagos
-      </button>
-      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.CREDITS }" @click="activeTab = PAYMENT_TAB.CREDITS">
-        Créditos
-      </button>
-      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.NOTIFICATIONS }" @click="activeTab = PAYMENT_TAB.NOTIFICATIONS">
-        Notificaciones
-      </button>
-    </nav>
-
     <section v-if="activeTab === PAYMENT_TAB.HISTORY" class="history-section">
       <h2>Historial de pagos</h2>
 
@@ -332,18 +320,6 @@ watch(
   margin: 0;
 }
 
-.payments-tabs {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.payments-tabs button.active {
-  border-color: #f6ea98;
-  background: #f6ea98;
-  color: #9f5f91;
-}
-
 .return-message,
 .history-section,
 .discount-test-mode,
@@ -512,7 +488,6 @@ watch(
 
 @media (max-width: 760px) {
   .payments-header,
-  .payments-tabs,
   .notification-item {
     display: block;
   }
@@ -521,7 +496,6 @@ watch(
     padding: 16px;
   }
 
-  .payments-tabs button,
   .admin-link {
     display: inline-block;
     margin-top: 0.75rem;

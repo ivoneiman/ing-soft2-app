@@ -92,6 +92,9 @@
             <router-link to="/pagos?tab=history" @click="handlePaymentsDropdownClick">
               Historial de pagos
             </router-link>
+            <router-link to="/pagos?tab=notifications" @click="handlePaymentsDropdownClick">
+              Notificaciones
+            </router-link>
           </div>
         </div>
 
