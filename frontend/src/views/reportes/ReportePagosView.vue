@@ -109,6 +109,7 @@ const availableActivities = computed(() => {
   payments.value.forEach(p => {
     if (p.actividad && p.actividad !== '-') acts.add(p.actividad);
   });
+  acts.add('Yoga'); // Asegurar que 'Yoga' siempre esté en la lista
   return Array.from(acts).sort();
 });
 
