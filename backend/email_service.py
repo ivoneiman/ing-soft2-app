@@ -213,6 +213,28 @@ def send_credit_generated_email(user, class_obj, credit):
     )
 
 
+def send_refund_email(user, class_obj):
+    if not _has_valid_email(user):
+        return False
+
+    activity_name = escape(_activity_name(class_obj))
+    class_name = escape(getattr(class_obj, "name", "Clase"))
+    class_datetime = escape(_format_class_datetime(class_obj))
+    html = f"""
+    <h1>Baja confirmada - SiempreGym</h1>
+    <p>Hola {escape(getattr(user, "username", "") or "")},</p>
+    <p>Te diste de baja de <strong>{class_name}</strong> de <strong>{activity_name}</strong>.</p>
+    <p><strong>Fecha y hora:</strong> {class_datetime}</p>
+    <p>Se te reembolsó el dinero de esta inscripción.</p>
+    """
+
+    return _send_email(
+        user.email,
+        "Baja confirmada - SiempreGym",
+        html,
+    )
+
+
 def send_waitlist_promotion_email(user, class_obj, new_enrollment, other_pending_enrollments=None):
     if not _has_valid_email(user):
         return False

@@ -152,8 +152,7 @@
         <h2>Confirmar Baja</h2>
         <p>¿Seguro querés cancelar tu asistencia a la clase de <strong>{{ selectedClass.actividad }}</strong> del <strong>{{ formatDateTime(selectedClass.fecha_hora) }}</strong>?</p>
         <p class="warning">
-          Si la clase ya estaba abonada (incluida como parte de una suscripción mensual), se generará un <strong>crédito para anotarte a una clase individual</strong> de la misma actividad.<br>
-          Si aún debes el pago, liberarás el cupo para alguien más.
+          Se generará un <strong>crédito para anotarte a una clase individual</strong> de la misma actividad y liberarás el cupo para alguien más.
         </p>
         <div class="modal-actions">
           <button class="secondary-button" @click="selectedClass = null">Cerrar</button>

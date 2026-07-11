@@ -24,6 +24,7 @@ try:
         send_admin_login_code,
         send_class_cancelled_email,
         send_credit_generated_email,
+        send_refund_email,
         send_waitlist_promotion_email,
         send_class_room_changed_email,
         send_temporary_password_email,
@@ -63,6 +64,7 @@ except ModuleNotFoundError:
         send_admin_login_code,
         send_class_cancelled_email,
         send_credit_generated_email,
+        send_refund_email,
         send_waitlist_promotion_email,
         send_class_room_changed_email,
         send_temporary_password_email,
@@ -1825,9 +1827,13 @@ def cancel_class_attendance(class_id):
                 tipo=ENROLLMENT_TYPE_SINGLE, force_eligible=monthly_day_credit_eligible,
             )
             credit_generated = credit is not None
+            simulated_refund = False
         else:
+            # Las clases individuales no generan crédito: si tenían un pago aprobado,
+            # el mensaje simula un reembolso sin que exista devolución de dinero real.
             credit = result.get("credit")
             credit_generated = result.get("credit_generated")
+            simulated_refund = _has_approved_payment(enrollment_to_cancel)
     else:
         # Es una clase mensual implícita: debemos "materializarla" para poder cancelarla y liberar el cupo de ese día
         month_start = datetime(class_obj.fecha_hora.year, class_obj.fecha_hora.month, 1)
@@ -1865,6 +1871,7 @@ def cancel_class_attendance(class_id):
         
         credit = None
         credit_generated = False
+        simulated_refund = False
 
         if parent_enr.estado == Enrollment.STATUS_PAID:
             credit = credit_service.generate_credit_for_paid_enrollment(
@@ -1882,14 +1889,15 @@ def cancel_class_attendance(class_id):
 
     _promote_waitlist_for_class(class_obj)
 
-    email_sent = False
-    if credit:
+    if credit_generated:
         email_sent = send_credit_generated_email(enrollment.user, class_obj, credit)
-
-    message = (
-        "Te diste de baja del turno correctamente. Se te generó un crédito para futuras reservas."
-        if credit_generated else "Te diste de baja del turno correctamente."
-    )
+        message = "Te diste de baja del turno correctamente. Se te generó un crédito para futuras reservas."
+    elif simulated_refund:
+        email_sent = send_refund_email(enrollment.user, class_obj)
+        message = "Te diste de baja del turno correctamente. Se te reembolsó el dinero."
+    else:
+        email_sent = send_class_cancelled_email(enrollment.user, class_obj, credit_generated=False)
+        message = "Te diste de baja del turno correctamente."
     
     return api_success({
         "message": message, "class_id": class_obj.id, "credit_generated": credit_generated,

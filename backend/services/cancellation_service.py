@@ -2,6 +2,7 @@ import logging
 
 try:
     from models import Enrollment, db
+    from constants import ENROLLMENT_TYPE_MONTHLY
     from services.payment_service import (
         class_has_finished,
         expire_pending_payments_for_enrollment,
@@ -12,6 +13,7 @@ try:
     from services.enrollment_service import enrollment_is_cancelable
 except ModuleNotFoundError:
     from ..models import Enrollment, db
+    from ..constants import ENROLLMENT_TYPE_MONTHLY
     from .payment_service import (
         class_has_finished,
         expire_pending_payments_for_enrollment,
@@ -70,7 +72,13 @@ def cancel_enrollment(enrollment, current_user, current_dt, skip_credit_generati
         return None, "La inscripción solo puede cancelarse hasta 24 horas antes del inicio de la clase", 400
 
     recompute_enrollment_payment_state(enrollment, current_dt)
-    should_generate_credit = not skip_credit_generation and has_approved_payment(enrollment)
+    # Los créditos reutilizables sólo existen para bajas dentro de una suscripción mensual;
+    # las clases individuales no generan crédito (ver mensaje de baja simulando un reembolso).
+    should_generate_credit = (
+        not skip_credit_generation
+        and enrollment.tipo == ENROLLMENT_TYPE_MONTHLY
+        and has_approved_payment(enrollment)
+    )
 
     credit = None
     if should_generate_credit:
