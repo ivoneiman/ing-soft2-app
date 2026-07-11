@@ -151,8 +151,11 @@
       <div class="modal">
         <h2>Confirmar Baja</h2>
         <p>¿Seguro querés cancelar tu asistencia a la clase de <strong>{{ selectedClass.actividad }}</strong> del <strong>{{ formatDateTime(selectedClass.fecha_hora) }}</strong>?</p>
-        <p class="warning">
+        <p class="warning" v-if="selectedClass.tipo === 'Mensual'">
           Se generará un <strong>crédito para anotarte a una clase individual</strong> de la misma actividad y liberarás el cupo para alguien más.
+        </p>
+        <p class="warning" v-else>
+          Se te <strong>reembolsará el dinero</strong> de esta inscripción y liberarás el cupo para alguien más.
         </p>
         <div class="modal-actions">
           <button class="secondary-button" @click="selectedClass = null">Cerrar</button>
