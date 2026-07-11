@@ -360,13 +360,6 @@ export function getMyCredits() {
   );
 }
 
-export function getMyNotifications() {
-  return axios.get(
-    `${API_URL}/notifications/my`,
-    REQUEST_CONFIG
-  );
-}
-
 export function applyClassDiscount(classId, descuento) {
   return axios.put(
     `${API_URL}/classes/${classId}/discount`,

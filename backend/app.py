@@ -31,9 +31,9 @@ try:
     from mercadopago_config import get_mercadopago_client
     from models import db, User
     # Importar todos los modelos requeridos
-    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry
+    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Payment, SystemSetting, WaitlistEntry
     # Importar todos los modelos requeridos, incluyendo Profesor
-    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Notification, Payment, SystemSetting, WaitlistEntry, Profesor
+    from models import Class, Enrollment, Attendance, Actividades, Credit, Credito, Payment, SystemSetting, WaitlistEntry, Profesor
     from constants import (
         DISCOUNT_PERCENTAGES,
         ENROLLMENT_STATUS_PENDING_PAYMENT,
@@ -56,7 +56,7 @@ try:
         PAYMENT_RETURN_STATUS_PENDING,
         PAYMENT_RETURN_STATUS_SUCCESS,
     )
-    from services import cancellation_service, class_service, credit_service, enrollment_service, notification_service, payment_service, waitlist_service
+    from services import cancellation_service, class_service, credit_service, enrollment_service, payment_service, waitlist_service
     from services.api_response import api_error, api_success
 except ModuleNotFoundError:
     from .email_service import (
@@ -91,7 +91,7 @@ except ModuleNotFoundError:
         PAYMENT_RETURN_STATUS_PENDING,
         PAYMENT_RETURN_STATUS_SUCCESS,
     )
-    from .services import cancellation_service, class_service, credit_service, enrollment_service, notification_service, payment_service, waitlist_service
+    from .services import cancellation_service, class_service, credit_service, enrollment_service, payment_service, waitlist_service
     from .services.api_response import api_error, api_success
 
 # Carga variables de entorno desde .env
@@ -345,14 +345,6 @@ def upgrade_database_schema():
         })
         db.session.commit()
 
-    if "notifications" in inspector.get_table_names():
-        columns = [column["name"] for column in inspector.get_columns("notifications")]
-        if "read" not in columns:
-            db.session.execute(text("ALTER TABLE notifications ADD COLUMN read BOOLEAN DEFAULT 0"))
-        if "created_at" not in columns:
-            db.session.execute(text("ALTER TABLE notifications ADD COLUMN created_at DATETIME"))
-        db.session.commit()
-
 # ─── Crear tablas e insertar actividades base ───────────────────────────────────────────────────
 
 def ensure_default_activities():
@@ -563,10 +555,6 @@ def _available_credit_for_user_activity(user_id, activity_id, tipo, current_date
 
 def _consume_credit_for_enrollment(credit, enrollment, current_datetime=None):
     return credit_service.consume_credit_for_enrollment(credit, enrollment, current_datetime)
-
-
-def _create_cancellation_notification(enrollment, class_obj, credited):
-    return notification_service.create_cancellation_notification(enrollment, class_obj, credited)
 
 
 def _credit_exists_for_cancelled_enrollment(enrollment, class_obj):
@@ -966,7 +954,6 @@ def _promote_waitlist_for_class(class_obj):
                 db.session.add(new_enrollment)
 
             db.session.delete(next_in_waitlist)
-            notification_service.create_waitlist_promotion_notification(user_to_promote, class_obj)
             db.session.commit()
 
             other_pending_enrollments = Enrollment.query.filter(
@@ -2320,16 +2307,6 @@ def my_credits():
     return api_success({"credits": payload}, status_code=200)
 
 
-@app.route("/api/notifications/my", methods=["GET"])
-def my_notifications():
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-
-    notifications = notification_service.notifications_for_user(current_user.id)
-    return api_success({"notifications": [notification.to_dict() for notification in notifications]}, status_code=200)
-
-
 @app.route("/api/profesores", methods=["POST"])
 def create_profesor():
     """Crea un nuevo profesor."""
@@ -2983,7 +2960,6 @@ def cancelar_clase_staff(clase_id):
         "class_name": class_obj.name,
         "estado": Class.STATUS_CANCELLED,
         "credits_created": cancellation["credits_created"],
-        "notifications_created": cancellation["notifications_created"],
         "emails_sent": len(valid_email_jobs),
     }), 200
 

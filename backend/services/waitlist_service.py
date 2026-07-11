@@ -14,7 +14,6 @@ try:
     )
     from services.class_service import enrollment_counts
     from services.enrollment_service import class_capacity
-    from services.notification_service import create_waitlist_promotion_notification
 except ModuleNotFoundError:
     from ..models import Class, Enrollment, WaitlistEntry, db
     from ..email_service import send_waitlist_promotion_email
@@ -27,7 +26,6 @@ except ModuleNotFoundError:
     )
     from .class_service import enrollment_counts
     from .enrollment_service import class_capacity
-    from .notification_service import create_waitlist_promotion_notification
 
 logger = logging.getLogger(__name__)
 
@@ -238,7 +236,6 @@ def promote_next_waitlisted_user(class_obj):
             db.session.delete(entry)
             db.session.flush()
 
-            notification = create_waitlist_promotion_notification(user, class_obj)
             pending_payments = get_pending_payments_for_user(user, exclude_class_id=class_obj.id)
             email_sent = send_waitlist_promotion_email(user, class_obj, pending_payments=pending_payments)
 
@@ -255,7 +252,6 @@ def promote_next_waitlisted_user(class_obj):
                 "user": user,
                 "class_obj": class_obj,
                 "enrollment": enrollment,
-                "notification": notification,
                 "email_sent": email_sent,
             }
 

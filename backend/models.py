@@ -306,30 +306,6 @@ class Profesor(db.Model):
             "apellido": self.apellido,
         }
 
-class Notification(db.Model):
-    """Notificación simple para avisos visibles en la cuenta del usuario."""
-    __tablename__ = "notifications"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    title = db.Column(db.String(160), nullable=False)
-    message = db.Column(db.Text, nullable=False)
-    read = db.Column(db.Boolean, default=False, nullable=False)
-    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
-
-    user = db.relationship("User", backref=db.backref("notifications", cascade="all, delete-orphan"))
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "title": self.title,
-            "message": self.message,
-            "read": self.read,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
-
-
 class Payment(db.Model):
     """Registro base de pagos iniciados desde el sistema."""
     __tablename__ = "payments"

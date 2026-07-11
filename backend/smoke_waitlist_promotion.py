@@ -10,7 +10,7 @@ from constants import (
     WAITLIST_TYPE_INDIVIDUAL,
     WAITLIST_TYPE_MONTHLY,
 )
-from models import Actividades, Attendance, Class, Enrollment, Notification, Payment, User, WaitlistEntry
+from models import Actividades, Attendance, Class, Enrollment, Payment, User, WaitlistEntry
 from services import waitlist_service
 
 
@@ -132,7 +132,6 @@ def main():
             assert_equal("monthly promoted pending", promoted.estado, ENROLLMENT_STATUS_PENDING_PAYMENT)
             assert_equal("monthly promoted type", promoted.tipo, ENROLLMENT_TYPE_MONTHLY)
             assert_equal("individual remains waitlisted", WaitlistEntry.query.filter_by(user_id=individual_id, class_id=priority_class_id).count(), 1)
-            assert_true("promotion notification", Notification.query.filter_by(user_id=monthly_id, title="Cupo disponible").first())
             assert_equal("promotion email sent", len(sent_emails), 1)
             set_session_user(http, monthly_id)
             pending_res = http.get("/api/enrollments/pending")
@@ -222,7 +221,6 @@ def main():
                 Payment.query.filter_by(enrollment_id=enrollment_id).delete()
                 enrollment = db.session.get(Enrollment, enrollment_id)
                 if enrollment:
-                    Notification.query.filter_by(user_id=enrollment.user_id).delete()
                     Attendance.query.filter_by(user_id=enrollment.user_id, class_id=enrollment.class_id).delete()
                     db.session.delete(enrollment)
             for _, class_id in [item for item in reversed(created) if item[0] == "class"]:
@@ -231,7 +229,6 @@ def main():
                 if class_obj:
                     db.session.delete(class_obj)
             for _, user_id in [item for item in reversed(created) if item[0] == "user"]:
-                Notification.query.filter_by(user_id=user_id).delete()
                 user = db.session.get(User, user_id)
                 if user:
                     db.session.delete(user)

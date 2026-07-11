@@ -1,7 +1,6 @@
 export const PAYMENT_TAB = {
   HISTORY: 'history',
   CREDITS: 'credits',
-  NOTIFICATIONS: 'notifications',
   ADMIN: 'admin',
 };
 
