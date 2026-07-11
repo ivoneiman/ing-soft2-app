@@ -474,8 +474,8 @@ def create_client_credit_examples(client, actividad_pilates, profesor, today):
 
 def create_client_monthly_subscription(client, actividad_pilates, profesor, today):
     """Crea una suscripcion mensual paga de Pilates para client@test.com, con varias
-    clases en el mismo mes/horario, para poder probar la baja de un solo dia (credito
-    individual) vs. la baja de toda la suscripcion (credito mensual)."""
+    clases en el mismo mes/horario, para poder probar la baja dia por dia (cada baja
+    otorga un credito individual para anotarse a otra clase de la misma actividad)."""
     print("Creando suscripcion mensual de Pilates para client@test.com...")
 
     # Primer miercoles a partir de pasado mañana, a las 09:00hs.
@@ -516,8 +516,8 @@ def create_client_monthly_subscription(client, actividad_pilates, profesor, toda
     print(
         f"   [INFO] Suscripcion mensual creada: {len(monthly_classes)} clase(s) los "
         f"miercoles a las 09:00 en {actividad_pilates.name}. Para probar creditos desde "
-        "Mis Clases: dar de baja UN dia del grupo mensual -> credito tipo 'individual'; "
-        "dar de baja 'Cancelar suscripcion completa' -> credito tipo 'mensual'."
+        "Mis Clases: dar de baja cualquiera de esos dias (uno o todos, de a uno por vez) "
+        "-> cada baja otorga un credito individual para anotarse otro dia a la misma actividad."
     )
 
 

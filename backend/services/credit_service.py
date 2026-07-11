@@ -143,7 +143,10 @@ def generate_credit_for_paid_enrollment(enrollment, class_obj, current_dt=None, 
         expires_at=credit_expiration_from(current_dt),
         used=False,
         estado=CREDIT_STATUS_AVAILABLE,
-        tipo=tipo or getattr(enrollment, "tipo", None) or ENROLLMENT_TYPE_SINGLE,
+        # Los créditos son siempre por clase individual, sin importar si la inscripción
+        # cancelada era mensual: se cancela día por día y cada día otorga un crédito
+        # para anotarse a otra clase individual de la misma actividad.
+        tipo=tipo or ENROLLMENT_TYPE_SINGLE,
     )
     db.session.add(credit)
     logger.info(

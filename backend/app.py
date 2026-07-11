@@ -2231,59 +2231,6 @@ def cancel_enrollment(enrollment_id):
     }, message=message, status_code=200)
 
 
-@app.route("/api/enrollments/<int:enrollment_id>/cancel-monthly-subscription", methods=["POST"])
-def cancel_monthly_subscription(enrollment_id):
-    """Cancela el resto de una suscripción mensual completa (a diferencia de /cancel,
-    que sobre una inscripción mensual solo desplaza el parent y da de baja un día).
-    """
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-
-    enrollment = Enrollment.query.get(enrollment_id)
-    if enrollment and enrollment.tipo != ENROLLMENT_TYPE_MONTHLY:
-        return api_error("Esta inscripción no es una suscripción mensual", 400)
-
-    current_datetime = _current_discount_datetime()
-    # A diferencia de /cancel, acá NO desplazamos el parent: queremos cancelar toda
-    # la suscripción de una vez, no saltear solo el próximo día.
-    result, error, status_code = cancellation_service.cancel_enrollment(enrollment, current_user, current_datetime)
-    if error:
-        return api_error(error, status_code)
-
-    class_obj = result["class"]
-    credit = result["credit"]
-
-    try:
-        db.session.commit()
-    except Exception as err:
-        db.session.rollback()
-        logger.exception("[Cancelaciones] error suscripción mensual enrollment_id=%s", enrollment_id)
-        return jsonify({"error": "Error interno al procesar la cancelación", "details": str(err)}), 500
-
-    email_sent = False
-    if credit:
-        email_sent = send_credit_generated_email(enrollment.user, class_obj, credit)
-
-    _promote_waitlist_for_class(class_obj)
-
-    message = (
-        "Tu suscripción mensual fue cancelada correctamente. Se generó un crédito para otra suscripción mensual."
-        if result["credit_generated"]
-        else "Tu suscripción mensual fue cancelada correctamente."
-    )
-    return api_success({
-        "message": message,
-        "enrollment_id": enrollment.id,
-        "estado": enrollment.estado,
-        "payment_status": enrollment.payment_status,
-        "credit_generated": result["credit_generated"],
-        "credit": credit_service.credit_payload(credit, current_datetime) if credit else None,
-        "email_sent": email_sent,
-        "pending_payments_expired": result["pending_payments_expired"],
-    }, message=message, status_code=200)
-
-
 @app.route("/api/enrollments/<int:enrollment_id>/waitlist-decline", methods=["POST"])
 def decline_waitlist_offer(enrollment_id):
     """Permite a un cliente 'arrepentirse' de un cupo ofrecido por promoción de lista de espera.
