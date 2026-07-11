@@ -68,10 +68,7 @@
             <th>Fecha y Hora</th>
             <th>Cliente</th>
             <th>Actividad</th>
-            <th>Método</th>
-            <th>Tipo de Pago</th>
             <th>Monto</th>
-            <th>Estado</th>
           </tr>
         </thead>
         <tbody>
@@ -79,21 +76,9 @@
             <td>{{ formatDateTime(pay.created_at) }}</td>
             <td class="bold">{{ pay.user?.apellido }} {{ pay.user?.username }}</td>
             <td>{{ pay.actividad || '-' }}</td>
-            <td>{{ paymentMethodLabel(pay.payment_method) }}</td>
-            <td>{{ paymentTypeLabel(pay.payment_type) }}</td>
             <td class="bold money">
               <span v-if="isCancelled(pay)">-</span>
               <span v-else>{{ formatMoney(pay.final_amount) }}</span>
-            </td>
-            <td>
-              <template v-if="isCancelled(pay)">
-                <span v-if="pay.requiere_reembolso" class="status-pill expired">Cancelada (Reembolso pdte.)</span>
-                <span v-else-if="pay.payment_method !== '-'" class="status-pill expired">Cancelada (Créditos)</span>
-                <span v-else class="status-pill expired">Cancelada</span>
-              </template>
-              <template v-else>
-                <span :class="['status-pill', pay.status]">{{ paymentStatusLabel(pay.status) }}</span>
-              </template>
             </td>
           </tr>
         </tbody>
