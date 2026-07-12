@@ -2017,8 +2017,24 @@ def create_enrollment():
 
     # Solo limpiamos la lista de espera si la inscripción efectivamente prospera;
     # si el resultado es "full" el usuario conserva su lugar en la lista de espera.
+    series_waitlist_entries = []
     if result != "full":
         WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=class_obj.id).delete()
+
+        # La inscripción mensual cubre todas las semanas del mes en ese horario. Si esta
+        # clase (la elegida) tenía cupo pero alguna otra semana de la serie ya está llena,
+        # hay que anotar al usuario en la lista de espera de esas semanas puntuales;
+        # si no, quedaría "inscripto" en clases llenas sin que nadie lo note.
+        if data.get("tipo") == ENROLLMENT_TYPE_MONTHLY:
+            series_waitlist_entries = waitlist_service.create_monthly_waitlist_for_full_series(
+                current_user, class_obj, enrollment_map
+            )
+
+    series_waitlist_note = (
+        f" {len(series_waitlist_entries)} fecha(s) de este horario ya no tenían cupo: "
+        "te anotamos en la lista de espera para esas semanas."
+        if series_waitlist_entries else ""
+    )
 
     if result == "already_paid":
         db.session.commit()
@@ -2072,11 +2088,12 @@ def create_enrollment():
         return _credit_enrollment_response(enrollment, credit, current_datetime, 201)
 
     db.session.commit()
+    final_message = "Inscripción creada. Podés completar el pago ahora o más adelante." + series_waitlist_note
     return api_success({
-        "message": "Inscripción creada. Podés completar el pago ahora o más adelante.",
+        "message": final_message,
         "enrollment": _enrollment_payload(enrollment, current_datetime),
         "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
-    }, message="Inscripción creada. Podés completar el pago ahora o más adelante.", status_code=201)
+    }, message=final_message, status_code=201)
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
