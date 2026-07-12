@@ -549,10 +549,15 @@ def payment_error_message(status_detail):
     return "Error del servidor de pagos"
 
 
-def frontend_payments_url(status, message=None):
+def frontend_payments_url(status, message=None, enrollment_id=None, is_waitlist_offer=False):
     base_url = os.getenv('FRONTEND_PAYMENTS_URL', DEFAULT_FRONTEND_PAYMENTS_URL)
     parsed = urlparse(base_url)
-    target_path = "/mis-clases" if status == "success" else "/actividades"
+    if status == "success":
+        target_path = "/mis-clases"
+    elif is_waitlist_offer and enrollment_id:
+        target_path = f"/lista-espera/oferta/{enrollment_id}"
+    else:
+        target_path = "/actividades"
     if parsed.scheme and parsed.netloc:
         base_url = urlunparse((parsed.scheme, parsed.netloc, target_path, "", "", ""))
     else:

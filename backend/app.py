@@ -675,8 +675,10 @@ def _payment_error_message(status_detail):
     return payment_service.payment_error_message(status_detail)
 
 
-def _frontend_payments_url(status, message=None):
-    return payment_service.frontend_payments_url(status, message)
+def _frontend_payments_url(status, message=None, enrollment_id=None, is_waitlist_offer=False):
+    return payment_service.frontend_payments_url(
+        status, message, enrollment_id=enrollment_id, is_waitlist_offer=is_waitlist_offer
+    )
 
 
 def _configured_url(name, default):
@@ -894,7 +896,12 @@ def _apply_mercado_pago_status(payment, mercado_pago_status, status_detail=None,
 
     payment.status = Payment.STATUS_REJECTED
     if payment.enrollment:
-        payment.enrollment.estado = Enrollment.STATUS_CANCELLED
+        is_pending_waitlist_offer = (
+            payment.enrollment.waitlist_promoted_at is not None
+            and payment.enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT
+        )
+        if not is_pending_waitlist_offer:
+            payment.enrollment.estado = Enrollment.STATUS_CANCELLED
         payment_service.recompute_enrollment_payment_state(payment.enrollment, current_datetime)
     return PAYMENT_RETURN_STATUS_FAILURE, _payment_error_message(status_detail)
 
@@ -3417,7 +3424,18 @@ def mercado_pago_return(result):
         payment.status,
         redirect_status,
     )
-    return redirect(_frontend_payments_url(redirect_status, message))
+
+    is_waitlist_offer = bool(
+        payment.enrollment
+        and payment.enrollment.waitlist_promoted_at
+        and payment.enrollment.estado == Enrollment.STATUS_PENDING_PAYMENT
+    )
+    return redirect(_frontend_payments_url(
+        redirect_status,
+        message,
+        enrollment_id=payment.enrollment_id if is_waitlist_offer else None,
+        is_waitlist_offer=is_waitlist_offer,
+    ))
 
 
 @app.route("/api/payments/webhook", methods=["POST", "GET"])

@@ -94,6 +94,15 @@ const declined = ref(false);
 const errorMessage = ref('');
 const showConfirmModal = ref(false);
 
+function readPaymentReturnMessage() {
+  const status = route.query.status;
+  if (status === 'failure') {
+    errorMessage.value = route.query.message || 'No se ha realizado el pago correctamente, no se pudo llevar a cabo la inscripción';
+  } else if (status === 'pending') {
+    errorMessage.value = route.query.message || 'Tu pago quedó pendiente de confirmación. Podés reintentarlo cuando quieras.';
+  }
+}
+
 async function loadOffer() {
   isLoading.value = true;
   try {
@@ -146,7 +155,10 @@ async function regretNow() {
   }
 }
 
-onMounted(() => { loadOffer(); });
+onMounted(() => {
+  readPaymentReturnMessage();
+  loadOffer();
+});
 </script>
 
 <style scoped>
