@@ -92,15 +92,18 @@
           <h2 class="step-title"><span class="step-num">5</span> Profesor</h2>
           <select v-model="form.profesor_id" class="profesor-select">
             <option :value="null" disabled>Seleccione un profesor</option>
-            <option 
-              v-for="profesor in profesores" 
-              :key="profesor.id" 
+            <option
+              v-for="profesor in profesoresDeLaActividad"
+              :key="profesor.id"
               :value="profesor.id"
               :disabled="!isProfesorAvailable(profesor.id)"
             >
               {{ profesor.nombre }} {{ profesor.apellido }} {{ !isProfesorAvailable(profesor.id) ? '(Ocupado)' : '' }}
             </option>
           </select>
+          <p v-if="profesoresDisponiblesDeLaActividad.length === 0" class="info-box">
+            No hay profesores cargados para {{ selectedActivityName }} en el horario seleccionado.
+          </p>
         </section>
 
         <!-- Paso 6: Cupos -->
@@ -179,6 +182,15 @@ const selectedProfesorName = computed(() => {
   return profesor ? `${profesor.nombre} ${profesor.apellido}` : null;
 });
 
+const profesoresDeLaActividad = computed(() => {
+  if (!form.activity_id) return [];
+  return profesores.value.filter(p => p.id_actividad === Number(form.activity_id));
+});
+
+const profesoresDisponiblesDeLaActividad = computed(() => {
+  return profesoresDeLaActividad.value.filter(p => isProfesorAvailable(p.id));
+});
+
 const getWeekdayName = (dayIndex) => {
   if (dayIndex === null) return "";
   const days = ["Domingos", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábados"];
@@ -201,6 +213,7 @@ const loadOccupiedClasses = async () => {
 
 const selectActivity = (id) => {
   form.activity_id = id;
+  form.profesor_id = null;
   loadOccupiedClasses();
   selectedDayOfWeek.value = null;
   selectedSlot.value = "";

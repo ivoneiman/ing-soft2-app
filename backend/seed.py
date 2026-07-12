@@ -93,13 +93,16 @@ def create_test_user(username, apellido, email, password, dni, telefono, role="c
     print(f"   [OK] Usuario creado: {email} ({role})")
     return user
 
-def create_test_profesor(nombre, apellido):
+def create_test_profesor(nombre, apellido, actividad):
     """Crea un profesor de prueba si no existe."""
     if profesor_exists(nombre, apellido):
         print(f"   [SKIP] Profesor {nombre} {apellido} ya existe, omitiendo...")
-        return Profesor.query.filter_by(nombre=nombre, apellido=apellido).first()
-    
-    profesor = Profesor(nombre=nombre, apellido=apellido)
+        profesor = Profesor.query.filter_by(nombre=nombre, apellido=apellido).first()
+        if profesor.id_actividad != actividad.id:
+            profesor.id_actividad = actividad.id
+        return profesor
+
+    profesor = Profesor(nombre=nombre, apellido=apellido, id_actividad=actividad.id)
     db.session.add(profesor)
     db.session.flush()
     print(f"   [OK] Profesor creado: {nombre} {apellido}")
@@ -509,18 +512,31 @@ def main():
         db.session.commit()
         print()
 
-        # ─── Crear profesor de prueba ───────────────────────────────────────
-        print("Creando profesor de prueba...")
-        profesor_test = create_test_profesor("Gustavo", "Martinez")
-        db.session.commit()
-        print()
-
         # ─── Crear actividades de prueba ───────────────────────────────────
 
         print("Creando actividades de prueba...")
         actividad1 = create_test_actividad("Yoga")
         actividad2 = create_test_actividad("Funcional")
         actividad3 = create_test_actividad("Pilates")
+
+        db.session.commit()
+        print()
+
+        # ─── Crear profesores de prueba ─────────────────────────────────────
+        # Un profesor por actividad con clases seedeadas (Pilates y Funcional).
+        # Yoga queda sin profesor a propósito, para crearlo en vivo durante la demo.
+        print("Creando profesores de prueba...")
+        profesor_pilates = create_test_profesor("Martina", "Sosa", actividad3)
+        profesor_funcional = create_test_profesor("Diego", "Fernandez", actividad2)
+
+        # El seed usaba antes un único profesor genérico para todas las clases;
+        # se elimina y se reasignan sus clases al profesor de Pilates para no
+        # dejar referencias colgantes.
+        profesor_generico = Profesor.query.filter_by(nombre="Gustavo", apellido="Martinez").first()
+        if profesor_generico:
+            Class.query.filter_by(profesor_id=profesor_generico.id).update({"profesor_id": profesor_pilates.id})
+            db.session.delete(profesor_generico)
+            print("   [OK] Profesor genérico 'Gustavo Martinez' eliminado (reemplazado por profesores por actividad)")
 
         db.session.commit()
         print()
@@ -575,7 +591,7 @@ def main():
             "Pilates - Clase Individual (Cupo Disponible)",
             at_app_time(today + timedelta(days=3), 20),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=20,
             legacy_names=["Pilates", "Pilates Noche"],
         )
@@ -585,7 +601,7 @@ def main():
             "Pilates - Clase Limitada (1 Cupo)",
             at_app_time(today + timedelta(days=7), 11),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=1,
             legacy_names=["Pilates Limitado"]
         )
@@ -595,7 +611,7 @@ def main():
             "Pilates - Clase Sin Cupo (Llena)",
             at_app_time(today + timedelta(days=9), 18),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=1,
             legacy_names=["Pilates Sin Cupo"],
         )
@@ -605,7 +621,7 @@ def main():
             "Pilates - Oferta Lista de Espera (Demo)",
             at_app_time(today + timedelta(days=5), 12),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=1,
         )
 
@@ -619,14 +635,14 @@ def main():
             "Pilates - Serie Mensual Semana 1 (Cupo Disponible)",
             at_app_time(serie_mensual_semana1_fecha, 16),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=5,
         )
         class_serie_mensual_semana2 = create_test_class(
             "Pilates - Serie Mensual Semana 2 (Llena)",
             at_app_time(serie_mensual_semana1_fecha + timedelta(days=7), 16),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=1,
         )
 
@@ -635,7 +651,7 @@ def main():
             "Pilates - Prueba Cupos (19/20)",
             at_app_time(today + timedelta(days=8), 19),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=20,
             legacy_names=["Yoga - Prueba Cupos (19/20)", "Yoga Prueba 19 Cupos"]
         )
@@ -646,7 +662,7 @@ def main():
             "Pilates - 29 Junio 2026 (Asistencia)",
             datetime(2026, 6, 29, 10, 0),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=20,
             legacy_names=["Yoga - 29 Junio 2026", "Yoga 29/06/2026"]
         )
@@ -656,7 +672,7 @@ def main():
             "Pilates - 29 Junio 2026 (Sin Inscriptos)",
             datetime(2026, 6, 29, 18, 0),
             actividad3,
-            profesor_test.id,
+            profesor_pilates.id,
             cupo_maximo=20,
             legacy_names=["Pilates - 29 Junio 2026", "Pilates 29/06/2026"]
         )
@@ -755,13 +771,13 @@ def main():
 
         # ─── Casos para probar créditos por cancelación (individual) ────────
 
-        create_client_credit_examples(client, actividad3, profesor_test, today)
+        create_client_credit_examples(client, actividad3, profesor_pilates, today)
         db.session.commit()
         print()
 
         # ─── Suscripción mensual paga para probar créditos (mensual) ────────
 
-        create_client_monthly_subscription(client, actividad3, profesor_test, today)
+        create_client_monthly_subscription(client, actividad3, profesor_pilates, today)
         db.session.commit()
         print()
 

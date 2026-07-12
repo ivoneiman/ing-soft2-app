@@ -300,12 +300,17 @@ class Profesor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(80), nullable=False)
     apellido = db.Column(db.String(80), nullable=False)
+    id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=True)
+
+    actividad = db.relationship("Actividades")
 
     def to_dict(self):
         return {
             "id": self.id,
             "nombre": self.nombre,
             "apellido": self.apellido,
+            "id_actividad": self.id_actividad,
+            "actividad_nombre": self.actividad.name if self.actividad else None,
         }
 
 class Payment(db.Model):

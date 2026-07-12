@@ -5,6 +5,7 @@
       <div class="modal-content" @click.stop>
         <h3 class="modal-title">Información de {{ selectedProfesor.nombre }} {{ selectedProfesor.apellido }}</h3>
         <div class="modal-body">
+          <p><strong>Actividad:</strong> {{ selectedProfesor.actividad_nombre || 'Sin asignar' }}</p>
           <h4>Clases Asignadas</h4>
           <ul v-if="selectedProfesor.clases_resumen && selectedProfesor.clases_resumen.length > 0" class="clases-list">
             <li v-for="(resumen, index) in selectedProfesor.clases_resumen" :key="index" v-html="resumen"></li>
@@ -40,6 +41,7 @@
               <th>ID</th>
               <th>Nombre</th>
               <th>Apellido</th>
+              <th>Actividad</th>
               <th class="actions-column">Acciones</th>
             </tr>
           </thead>
@@ -48,6 +50,7 @@
               <td>{{ profesor.id }}</td>
               <td>{{ profesor.nombre }}</td>
               <td>{{ profesor.apellido }}</td>
+              <td>{{ profesor.actividad_nombre || 'Sin asignar' }}</td>
               <td class="actions-column">
                <button @click="showInfo(profesor)" class="btn-action btn-info">Ver Info</button>
                 <RouterLink :to="`/admin/profesores/editar/${profesor.id}`" class="btn-action btn-edit">Editar</RouterLink>

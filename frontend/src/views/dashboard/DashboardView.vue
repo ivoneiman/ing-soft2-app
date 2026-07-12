@@ -170,7 +170,7 @@
         <div class="form-group-modal">
           <label for="edit-profesor">Profesor</label>
           <select id="edit-profesor" v-model="formEdicion.profesor_id">
-            <option v-for="profesor in profesores" :key="profesor.id" :value="profesor.id">
+            <option v-for="profesor in profesoresDeLaClaseAEditar" :key="profesor.id" :value="profesor.id">
               {{ profesor.nombre }} {{ profesor.apellido }}
             </option>
           </select>
@@ -676,6 +676,11 @@ function abrirConfirmacionCancelacion(clase) {
 function cerrarConfirmacionCancelacion() {
   claseSeleccionada.value = null;
 }
+
+const profesoresDeLaClaseAEditar = computed(() => {
+  if (!claseParaEditar.value) return [];
+  return profesores.value.filter(p => p.id_actividad === claseParaEditar.value.id_actividad);
+});
 
 function abrirModalEdicion(clase) {
   editFeedbackMessage.value = ""; // Limpiar mensaje de error al abrir

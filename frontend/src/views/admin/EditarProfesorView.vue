@@ -13,6 +13,8 @@
       <form @submit.prevent="handleSubmit" class="form-container">
         <div v-if="profesorActual" class="current-info">
           <strong>Nombre y Apellido actuales:</strong> {{ profesorActual.nombre }} {{ profesorActual.apellido }}
+          <br />
+          <strong>Actividad actual:</strong> {{ profesorActual.actividad_nombre || 'Sin asignar' }}
         </div>
 
         <div class="input-group">
@@ -39,6 +41,21 @@
           />
         </div>
 
+        <div class="input-group">
+          <label for="actividad">Actividad</label>
+          <select
+            id="actividad"
+            v-model="form.id_actividad"
+            required
+            :disabled="loading || loadError"
+          >
+            <option :value="null" disabled>Seleccione una actividad</option>
+            <option v-for="actividad in actividades" :key="actividad.id" :value="actividad.id">
+              {{ actividad.name }}
+            </option>
+          </select>
+        </div>
+
         <div v-if="errorMessage" class="msg error">{{ errorMessage }}</div>
         <div v-if="successMessage" class="msg success">{{ successMessage }}</div>
 
@@ -59,6 +76,7 @@
 import { reactive, ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
+import { getActivities } from '@/services/api.js';
 
 const route = useRoute();
 const router = useRouter();
@@ -67,9 +85,11 @@ const profesorId = route.params.id;
 const form = reactive({
   nombre: '',
   apellido: '',
+  id_actividad: null,
 });
 
 const profesorActual = ref(null);
+const actividades = ref([]);
 const initialLoading = ref(true);
 const loading = ref(false);
 const loadError = ref(false);
@@ -80,9 +100,14 @@ const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 onMounted(async () => {
   try {
-    const response = await axios.get(`${baseURL}/profesores/${profesorId}`, { withCredentials: true });
-    const profesor = response.data.profesor;
+    const [profesorResponse, actividadesResponse] = await Promise.all([
+      axios.get(`${baseURL}/profesores/${profesorId}`, { withCredentials: true }),
+      getActivities(),
+    ]);
+    const profesor = profesorResponse.data.profesor;
     profesorActual.value = profesor;
+    form.id_actividad = profesor.id_actividad;
+    actividades.value = actividadesResponse.data || [];
   } catch (err) {
     loadError.value = true;
     errorMessage.value = err.response?.data?.error || 'No se pudieron cargar los datos del profesor.';
