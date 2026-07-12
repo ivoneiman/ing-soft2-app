@@ -14,48 +14,9 @@
         Entrenamientos personalizados, profesores especializados
         y una comunidad que te impulsa a dar siempre un paso más.
       </p>
-
-      <div class="hero-buttons">
-        <button class="btn-primary" @click="handleAsociateClick">
-          {{ authStore.isLoggedIn ? 'PERFIL' : 'ASOCIATE' }}
-        </button>
-        <button class="btn-secondary" @click="handleActividadesClick" >ACTIVIDADES</button>
-      </div>
     </div>
   </section>
 </template>
-
-<script setup>
-import { useRouter } from 'vue-router'
-import { authStore } from '../../services/authStore'
-
-const router = useRouter()
-
-// Función para manejar el click del botón ASOCIATE
-const handleAsociateClick = () => {
-  if (authStore.isLoggedIn) {
-    // Si está autenticado, ir a editar perfil
-    router.push('/configuracion')
-  } else {
-    // Si no está autenticado, ir a register
-    router.push('/register')
-  }
-}
-
-// Función para manejar el click del botón ACTIVIDADES
-const handleActividadesClick = () => {
-  if (!authStore.isLoggedIn) {
-    router.push('/actividades')
-  } else if (
-    authStore.user.role === 'admin' ||
-    authStore.user.role === 'employee'
-  ) {
-    router.push('/dashboard')
-  } else {
-    router.push('/actividades')
-  }
-}
-</script>
 
 <style scoped>
 .hero {
@@ -105,22 +66,6 @@ const handleActividadesClick = () => {
   max-width: 90%;
 }
 
-/* Botones */
-.hero-buttons {
-  display: flex;
-  gap: 16px;
-  background-color: transparent;
-  flex-wrap: wrap;
-}
-
-.btn-primary {
-  padding-inline: 28px;
-}
-
-.btn-secondary {
-  padding-inline: 28px;
-}
-
 /* ==========================================
    MEDIA QUERIES - TABLET (1024px)
    ========================================== */
@@ -133,11 +78,6 @@ const handleActividadesClick = () => {
 
   .hero-subtitle {
     font-size: 14px;
-  }
-
-  .btn-primary,
-  .btn-secondary {
-    padding-inline: 20px;
   }
 }
 
@@ -172,17 +112,6 @@ const handleActividadesClick = () => {
     margin-bottom: 24px;
     max-width: 100%;
   }
-
-  .hero-buttons {
-    justify-content: center;
-    gap: 12px;
-  }
-
-  .btn-primary,
-  .btn-secondary {
-    flex: 1;
-    max-width: 150px;
-  }
 }
 
 /* ==========================================
@@ -208,17 +137,6 @@ const handleActividadesClick = () => {
   .hero-subtitle {
     font-size: 12px;
     margin-bottom: 16px;
-  }
-
-  .hero-buttons {
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .btn-primary,
-  .btn-secondary {
-    width: 100%;
-    max-width: none;
   }
 }
 </style>
