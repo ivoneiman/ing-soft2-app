@@ -157,13 +157,13 @@
 
       <div v-if="showEnrollmentModal" class="modal-backdrop" @click.self="closeEnrollmentModal">
         <div class="modal">
-          <h3>Confirmar inscripción</h3>
+          <h3>Atención</h3>
           <p>
             Al confirmar la inscripción serás redirigido al pago. Tu lugar solo quedará reservado cuando el pago sea aprobado. Si no completás el pago, la inscripción será cancelada automáticamente y el cupo permanecerá disponible.
           </p>
           <div class="modal-actions">
             <button type="button" class="secondary-button" @click="closeEnrollmentModal">Volver</button>
-            <button type="button" class="danger-button" :disabled="isSubmittingEnrollment" @click="confirmEnrollment">Confirmar inscripción</button>
+            <button type="button" class="danger-button" :disabled="isSubmittingEnrollment" @click="confirmEnrollment">Confirmar</button>
           </div>
         </div>
       </div>
