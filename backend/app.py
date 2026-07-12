@@ -1364,11 +1364,19 @@ def delete_my_account():
     # Validación explícita: Bloqueamos la eliminación solo si hay inscripciones activas
     # o pagos aprobados, para evitar borrar historial contable o de clases en cascada.
     # Las inscripciones canceladas o vencidas (sin pagos) permiten borrar la cuenta.
-    active_enrollments = [e for e in user.enrollments if e.estado not in [Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED]]
-    approved_payments = [p for p in user.payments if p.status == Payment.STATUS_APPROVED]
+    inactive_statuses = [
+        Enrollment.STATUS_CANCELLED, 
+        Enrollment.STATUS_EXPIRED, 
+        "Cancelada", "cancelled" # Legacy statuses
+    ]
+    active_enrollments = [e for e in user.enrollments if e.estado not in inactive_statuses]
+    
+    # Un pago aprobado solo bloquea la eliminación si pertenece a una inscripción AÚN ACTIVA.
+    # Si la inscripción fue cancelada, el pago (aunque aprobado) no debe impedir borrar la cuenta.
+    approved_payments_on_active_enrollments = [p for p in user.payments if p.status == Payment.STATUS_APPROVED and p.enrollment in active_enrollments]
 
-    if active_enrollments or approved_payments:
-        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas"}), 400
+    if active_enrollments or approved_payments_on_active_enrollments:
+        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas o pagos asociados a ellas."}), 400
 
     try:
         db.session.delete(user)
@@ -2059,11 +2067,19 @@ def delete_user_by_admin(user_id):
         return jsonify({"error": "Usuario no encontrado"}), 404
 
     # Validación de seguridad: no permitir eliminar usuarios con inscripciones activas o pagos aprobados.
-    active_enrollments = [e for e in user_to_delete.enrollments if e.estado not in [Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED]]
-    approved_payments = [p for p in user_to_delete.payments if p.status == Payment.STATUS_APPROVED]
+    inactive_statuses = [
+        Enrollment.STATUS_CANCELLED, 
+        Enrollment.STATUS_EXPIRED, 
+        "Cancelada", "cancelled" # Legacy statuses
+    ]
+    active_enrollments = [e for e in user_to_delete.enrollments if e.estado not in inactive_statuses]
+    
+    # Un pago aprobado solo bloquea la eliminación si pertenece a una inscripción AÚN ACTIVA.
+    approved_payments_on_active_enrollments = [p for p in user_to_delete.payments if p.status == Payment.STATUS_APPROVED and p.enrollment in active_enrollments]
 
-    if active_enrollments or approved_payments:
-        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas"}), 409
+    if active_enrollments or approved_payments_on_active_enrollments:
+        # Se cambia el mensaje para ser más claro
+        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas o pagos asociados a ellas."}), 409
 
     try:
         db.session.delete(user_to_delete)
