@@ -551,6 +551,10 @@ def main():
             username="Ivo", apellido="Neiman", email="ivoneiman@gmail.com",
             password="Admin_123", dni="66666666", telefono="221 6666666", role="admin"
         )
+        create_test_user(
+            username="Siempre", apellido="Gym", email="siempregym1@gmail.com",
+            password="siempregym123", dni="12345678", telefono="2211234567", role="admin"
+        )
 
         
         employee = create_test_user(

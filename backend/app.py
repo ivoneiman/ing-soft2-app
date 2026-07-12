@@ -1321,10 +1321,10 @@ def change_password():
         return jsonify({"error": "La contraseña actual es incorrecta"}), 400
 
     if user.check_password(new_password):
-        return jsonify({"error": "La nueva contraseña no puede ser igual a la actual"}), 400
+        return jsonify({"error": "La nueva contraseña debe ser distinta a la actual"}), 400
 
     if new_password != confirm_password:
-        return jsonify({"error": "Las nuevas contraseñas no coinciden"}), 400
+        return jsonify({"error": "La nueva contraseña y la confirmacion no coinciden"}), 400
 
     if len(new_password) < 6:
         return jsonify({"error": "La nueva contraseña debe tener al menos 6 caracteres"}), 400
@@ -1374,7 +1374,7 @@ def delete_my_account():
     approved_payments = [p for p in user.payments if p.status == Payment.STATUS_APPROVED]
 
     if active_enrollments or approved_payments:
-        return jsonify({"error": "No se puede eliminar la cuenta porque tienes inscripciones activas"}), 400
+        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas"}), 400
 
     try:
         db.session.delete(user)
@@ -2068,7 +2068,7 @@ def delete_user_by_admin(user_id):
     approved_payments = [p for p in user_to_delete.payments if p.status == Payment.STATUS_APPROVED]
 
     if active_enrollments or approved_payments:
-        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas."}), 409
+        return jsonify({"error": "No se puede eliminar el usuario porque tiene inscripciones activas"}), 409
 
     try:
         db.session.delete(user_to_delete)

@@ -62,6 +62,7 @@
               <th>Actividad</th>
               <th>Día</th>
               <th>Mes</th>
+              <th>Horario</th>
               <th>Sala</th>
               <th>Profesor</th>
               <th>Cupos Ocupados</th>
@@ -78,6 +79,7 @@
               <td class="col-actividad">{{ clase.actividad || clase.name }}</td>
               <td class="texto-celda">{{ formatDay(clase.fecha_hora) }}</td>
               <td class="texto-celda">{{ formatMonth(clase.fecha_hora) }}</td>
+              <td class="texto-celda">{{ formatTime(clase.fecha_hora) }}</td>
               <td class="texto-celda">{{ clase.room || 'N/A' }}</td>
               <td class="texto-celda">{{ clase.profesor_nombre || 'N/A' }}</td>
               <td class="texto-celda">{{ clase.enrolled }} / {{ clase.cupoMaximo }}</td>
@@ -840,6 +842,14 @@ function formatMonth(fechaIso) {
   return monthName.charAt(0).toUpperCase() + monthName.slice(1);
 }
 
+function formatTime(fechaIso) {
+  if (!fechaIso) return 'N/A';
+  const date = new Date(fechaIso);
+  return date.toLocaleTimeString('es-AR', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }) + ' hs';
+}
 
 onMounted(() => {
   cargarClases();
