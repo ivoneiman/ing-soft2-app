@@ -104,6 +104,7 @@ async function deleteProfesor(profesorId) {
     await axios.delete(`${baseURL.value}/profesores/${profesorId}`, { withCredentials: true });
     // Actualizar la lista localmente para reflejar el cambio
     profesores.value = profesores.value.filter(p => p.id !== profesorId);
+    alert('Profesor eliminado exitosamente.');
   } catch (err) {
     const errorMessage = err.response?.data?.error || 'No se pudo eliminar el profesor.';
     alert(`Error: ${errorMessage}`);
