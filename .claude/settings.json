@@ -7,7 +7,9 @@
       "Bash(tail -20 requirements.txt)",
       "Bash(rm -f backend_run.log)",
       "Bash(./venv/Scripts/python.exe app.py)",
-      "Bash(echo \"started pid $!\")"
+      "Bash(echo \"started pid $!\")",
+      "Bash(\"./venv/Scripts/python.exe\" smoke_waitlist_promotion.py)",
+      "Bash(npm run *)"
     ]
   }
 }
