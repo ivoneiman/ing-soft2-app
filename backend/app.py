@@ -2448,6 +2448,13 @@ def update_profesor(profesor_id):
     if not apellido.replace(" ", "").isalpha():
         return jsonify({"error": "El formato del apellido no cumple con los requisitos. Solo debe contener letras."}), 400
 
+    # Validar si ya existe otro profesor con el mismo nombre y apellido
+    existing_profesor = Profesor.query.filter(
+        Profesor.id != profesor_id, Profesor.nombre == nombre, Profesor.apellido == apellido
+    ).first()
+    if existing_profesor:
+        return jsonify({"error": "Ya existe un profesor con esos datos"}), 409
+
     profesor.nombre = nombre
     profesor.apellido = apellido
     db.session.commit()
