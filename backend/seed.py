@@ -15,7 +15,7 @@ from app import (
     app,
 )
 from models import db, User, Class, Enrollment, Attendance, Actividades, Payment, Profesor, WaitlistEntry
-from constants import WAITLIST_TYPE_INDIVIDUAL
+from constants import WAITLIST_TYPE_MONTHLY
 
 ROOM_OPTIONS = ["Salón 1", "Salón 2", "Salón 3"]
 ROOM_BY_SCHEDULE = {}
@@ -857,11 +857,11 @@ def main():
             password="client123", dni="55555510", telefono="221 5555510", role="client"
         )
         existing_waitlist_demo = WaitlistEntry.query.filter_by(
-            user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_INDIVIDUAL
+            user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_MONTHLY
         ).first()
         if not existing_waitlist_demo:
             db.session.add(WaitlistEntry(
-                user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_INDIVIDUAL
+                user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_MONTHLY
             ))
             print(f"   [OK] {espera_demo_user.email} anotado en lista de espera de {class_oferta_demo.name}")
         else:

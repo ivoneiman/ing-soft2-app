@@ -40,7 +40,6 @@ try:
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
         ENROLLMENT_TYPE_MONTHLY,
-        WAITLIST_TYPE_INDIVIDUAL,
         WAITLIST_TYPE_MONTHLY,
         ENROLLMENT_PAYMENT_STATUS_EXPIRED,
         ENROLLMENT_PAYMENT_STATUS_PAID,
@@ -76,7 +75,6 @@ except ModuleNotFoundError:
         ENROLLMENT_STATUS_PENDING_PAYMENT,
         ENROLLMENT_TYPE_SINGLE,
         ENROLLMENT_TYPE_MONTHLY,
-        WAITLIST_TYPE_INDIVIDUAL,
         WAITLIST_TYPE_MONTHLY,
         ENROLLMENT_PAYMENT_STATUS_EXPIRED,
         ENROLLMENT_PAYMENT_STATUS_PAID,
@@ -904,20 +902,10 @@ def _apply_mercado_pago_status(payment, mercado_pago_status, status_detail=None,
 # Helper para promover lista de espera que usaremos en todas las cancelaciones
 def _promote_waitlist_for_class(class_obj):
     try:
-        # Buscar y ordenar primero la lista mensual
-        waitlist_entries_monthly = WaitlistEntry.query.filter_by(
+        waitlist_entries = WaitlistEntry.query.filter_by(
             class_id=class_obj.id,
             type=WAITLIST_TYPE_MONTHLY
         ).order_by(WaitlistEntry.created_at.asc()).all()
-        
-        # Buscar y ordenar luego la lista individual
-        waitlist_entries_individual = WaitlistEntry.query.filter_by(
-            class_id=class_obj.id,
-            type=WAITLIST_TYPE_INDIVIDUAL
-        ).order_by(WaitlistEntry.created_at.asc()).all()
-        
-        # Unir dando prioridad a los mensuales
-        waitlist_entries = waitlist_entries_monthly + waitlist_entries_individual
 
         promoted = False
         for next_in_waitlist in waitlist_entries:
@@ -932,12 +920,11 @@ def _promote_waitlist_for_class(class_obj):
                 db.session.delete(next_in_waitlist)
                 continue
             
-            new_tipo = ENROLLMENT_TYPE_MONTHLY if next_in_waitlist.type == WAITLIST_TYPE_MONTHLY else ENROLLMENT_TYPE_SINGLE
             promotion_datetime = _current_discount_datetime()
 
             if existing_enr:
                 existing_enr.estado = Enrollment.STATUS_PENDING_PAYMENT
-                existing_enr.tipo = new_tipo
+                existing_enr.tipo = ENROLLMENT_TYPE_MONTHLY
                 existing_enr.requiere_reembolso = False
                 existing_enr.total_amount = 0
                 existing_enr.paid_amount = 0
@@ -949,7 +936,7 @@ def _promote_waitlist_for_class(class_obj):
                 new_enrollment = Enrollment(
                     user_id=user_to_promote.id,
                     class_id=class_obj.id,
-                    tipo=new_tipo,
+                    tipo=ENROLLMENT_TYPE_MONTHLY,
                     estado=Enrollment.STATUS_PENDING_PAYMENT,
                     waitlist_promoted_at=promotion_datetime,
                 )
@@ -1954,9 +1941,6 @@ def create_enrollment():
 
     enrollment_map = _enrollment_counts()
 
-    # Eliminar de la lista de espera si se estaba inscribiendo con éxito
-    WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=class_obj.id).delete()
-
     existing_cancelled = Enrollment.query.filter_by(
         user_id=current_user.id,
         class_id=class_obj.id
@@ -1989,11 +1973,16 @@ def create_enrollment():
             current_datetime,
         )
 
+    # Solo limpiamos la lista de espera si la inscripción efectivamente prospera;
+    # si el resultado es "full" el usuario conserva su lugar en la lista de espera.
+    if result != "full":
+        WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=class_obj.id).delete()
+
     if result == "already_paid":
         db.session.commit()
         return api_error("Ya se encuentra inscripto a esta clase", 409)
     if result == "full":
-        if data.get("waitlist") or data.get("waitlist_type"):
+        if data.get("waitlist") and data.get("tipo") == ENROLLMENT_TYPE_MONTHLY:
             existing_enr = Enrollment.query.filter_by(
                 user_id=current_user.id,
                 class_id=class_obj.id
@@ -2004,11 +1993,10 @@ def create_enrollment():
             if existing_enr:
                 return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
 
-            waitlist_type = data.get("waitlist_type", WAITLIST_TYPE_INDIVIDUAL)
             waitlist_entry, waitlist_error = waitlist_service.add_waitlist_entry(
                 current_user,
                 class_obj,
-                waitlist_type,
+                WAITLIST_TYPE_MONTHLY,
             )
             if waitlist_error:
                 db.session.commit()
@@ -2147,16 +2135,7 @@ def create_waitlist_entry():
 
     for enr in existing_monthly_enrs:
         if enr.class_id != class_obj.id and enr.class_.fecha_hora.weekday() == class_obj.fecha_hora.weekday() and enr.class_.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M"):
-            waitlist_type = data.get("type", WAITLIST_TYPE_INDIVIDUAL)
-            if waitlist_type == WAITLIST_TYPE_MONTHLY:
-                return api_error("Ya te encuentras inscripto mensualmente en este horario, por lo que no necesitas unirte a la lista de espera.", 409)
-            elif class_obj.fecha_hora >= enr.class_.fecha_hora:
-                    # Verificar si canceló explícitamente esta clase
-                    is_cancelled = Enrollment.query.filter_by(
-                        user_id=current_user.id, class_id=class_obj.id
-                    ).filter(Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, "Cancelada", "cancelled"])).first()
-                    if not is_cancelled:
-                        return api_error("Esta clase ya está cubierta por tu suscripción mensual.", 409)
+            return api_error("Ya te encuentras inscripto mensualmente en este horario, por lo que no necesitas unirte a la lista de espera.", 409)
 
     existing_enr = Enrollment.query.filter_by(
         user_id=current_user.id,
@@ -2168,8 +2147,7 @@ def create_waitlist_entry():
     if existing_enr:
         return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
 
-    waitlist_type = data.get("type", WAITLIST_TYPE_INDIVIDUAL)
-    entry, error = waitlist_service.add_waitlist_entry(current_user, class_obj, waitlist_type)
+    entry, error = waitlist_service.add_waitlist_entry(current_user, class_obj, WAITLIST_TYPE_MONTHLY)
     if error:
         return api_error(error, 400)
 
