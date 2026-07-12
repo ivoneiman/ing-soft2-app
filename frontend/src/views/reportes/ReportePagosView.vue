@@ -3,7 +3,7 @@
     <header class="report-header">
       <div>
         <h1>Historial de Pagos</h1>
-        <p>Registro global de transacciones, señas y estados de pago.</p>
+        <p>Registro de pagos de clases individuales y suscripciones mensuales.</p>
       </div>
       <router-link to="/reportes" class="back-button">
         Volver a Reportes
@@ -109,7 +109,9 @@ const availableActivities = computed(() => {
   payments.value.forEach(p => {
     if (p.actividad && p.actividad !== '-') acts.add(p.actividad);
   });
-  acts.add('Yoga'); // Asegurar que 'Yoga' siempre esté en la lista
+  acts.add('Yoga'); // Asegurar que las actividades principales siempre estén en la lista
+  acts.add('Pilates');
+  acts.add('Funcional');
   return Array.from(acts).sort();
 });
 
