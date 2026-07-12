@@ -147,9 +147,11 @@ class Class(db.Model):
     profesor = db.relationship("Profesor", backref="classes")
     payments = db.relationship("Payment", back_populates="class_")
 
-    # Identificador único unificado para el try/except de app.py de tu compañero
+    # El gimnasio tiene salones físicos limitados: dos clases no pueden compartir
+    # salón en el mismo horario, pero sí pueden coincidir en horario si están en
+    # salones distintos (incluida la misma actividad repetida en paralelo).
     __table_args__ = (
-        db.UniqueConstraint("id_actividad", "fecha_hora", name="actividad_horario_unico"),
+        db.UniqueConstraint("fecha_hora", "room", name="horario_salon_unico"),
     )
 
     def to_dict(self):

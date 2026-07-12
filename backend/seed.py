@@ -15,9 +15,9 @@ from app import (
     app,
 )
 from models import db, User, Class, Enrollment, Attendance, Actividades, Payment, Profesor, WaitlistEntry
-from constants import WAITLIST_TYPE_MONTHLY
+from constants import WAITLIST_TYPE_MONTHLY, ROOMS
 
-ROOM_OPTIONS = ["Salón 1", "Salón 2", "Salón 3"]
+ROOM_OPTIONS = list(ROOMS)
 ROOM_BY_SCHEDULE = {}
 
 

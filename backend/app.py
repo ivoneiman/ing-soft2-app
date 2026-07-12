@@ -55,6 +55,7 @@ try:
         PAYMENT_RETURN_STATUS_FAILURE,
         PAYMENT_RETURN_STATUS_PENDING,
         PAYMENT_RETURN_STATUS_SUCCESS,
+        ROOMS,
     )
     from services import cancellation_service, class_service, credit_service, enrollment_service, payment_service, waitlist_service
     from services.api_response import api_error, api_success
@@ -90,6 +91,7 @@ except ModuleNotFoundError:
         PAYMENT_RETURN_STATUS_FAILURE,
         PAYMENT_RETURN_STATUS_PENDING,
         PAYMENT_RETURN_STATUS_SUCCESS,
+        ROOMS,
     )
     from .services import cancellation_service, class_service, credit_service, enrollment_service, payment_service, waitlist_service
     from .services.api_response import api_error, api_success
@@ -178,14 +180,37 @@ CORS(
 
 # ─── Migración de esquema mínimo para SQLite antiguo ─────────────────────────────────────────────
 
+def _replace_actividad_horario_unique_constraint():
+    """Reemplaza el UNIQUE(id_actividad, fecha_hora) legado por UNIQUE(fecha_hora, room).
+
+    Permite que la misma actividad tenga varias clases en el mismo horario mientras
+    usen salones distintos. SQLite no soporta ALTER TABLE para modificar un UNIQUE
+    constraint existente, así que hay que recrear la tabla y copiar los datos.
+    """
+    existing_names = {uc["name"] for uc in inspect(db.engine).get_unique_constraints("classes")}
+    if "actividad_horario_unico" not in existing_names:
+        return
+
+    db.session.execute(text("ALTER TABLE classes RENAME TO classes_legacy"))
+    db.session.commit()
+    Class.__table__.create(db.engine)
+    db.session.execute(text(
+        "INSERT INTO classes (id, name, fecha_hora, duration_minutes, cupoMaximo, "
+        "id_actividad, estado, profesor_id, descuento, room) "
+        "SELECT id, name, fecha_hora, duration_minutes, cupoMaximo, "
+        "id_actividad, estado, profesor_id, descuento, room FROM classes_legacy"
+    ))
+    db.session.execute(text("DROP TABLE classes_legacy"))
+    db.session.commit()
+
+
 def _backfill_missing_class_rooms():
     classes_without_room = Class.query.filter((Class.room == None) | (Class.room == "")).order_by(Class.fecha_hora, Class.id).all()
     if not classes_without_room:
         return
 
-    salon_options = ["Salón 1", "Salón 2", "Salón 3"]
     for index, class_obj in enumerate(classes_without_room):
-        class_obj.room = salon_options[index % len(salon_options)]
+        class_obj.room = ROOMS[index % len(ROOMS)]
 
     db.session.commit()
 
@@ -226,6 +251,8 @@ def upgrade_database_schema():
             db.session.execute(text("ALTER TABLE classes ADD COLUMN profesor_id INTEGER"))
 
         db.session.commit()
+
+        _replace_actividad_horario_unique_constraint()
 
     if "payments" in inspector.get_table_names():
         columns = [column["name"] for column in inspector.get_columns("payments")]
@@ -2484,7 +2511,7 @@ def create_class():
     time_str = data.get("time")
     room = data.get("room")
     profesor_id = data.get("profesor_id")
-    
+
     try:
         cupo_maximo_str = data.get("cupoMaximo")
         if cupo_maximo_str is None:
@@ -2496,6 +2523,9 @@ def create_class():
     if not all([activity_id, date_str, time_str, room, profesor_id]):
         return jsonify({"error": "Todos los campos son obligatorios (actividad, fecha, hora, salón y profesor)"}), 400
 
+    if room not in ROOMS:
+        return jsonify({"error": f"Salón inválido. Debe ser uno de: {', '.join(ROOMS)}"}), 400
+
     if cupo_maximo > 20:
         return jsonify({"error": "La capacidad máxima del salón es de 20 cupos"}), 400
     if cupo_maximo < 1:
@@ -2505,56 +2535,45 @@ def create_class():
     if not actividad:
         return jsonify({"error": "Actividad no encontrada"}), 404
 
-    # Validar si el profesor ya tiene una clase en ese horario
-    existing_class_for_profesor = Class.query.filter_by(
-        profesor_id=profesor_id, fecha_hora=datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
-    ).filter(Class.estado == Class.STATUS_ACTIVE).first()
-    if existing_class_for_profesor:
-        return jsonify({"error": "El profesor seleccionado ya tiene otra clase asignada en ese horario."}), 409
-
     try:
         fecha_hora = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
     except ValueError:
         return jsonify({"error": "Fecha u hora inválida"}), 400
 
-    target_str = fecha_hora.strftime("%Y-%m-%d %H:%M")
-    all_classes = Class.query.all()
-    rooms = dict(db.session.execute(text("SELECT id, room FROM classes")).fetchall())
-    
-    existing_active_class = None
-    room_conflict = None
-    class_to_reactivate = None
-    
-    for c in all_classes:
-        c_room = rooms.get(c.id)
-        if c.fecha_hora and c.fecha_hora.strftime("%Y-%m-%d %H:%M") == target_str:
-            is_active = getattr(c, "estado", Class.STATUS_ACTIVE) == Class.STATUS_ACTIVE
-            
-            if is_active:
-                if c.id_actividad == actividad.id:
-                    existing_active_class = c
-                if c_room == room:
-                    room_conflict = c
-            else:
-                if c.id_actividad == actividad.id:
-                    class_to_reactivate = c
-    
+    # Validar si el profesor ya tiene una clase en ese horario (en cualquier salón)
+    existing_class_for_profesor = Class.query.filter_by(
+        profesor_id=profesor_id, fecha_hora=fecha_hora
+    ).filter(Class.estado == Class.STATUS_ACTIVE).first()
+    if existing_class_for_profesor:
+        return jsonify({"error": "El profesor seleccionado ya tiene otra clase asignada en ese horario."}), 409
+
+    # El gimnasio solo tiene los salones de ROOMS: la misma actividad puede repetirse
+    # en el mismo horario mientras haya un salón libre distinto de los ya ocupados.
+    active_classes_at_time = Class.query.filter_by(
+        fecha_hora=fecha_hora, estado=Class.STATUS_ACTIVE
+    ).all()
+    occupied_rooms = {c.room for c in active_classes_at_time if c.room}
+    room_conflict = next((c for c in active_classes_at_time if c.room == room), None)
+
     if room_conflict:
-        if room_conflict.id_actividad != actividad.id:
-            return jsonify({"error": f"El {room} ya está ocupado por la clase '{room_conflict.name}' en ese horario"}), 409
-            
-    if existing_active_class:
-        return jsonify({"error": "Ya existe una clase activa para esa actividad en ese horario"}), 400
-        
+        if len(occupied_rooms) >= len(ROOMS):
+            return jsonify({"error": "No hay más salones disponibles en el horario seleccionado"}), 409
+        return jsonify({"error": f"El {room} ya está ocupado por la clase '{room_conflict.name}' en ese horario"}), 409
+
+    # Si había una clase cancelada para esa misma actividad/horario/salón, se reactiva en vez de duplicarla
+    class_to_reactivate = Class.query.filter_by(
+        fecha_hora=fecha_hora,
+        id_actividad=actividad.id,
+        room=room,
+        estado=Class.STATUS_CANCELLED,
+    ).first()
+
     if class_to_reactivate:
         class_to_reactivate.estado = Class.STATUS_ACTIVE
         class_to_reactivate.cupoMaximo = cupo_maximo
-        
-        # 🌟 CORRECCIÓN: Asignar el profesor también al reactivar
         class_to_reactivate.profesor_id = profesor_id
+        class_to_reactivate.room = room
         try:
-            db.session.commit()
-            db.session.execute(text("UPDATE classes SET room = :room WHERE id = :id"), {"room": room, "id": class_to_reactivate.id})
             db.session.commit()
             return jsonify({
                 "message": "Clase reactivada correctamente en este horario",
@@ -2569,22 +2588,22 @@ def create_class():
         except Exception as err:
             db.session.rollback()
             return jsonify({"error": f"Error interno al reactivar la clase: {str(err)}"}), 500
-    
+
     new_class = Class(
         name=actividad.name,
         fecha_hora=fecha_hora,
         id_actividad=actividad.id,
         cupoMaximo=cupo_maximo,
-        profesor_id=profesor_id
+        profesor_id=profesor_id,
+        room=room,
     )
     db.session.add(new_class)
-    
+
     try:
-        db.session.flush() # Asigna un ID a new_class sin hacer commit
-        db.session.execute(text("UPDATE classes SET room = :room WHERE id = :id"), {"room": room, "id": new_class.id})
         db.session.commit()
-    except IntegrityError as err:
+    except IntegrityError:
         db.session.rollback()
+        return jsonify({"error": "El salón ya fue ocupado por otra clase en ese horario. Volvé a intentarlo."}), 409
     except Exception as err:
         db.session.rollback()
         return jsonify({"error": f"Error interno: {str(err)}"}), 500

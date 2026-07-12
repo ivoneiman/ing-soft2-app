@@ -2,6 +2,10 @@ CLASS_STATUS_ACTIVE = "Activa"
 CLASS_STATUS_CANCELLED = "Cancelada"
 CLASS_STATUSES = (CLASS_STATUS_ACTIVE, CLASS_STATUS_CANCELLED)
 
+# Salones físicos disponibles en el gimnasio. Una clase puede repetirse en el mismo
+# horario únicamente si usa un salón distinto de los ya ocupados en ese horario.
+ROOMS = ("Sala 1", "Sala 2", "Sala 3")
+
 ENROLLMENT_TYPE_SINGLE = "Suelta"
 ENROLLMENT_TYPE_MONTHLY = "Mensual"
 ENROLLMENT_TYPES = (ENROLLMENT_TYPE_SINGLE, ENROLLMENT_TYPE_MONTHLY)

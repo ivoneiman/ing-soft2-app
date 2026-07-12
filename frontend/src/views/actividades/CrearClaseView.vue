@@ -74,7 +74,7 @@
           <h2 class="step-title"><span class="step-num">4</span> Salón</h2>
           <div class="slots-grid" style="grid-template-columns: repeat(3, 1fr);">
             <button
-              v-for="room in ['Sala 1', 'Sala 2', 'Sala 3']"
+              v-for="room in ROOM_OPTIONS"
               :key="room"
               type="button"
               class="slot-btn"
@@ -152,6 +152,8 @@ const form = reactive({
   cupoMaximo: 20,
   profesor_id: null,
 });
+
+const ROOM_OPTIONS = ["Sala 1", "Sala 2", "Sala 3"];
 
 const selectedDayOfWeek = ref(null);
 const selectedSlot = ref("");
@@ -246,7 +248,9 @@ const targetDatesForSelectedDay = computed(() => {
   return dates;
 });
 
-// Identifica qué horarios ya están 100% ocupados (misma actividad o 3 salones ocupados)
+// Identifica qué horarios ya están 100% ocupados (los 3 salones tomados por otras clases,
+// sin importar la actividad). La misma actividad puede repetirse en un horario si queda
+// al menos un salón libre.
 const occupiedSlotsForMonth = computed(() => {
   if (selectedDayOfWeek.value === null) return [];
   const targets = targetDatesForSelectedDay.value;
@@ -254,21 +258,19 @@ const occupiedSlotsForMonth = computed(() => {
   const allSlots = ["07:00", "08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00", "19:00", "20:00", "21:00"];
 
   allSlots.forEach(slot => {
-     let sameActivityConflict = false;
      const usedRooms = new Set();
 
      targets.forEach(fechaStr => {
-        const classesAtSlot = occupiedClasses.value.filter(c => 
+        const classesAtSlot = occupiedClasses.value.filter(c =>
           c.fecha_hora && c.fecha_hora.startsWith(fechaStr) && c.time === slot
         );
-        
+
         classesAtSlot.forEach(c => {
-           if (c.activity_id === Number(form.activity_id)) sameActivityConflict = true;
            if (c.room) usedRooms.add(c.room);
         });
      });
 
-     if (sameActivityConflict || usedRooms.size >= 3) {
+     if (usedRooms.size >= 3) {
         completelyOccupiedSlots.add(slot);
      }
   });
@@ -345,10 +347,10 @@ const isRoomAvailable = (room) => {
   if (selectedDayOfWeek.value === null || !selectedSlot.value) return false;
   const targets = targetDatesForSelectedDay.value;
 
-  return !occupiedClasses.value.some(c => 
-    c.fecha_hora && 
-    targets.some(t => c.fecha_hora.startsWith(t)) && 
-    c.time === selectedSlot.value && 
+  return !occupiedClasses.value.some(c =>
+    c.fecha_hora &&
+    targets.some(t => c.fecha_hora.startsWith(t)) &&
+    c.time === selectedSlot.value &&
     c.room === room
   );
 };
@@ -400,13 +402,13 @@ const submitForm = async () => {
   try {
     let targetDates = targetDatesForSelectedDay.value;
 
-    // Comprobar conflictos por si acaso antes de crear
+    // Comprobar conflictos de salón por si acaso antes de crear
     const conflicts = targetDates.filter(fechaStr =>
-      occupiedClasses.value.some(c => c.fecha_hora && c.fecha_hora.startsWith(fechaStr) && c.time === selectedSlot.value && (c.activity_id === Number(form.activity_id) || c.room === selectedRoom.value))
+      occupiedClasses.value.some(c => c.fecha_hora && c.fecha_hora.startsWith(fechaStr) && c.time === selectedSlot.value && c.room === selectedRoom.value)
     );
 
     if (conflicts.length > 0) {
-      errorMessage.value = `Conflicto de actividad o salón en estas fechas: ${conflicts.join(', ')}.`;
+      errorMessage.value = `Conflicto de salón en estas fechas: ${conflicts.join(', ')}.`;
       return;
     }
 
