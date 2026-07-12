@@ -670,6 +670,27 @@ def main():
             cupo_maximo=1,
         )
 
+        print("   Creando serie mensual con una fecha ya llena (prueba de lista de espera mensual)...")
+        # Primer sabado a partir de mañana, dos semanas seguidas al mismo horario.
+        serie_mensual_semana1_fecha = today + timedelta(days=1)
+        while serie_mensual_semana1_fecha.weekday() != 5:  # 5 = sabado
+            serie_mensual_semana1_fecha += timedelta(days=1)
+
+        class_serie_mensual_semana1 = create_test_class(
+            "Pilates - Serie Mensual Semana 1 (Cupo Disponible)",
+            at_app_time(serie_mensual_semana1_fecha, 16),
+            actividad3,
+            profesor_test.id,
+            cupo_maximo=5,
+        )
+        class_serie_mensual_semana2 = create_test_class(
+            "Pilates - Serie Mensual Semana 2 (Llena)",
+            at_app_time(serie_mensual_semana1_fecha + timedelta(days=7), 16),
+            actividad3,
+            profesor_test.id,
+            cupo_maximo=1,
+        )
+
         print("   Creando Clase de prueba para cupos (19/20)...")
         class_19_cupos = create_test_class(
             "Pilates - Prueba Cupos (19/20)",
@@ -822,6 +843,22 @@ def main():
         )
         enr_sin_cupo = ensure_enrollment(dummy_sin_cupo, class_sin_cupo, estado=Enrollment.STATUS_PAID, tipo="Suelta")
         ensure_payment(enr_sin_cupo, Payment.STATUS_APPROVED, created_at=today - timedelta(days=1))
+
+        print("   Ocupando 'Pilates - Serie Mensual Semana 2 (Llena)' para dejarla en 0 disponibles...")
+        dummy_serie_semana2 = create_test_user(
+            username="AlumnoSerieSemana2", apellido="Dummy", email="dummy_serie_semana2@test.com",
+            password="password123", dni="77777702", telefono="11111111", role="client"
+        )
+        enr_serie_semana2 = ensure_enrollment(
+            dummy_serie_semana2, class_serie_mensual_semana2, estado=Enrollment.STATUS_PAID, tipo="Suelta"
+        )
+        ensure_payment(enr_serie_semana2, Payment.STATUS_APPROVED, created_at=today - timedelta(days=1))
+        print(
+            "   [INFO] Para probar la lista de espera MENSUAL cuando una fecha de la serie ya "
+            "esta llena: inscribite mensual (o pedi lista de espera) en 'Pilates - Serie Mensual "
+            "Semana 1 (Cupo Disponible)' -> como 'Pilates - Serie Mensual Semana 2 (Llena)' no "
+            "tiene cupo, no se cobra nada: se te anota en la lista de espera de esa fecha puntual."
+        )
 
         print("   Inscribiendo 19 usuarios ficticios a 'Pilates - Prueba Cupos (19/20)'...")
         for i in range(1, 20):

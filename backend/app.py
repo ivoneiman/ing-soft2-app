@@ -1983,58 +1983,55 @@ def create_enrollment():
 
     enrollment_map = _enrollment_counts()
 
-    existing_cancelled = Enrollment.query.filter_by(
-        user_id=current_user.id,
-        class_id=class_obj.id
-    ).filter(
-        Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED, "Cancelada", "cancelled"])
-    ).first()
+    # La inscripción mensual cubre todas las fechas del mes en ese horario, no solo la
+    # clase elegida. Si alguna otra fecha de la serie ya está llena, toda la suscripción
+    # tiene que pasar por lista de espera (nada de cobrar la clase elegida y dejar a la
+    # persona "inscripta" de forma invisible en fechas que ya no tienen cupo).
+    monthly_series_full = (
+        data.get("tipo") == ENROLLMENT_TYPE_MONTHLY
+        and waitlist_service.monthly_series_has_full_class(class_obj, enrollment_map)
+    )
 
-    if existing_cancelled:
-        enrolled_count = enrollment_map.get(class_obj.id, 0)
-        if enrolled_count >= (class_obj.cupoMaximo or 20):
-            result = "full"
-            enrollment = existing_cancelled
-        else:
-            existing_cancelled.estado = Enrollment.STATUS_PENDING_PAYMENT
-            existing_cancelled.tipo = data.get("tipo", ENROLLMENT_TYPE_SINGLE)
-            existing_cancelled.requiere_reembolso = False
-            existing_cancelled.total_amount = 0
-            existing_cancelled.paid_amount = 0
-            existing_cancelled.remaining_amount = 0
-            existing_cancelled.payment_status = ENROLLMENT_PAYMENT_STATUS_PENDING
-            existing_cancelled.waitlist_promoted_at = None
-            enrollment = existing_cancelled
-            result = "new"
+    if monthly_series_full:
+        result = "full"
+        enrollment = None
     else:
-        enrollment, result = enrollment_service.create_or_reopen_enrollment(
-            current_user,
-            class_obj,
-            data.get("tipo"),
-            enrollment_map,
-            current_datetime,
-        )
+        existing_cancelled = Enrollment.query.filter_by(
+            user_id=current_user.id,
+            class_id=class_obj.id
+        ).filter(
+            Enrollment.estado.in_([Enrollment.STATUS_CANCELLED, Enrollment.STATUS_EXPIRED, "Cancelada", "cancelled"])
+        ).first()
+
+        if existing_cancelled:
+            enrolled_count = enrollment_map.get(class_obj.id, 0)
+            if enrolled_count >= (class_obj.cupoMaximo or 20):
+                result = "full"
+                enrollment = existing_cancelled
+            else:
+                existing_cancelled.estado = Enrollment.STATUS_PENDING_PAYMENT
+                existing_cancelled.tipo = data.get("tipo", ENROLLMENT_TYPE_SINGLE)
+                existing_cancelled.requiere_reembolso = False
+                existing_cancelled.total_amount = 0
+                existing_cancelled.paid_amount = 0
+                existing_cancelled.remaining_amount = 0
+                existing_cancelled.payment_status = ENROLLMENT_PAYMENT_STATUS_PENDING
+                existing_cancelled.waitlist_promoted_at = None
+                enrollment = existing_cancelled
+                result = "new"
+        else:
+            enrollment, result = enrollment_service.create_or_reopen_enrollment(
+                current_user,
+                class_obj,
+                data.get("tipo"),
+                enrollment_map,
+                current_datetime,
+            )
 
     # Solo limpiamos la lista de espera si la inscripción efectivamente prospera;
     # si el resultado es "full" el usuario conserva su lugar en la lista de espera.
-    series_waitlist_entries = []
     if result != "full":
         WaitlistEntry.query.filter_by(user_id=current_user.id, class_id=class_obj.id).delete()
-
-        # La inscripción mensual cubre todas las semanas del mes en ese horario. Si esta
-        # clase (la elegida) tenía cupo pero alguna otra semana de la serie ya está llena,
-        # hay que anotar al usuario en la lista de espera de esas semanas puntuales;
-        # si no, quedaría "inscripto" en clases llenas sin que nadie lo note.
-        if data.get("tipo") == ENROLLMENT_TYPE_MONTHLY:
-            series_waitlist_entries = waitlist_service.create_monthly_waitlist_for_full_series(
-                current_user, class_obj, enrollment_map
-            )
-
-    series_waitlist_note = (
-        f" {len(series_waitlist_entries)} fecha(s) de este horario ya no tenían cupo: "
-        "te anotamos en la lista de espera para esas semanas."
-        if series_waitlist_entries else ""
-    )
 
     if result == "already_paid":
         db.session.commit()
@@ -2051,19 +2048,26 @@ def create_enrollment():
             if existing_enr:
                 return api_error("Ya estás inscripto en esta clase, no puedes unirte a la lista de espera", 400)
 
-            waitlist_entry, waitlist_error = waitlist_service.add_waitlist_entry(
-                current_user,
-                class_obj,
-                WAITLIST_TYPE_MONTHLY,
+            waitlist_entries = waitlist_service.create_monthly_waitlist_for_full_series(
+                current_user, class_obj, enrollment_map
             )
-            if waitlist_error:
-                db.session.commit()
-                return api_error(waitlist_error, 409)
+            if not waitlist_entries:
+                already_waitlisted = WaitlistEntry.query.filter_by(
+                    user_id=current_user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY
+                ).first()
+                if not already_waitlisted:
+                    db.session.commit()
+                    return api_error("Ya estás anotado en la lista de espera de este horario", 409)
             db.session.commit()
+            message = (
+                "Te agregamos a la lista de espera"
+                if waitlist_entries
+                else "Ya estabas en la lista de espera de este horario"
+            )
             return api_success({
-                "message": "Te agregamos a la lista de espera",
-                "waitlist": waitlist_entry.to_dict(),
-            }, message="Te agregamos a la lista de espera", status_code=201)
+                "message": message,
+                "waitlist": [entry.to_dict() for entry in waitlist_entries],
+            }, message=message, status_code=201)
         db.session.commit()
         return api_error("No quedan cupos disponibles para esta clase", 409)
     if result == "credit_used":
@@ -2088,12 +2092,11 @@ def create_enrollment():
         return _credit_enrollment_response(enrollment, credit, current_datetime, 201)
 
     db.session.commit()
-    final_message = "Inscripción creada. Podés completar el pago ahora o más adelante." + series_waitlist_note
     return api_success({
-        "message": final_message,
+        "message": "Inscripción creada. Podés completar el pago ahora o más adelante.",
         "enrollment": _enrollment_payload(enrollment, current_datetime),
         "payment_url": f"/pagos?tab=pending&enrollment_id={enrollment.id}",
-    }, message=final_message, status_code=201)
+    }, message="Inscripción creada. Podés completar el pago ahora o más adelante.", status_code=201)
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])

@@ -258,27 +258,41 @@ def delete_waitlists_for_user_and_series(user, base_class_obj):
     return deleted
 
 
+def _full_classes_in_series(base_class_obj, enrollment_map):
+    full_classes = []
+    for class_obj in _series_classes_for_month(base_class_obj):
+        capacity = class_capacity(class_obj)
+        current = enrollment_map.get(class_obj.id, 0)
+        if current >= capacity:
+            full_classes.append(class_obj)
+    return full_classes
+
+
+def monthly_series_has_full_class(base_class_obj, enrollment_map):
+    """La inscripción mensual cubre todas las semanas del mes en ese horario, así que
+    alcanza con que UNA sola fecha de la serie esté llena para que la suscripción
+    completa deba pasar por la lista de espera en vez de cobrarse."""
+    return bool(_full_classes_in_series(base_class_obj, enrollment_map))
+
+
 def create_monthly_waitlist_for_full_series(user, base_class_obj, enrollment_map):
+    """Anota al usuario en la lista de espera de cada fecha de la serie mensual que ya
+    esté llena (incluida la clase elegida, si corresponde), para que se lo promueva
+    fecha por fecha a medida que se liberen lugares."""
     if not user or not base_class_obj:
         return []
 
     waitlist_entries = []
-    for class_obj in _series_classes_for_month(base_class_obj):
-        if class_obj.id == base_class_obj.id:
+    for class_obj in _full_classes_in_series(base_class_obj, enrollment_map):
+        existing = (
+            WaitlistEntry.query
+            .filter_by(user_id=user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
+            .first()
+        )
+        if existing:
             continue
-
-        capacity = class_obj.cupoMaximo if class_obj.cupoMaximo is not None else 20
-        current = enrollment_map.get(class_obj.id, 0)
-        if current >= capacity:
-            existing = (
-                WaitlistEntry.query
-                .filter_by(user_id=user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
-                .first()
-            )
-            if existing:
-                continue
-            entry = WaitlistEntry(user_id=user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
-            db.session.add(entry)
-            waitlist_entries.append(entry)
+        entry = WaitlistEntry(user_id=user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
+        db.session.add(entry)
+        waitlist_entries.append(entry)
 
     return waitlist_entries

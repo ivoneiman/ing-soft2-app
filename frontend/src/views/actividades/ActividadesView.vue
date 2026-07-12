@@ -420,14 +420,17 @@ async function onSlotSelected(slot) {
   isMensualAvailable.value = false;
   
   try {
+    // Una fecha del mes sin ninguna clase programada en ese horario no cuenta como "sin
+    // cupo": simplemente esa semana no hay clase. Solo bloquea la mensualidad una fecha
+    // que SÍ tiene clase creada pero ya está llena (mismo criterio que usa el backend).
     let allAvailable = true;
     for (const dStr of dates) {
       if (dStr === toDateKey(selectedDate.value)) continue;
-      
+
       const res = await getCatalogAvailability(selectedActivityId.value, dStr);
       const slots = res.data?.slots || res.data?.available || [];
-      const match = slots.find(s => s.time === slot.time && s.available_spots > 0);
-      if (!match) {
+      const matchingSlot = slots.find(s => s.time === slot.time);
+      if (matchingSlot && Number(matchingSlot.available_spots || 0) <= 0) {
         allAvailable = false;
         break;
       }
