@@ -25,36 +25,17 @@
         <thead>
           <tr>
             <th>Fecha</th>
+            <th>Hora</th>
             <th>Actividad</th>
-            <th>Método</th>
-            <th>Original</th>
-            <th>Descuento</th>
-            <th>Total</th>
-            <th>Estado</th>
-            <th>Acción</th>
+            <th>Monto Pagado</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="payment in payments" :key="payment.id">
-            <td>{{ formatDateTime(payment.created_at) }}</td>
+            <td>{{ formatDateOnly(payment.created_at) }}</td>
+            <td>{{ formatTime(payment.created_at) }}</td>
             <td>{{ payment.actividad || payment.class_name || '-' }}</td>
-            <td>{{ paymentMethodLabel(payment.payment_method) }}</td>
-            <td>{{ formatMoney(payment.amount) }}</td>
-            <td>{{ Number(payment.discount_percentage || 0) }}%</td>
             <td>{{ formatMoney(payment.final_amount) }}</td>
-            <td>{{ paymentStatusLabel(payment) }}</td>
-            <td>
-              <button
-                v-if="payment.enrollment_is_cancelable"
-                type="button"
-                class="table-action"
-                :disabled="isCancellingId === payment.enrollment_id"
-                @click="openCancelEnrollment(payment)"
-              >
-                {{ isCancellingId === payment.enrollment_id ? 'Cancelando...' : 'Cancelar inscripción' }}
-              </button>
-              <span v-else>-</span>
-            </td>
           </tr>
         </tbody>
       </table>
@@ -87,34 +68,6 @@
         </tbody>
       </table>
     </section>
-
-    <div v-if="cancelEnrollmentTarget" class="modal-backdrop" role="dialog" aria-modal="true">
-      <section class="manual-payment-modal">
-        <h2>Cancelar inscripción</h2>
-        <p v-if="cancelEnrollmentWillGenerateCredit">
-          ¿Deseás cancelar esta inscripción?
-        </p>
-        <p v-if="cancelEnrollmentWillGenerateCredit">
-          Como la inscripción posee pagos aprobados, se generará un crédito reutilizable para otra clase de la misma actividad.
-        </p>
-        <p v-if="cancelEnrollmentWillGenerateCredit">
-          La acción no puede deshacerse.
-        </p>
-        <p v-else>
-          ¿Deseás cancelar esta inscripción?
-          La acción liberará tu cupo y no podrá deshacerse.
-        </p>
-        <div class="modal-actions">
-          <button type="button" class="secondary-button" @click="closeCancelEnrollment">Volver</button>
-          <button type="button" :disabled="isCancellingId === cancelEnrollmentId" @click="submitCancelEnrollment">
-            {{ isCancellingId === cancelEnrollmentId ? 'Cancelando...' : 'Cancelar inscripción' }}
-          </button>
-        </div>
-      </section>
-    </div>
-
-    <p v-if="successMessage" class="success-message">{{ successMessage }}</p>
-    <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
   </main>
 </template>
 
@@ -124,11 +77,10 @@ import { RouterLink, useRoute } from 'vue-router';
 import { ENROLLMENT_TYPE, statusLabel } from '../../constants/statuses';
 import { PAYMENT_RETURN_MESSAGES, PAYMENT_RETURN_STATUS, PAYMENT_TAB, PAYMENT_TABS } from '../../constants/payments';
 import {
-  cancelEnrollment,
   getMyCredits,
   getPaymentHistory,
 } from '../../services/api';
-import { formatDateTime, formatMoney } from '../../utils/formatters';
+import { formatDateOnly, formatDateTime, formatMoney, formatTime } from '../../utils/formatters';
 import { roleHelpers } from '../../utils/roleHelpers';
 
 const route = useRoute();
@@ -138,39 +90,16 @@ function normalizedTab(tab) {
 }
 
 const activeTab = ref(normalizedTab(route.query.tab));
-const isCancellingId = ref(null);
 const isLoadingHistory = ref(false);
 const isLoadingCredits = ref(false);
-const errorMessage = ref('');
-const successMessage = ref('');
 const payments = ref([]);
 const credits = ref([]);
-const cancelEnrollmentTarget = ref(null);
-
-const cancelEnrollmentId = computed(() => cancelEnrollmentTarget.value?.enrollment_id || cancelEnrollmentTarget.value?.id || null);
-const cancelEnrollmentWillGenerateCredit = computed(() => Boolean(
-  cancelEnrollmentTarget.value?.cancellation_will_generate_credit
-  || cancelEnrollmentTarget.value?.enrollment_cancellation_will_generate_credit
-));
 
 const returnMessage = computed(() => {
   if (PAYMENT_RETURN_MESSAGES[route.query.status]) return PAYMENT_RETURN_MESSAGES[route.query.status];
   if (route.query.status === PAYMENT_RETURN_STATUS.FAILURE) return { type: 'failure', text: route.query.message || 'Pago rechazado' };
   return null;
 });
-
-function paymentMethodLabel(paymentMethod) {
-  return statusLabel('paymentMethod', paymentMethod);
-}
-
-function paymentStatusLabel(payment) {
-  if (payment?.status === 'approved') {
-    if (payment.payment_type === 'deposit') return 'Señado';
-    if (payment.payment_type === 'balance') return 'Saldo abonado';
-    if (payment.payment_type === 'full') return 'Pagado';
-  }
-  return statusLabel('payment', payment?.status);
-}
 
 function creditStatusLabel(status) {
   return statusLabel('credit', status);
@@ -202,36 +131,6 @@ async function loadCredits() {
     console.error("Error cargando créditos:", err);
   } finally {
     isLoadingCredits.value = false;
-  }
-}
-
-function openCancelEnrollment(item) {
-  cancelEnrollmentTarget.value = item;
-  errorMessage.value = '';
-  successMessage.value = '';
-}
-
-function closeCancelEnrollment() {
-  cancelEnrollmentTarget.value = null;
-}
-
-async function submitCancelEnrollment() {
-  if (!cancelEnrollmentId.value) return;
-  errorMessage.value = '';
-  successMessage.value = '';
-  isCancellingId.value = cancelEnrollmentId.value;
-  try {
-    const response = await cancelEnrollment({ enrollment_id: cancelEnrollmentId.value });
-    successMessage.value = response.data?.message || 'Tu inscripción fue cancelada correctamente.';
-    closeCancelEnrollment();
-    await Promise.all([
-      loadPaymentHistory(),
-      loadCredits(),
-    ]);
-  } catch (err) {
-    errorMessage.value = err.response?.data?.error || 'No se pudo cancelar la inscripción.';
-  } finally {
-    isCancellingId.value = null;
   }
 }
 
@@ -288,9 +187,7 @@ watch(
 
 .return-message,
 .history-section,
-.discount-test-mode,
-.success-message,
-.error-message {
+.discount-test-mode {
   background: #fff;
   border: 2px solid #d0c0d0;
   border-radius: 20px;
@@ -309,19 +206,12 @@ watch(
   color: #027a48 !important;
 }
 
-.success-message {
-  border-color: #12b76a;
-  color: #027a48 !important;
-  font-weight: 700;
-}
-
 .return-message.pending {
   border-color: #f79009;
   color: #b54708 !important;
 }
 
-.return-message.failure,
-.error-message {
+.return-message.failure {
   color: #b42318 !important;
 }
 
@@ -339,71 +229,6 @@ watch(
 }
 
 .payments-table th {
-  color: #572c57;
-}
-
-.table-action {
-  font-size: 0.85rem;
-  padding: 0.55rem 0.7rem;
-}
-
-.modal-backdrop {
-  align-items: center;
-  background: rgba(20, 10, 20, 0.72);
-  display: flex;
-  inset: 0;
-  justify-content: center;
-  padding: 1rem;
-  position: fixed;
-  z-index: 50;
-}
-
-.manual-payment-modal {
-  background: #fff;
-  border: 2px solid #d0c0d0;
-  border-radius: 8px;
-  color: #4a3a4a;
-  display: grid;
-  gap: 1rem;
-  max-width: 460px;
-  padding: 1.5rem;
-  width: min(100%, 460px);
-}
-
-.manual-payment-modal h2,
-.manual-payment-modal p {
-  margin: 0;
-}
-
-.manual-payment-modal label,
-.manual-payment-modal label span {
-  display: block;
-}
-
-.manual-payment-modal label span {
-  color: #572c57;
-  font-weight: 700;
-  margin-bottom: 0.35rem;
-}
-
-.manual-payment-modal input,
-.manual-payment-modal select,
-.manual-payment-modal textarea {
-  border: 1px solid #d0c0d0;
-  border-radius: 8px;
-  font: inherit;
-  padding: 0.7rem;
-  width: 100%;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: flex-end;
-}
-
-.secondary-button {
-  background: #f5e6f5;
   color: #572c57;
 }
 
