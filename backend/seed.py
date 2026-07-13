@@ -678,6 +678,18 @@ def main():
             cupo_maximo=2,
         )
 
+        print("   Creando clase que empieza en menos de 24hs con client@test.com inscripto (demo: la baja debe quedar bloqueada por la regla de 24hs)...")
+        menos_24hs_fecha = today + timedelta(hours=20)
+        if menos_24hs_fecha.weekday() == 6:  # evitar domingo sin salirse de la ventana de 24hs
+            menos_24hs_fecha = today + timedelta(hours=4)
+        class_menos_24hs = create_test_class(
+            "Pilates - Clase en Menos de 24hs (Demo Baja Bloqueada)",
+            menos_24hs_fecha,
+            actividad3,
+            profesor_diego.id,
+            cupo_maximo=20,
+        )
+
         print("   Creando clases específicas para el 29 de Junio de 2026 (reporte de asistencia)...")
         # Clase de Pilates con 3 inscriptos, 1 asiste y 2 no (prueba de reporte de asistencia)
         pilates_asistencia_29 = create_test_class(
@@ -781,6 +793,17 @@ def main():
             "espera mensual: con client@test.com (ya inscripto y pago) en 'Pilates - Cliente "
             "Inscripto en Clase Llena (Demo Lista de Espera)' (llena, 2/2), intentar pedir lista "
             "de espera mensual para esa clase."
+        )
+
+        print("   Inscribiendo a client@test.com en una clase que empieza en menos de 24hs (demo: la baja debe estar bloqueada)...")
+        enrollment_menos_24hs = ensure_enrollment(
+            client, class_menos_24hs, estado=Enrollment.STATUS_PAID, tipo="Suelta"
+        )
+        ensure_payment(enrollment_menos_24hs, Payment.STATUS_APPROVED, created_at=today - timedelta(days=1))
+        print(
+            "   [INFO] Para probar que no se puede dar de baja a menos de 24hs del inicio: con "
+            "client@test.com, intentar cancelar la inscripcion en 'Pilates - Clase en Menos de "
+            "24hs (Demo Baja Bloqueada)' desde Mis Clases."
         )
 
         print("   Dejando a client@test.com con una oferta de lista de espera pendiente de decidir (demo en vivo)...")
