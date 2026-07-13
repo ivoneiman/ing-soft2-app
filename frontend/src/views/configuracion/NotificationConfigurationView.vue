@@ -1,8 +1,8 @@
 <template>
   <div class="notification-settings-view view">
     <div class="page-header">
-      <h1>Configuración de notificación</h1>
-      <p>Configurar el mensaje de notificación para cuando se cancela una clase.</p>
+      <h1>Enviar notificación</h1>
+      <p>Envía un mensaje por mail a todos los usuarios del sistema.</p>
     </div>
 
     <div>
@@ -12,7 +12,7 @@
             id="notification-message"
             v-model="message"
             rows="6"
-            placeholder="Ingrese el texto que se enviará cuando se cancele una clase"
+            placeholder="Ingrese el mensaje que se enviará a todos los usuarios"
           ></textarea>
         </div>
 
@@ -20,7 +20,7 @@
         <div v-if="successMessage" class="msg success">{{ successMessage }}</div>
 
         <button type="submit" class="small-button" :disabled="loading">
-          {{ loading ? 'Guardando...' : 'Configurar notificación' }}
+          {{ loading ? 'Enviando...' : 'Enviar Mensaje' }}
         </button>
       </form>
     </div>
@@ -28,24 +28,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-import { getNotificationConfig, saveNotificationConfig } from '../../services/api'
+import { ref } from 'vue'
+import { sendBroadcastMessage } from '../../services/api'
 
 const message = ref('')
 const errorMessage = ref('')
 const successMessage = ref('')
 const loading = ref(false)
-
-async function loadNotificationConfig() {
-  errorMessage.value = ''
-  successMessage.value = ''
-  try {
-    const response = await getNotificationConfig()
-    message.value = response.data.message || ''
-  } catch (error) {
-    errorMessage.value = error.response?.data?.error || 'No se pudo cargar la configuración de notificación.'
-  }
-}
 
 async function onSubmit() {
   errorMessage.value = ''
@@ -53,22 +42,21 @@ async function onSubmit() {
   const trimmedMessage = message.value.trim()
 
   if (!trimmedMessage) {
-    errorMessage.value = 'El campo del mensaje es obligatorio.'
+    errorMessage.value = 'El campo del mensaje es obligatorio'
     return
   }
 
   loading.value = true
   try {
-    const response = await saveNotificationConfig(trimmedMessage)
-    successMessage.value = response.data.message || 'Notificación configurada correctamente.'
+    const response = await sendBroadcastMessage(trimmedMessage)
+    successMessage.value = response.data.message || 'Mensaje de notificación enviado a todos los usuarios'
+    message.value = ''
   } catch (error) {
-    errorMessage.value = error.response?.data?.error || 'No se pudo guardar el mensaje de notificación.'
+    errorMessage.value = error.response?.data?.error || 'No se pudo enviar el mensaje de notificación.'
   } finally {
     loading.value = false
   }
 }
-
-onMounted(loadNotificationConfig)
 </script>
 
 <style scoped>

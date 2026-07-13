@@ -118,7 +118,7 @@
               Profesores
             </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/configuracion/notificacion" @click="handleAdminDropdownClick">
-              Configuración
+              Enviar mensaje
             </router-link>
             <router-link v-if="roleHelpers.isAdmin()" to="/reportes" @click="handleAdminDropdownClick">
               Reportes

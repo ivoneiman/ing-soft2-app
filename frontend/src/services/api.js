@@ -228,16 +228,9 @@ export function cancelarClaseCompleta(clase_id) {
 // CONFIGURACIONES
 // =========================
 
-export function getNotificationConfig() {
-  return axios.get(
-    `${API_URL}/settings/notification-message`,
-    REQUEST_CONFIG
-  );
-}
-
-export function saveNotificationConfig(message) {
-  return axios.put(
-    `${API_URL}/settings/notification-message`,
+export function sendBroadcastMessage(message) {
+  return axios.post(
+    `${API_URL}/settings/broadcast-message`,
     { message },
     REQUEST_CONFIG
   );
