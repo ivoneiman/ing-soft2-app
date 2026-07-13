@@ -93,16 +93,19 @@ def create_test_user(username, apellido, email, password, dni, telefono, role="c
     print(f"   [OK] Usuario creado: {email} ({role})")
     return user
 
-def create_test_profesor(nombre, apellido, actividad):
-    """Crea un profesor de prueba si no existe."""
+def create_test_profesor(nombre, apellido, actividades):
+    """Crea un profesor de prueba si no existe. `actividades` puede ser una
+    única Actividad o una lista de ellas (un profesor puede dictar varias)."""
+    actividades = actividades if isinstance(actividades, list) else [actividades]
+
     if profesor_exists(nombre, apellido):
         print(f"   [SKIP] Profesor {nombre} {apellido} ya existe, omitiendo...")
         profesor = Profesor.query.filter_by(nombre=nombre, apellido=apellido).first()
-        if profesor.id_actividad != actividad.id:
-            profesor.id_actividad = actividad.id
+        if {a.id for a in profesor.actividades} != {a.id for a in actividades}:
+            profesor.actividades = actividades
         return profesor
 
-    profesor = Profesor(nombre=nombre, apellido=apellido, id_actividad=actividad.id)
+    profesor = Profesor(nombre=nombre, apellido=apellido, actividades=actividades)
     db.session.add(profesor)
     db.session.flush()
     print(f"   [OK] Profesor creado: {nombre} {apellido}")

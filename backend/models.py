@@ -294,23 +294,29 @@ class Credit(db.Model):
 
 Credito = Credit
 
+profesor_actividades = db.Table(
+    "profesor_actividades",
+    db.Column("profesor_id", db.Integer, db.ForeignKey("profesores.id"), primary_key=True),
+    db.Column("actividad_id", db.Integer, db.ForeignKey("actividades.id"), primary_key=True),
+)
+
+
 class Profesor(db.Model):
-    """Representa a un profesor que puede ser asignado a clases."""
+    """Representa a un profesor que puede ser asignado a clases. Un profesor puede
+    dictar una o varias actividades (por ejemplo, Yoga y Pilates a la vez)."""
     __tablename__ = "profesores"
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(80), nullable=False)
     apellido = db.Column(db.String(80), nullable=False)
-    id_actividad = db.Column(db.Integer, db.ForeignKey("actividades.id"), nullable=True)
 
-    actividad = db.relationship("Actividades")
+    actividades = db.relationship("Actividades", secondary=profesor_actividades, backref="profesores")
 
     def to_dict(self):
         return {
             "id": self.id,
             "nombre": self.nombre,
             "apellido": self.apellido,
-            "id_actividad": self.id_actividad,
-            "actividad_nombre": self.actividad.name if self.actividad else None,
+            "actividades": [{"id": a.id, "name": a.name} for a in self.actividades],
         }
 
 class Payment(db.Model):

@@ -14,7 +14,7 @@
         <div v-if="profesorActual" class="current-info">
           <strong>Nombre y Apellido actuales:</strong> {{ profesorActual.nombre }} {{ profesorActual.apellido }}
           <br />
-          <strong>Actividad actual:</strong> {{ profesorActual.actividad_nombre || 'Sin asignar' }}
+          <strong>Actividad/es actual/es:</strong> {{ actividadesActualesTexto }}
         </div>
 
         <div class="input-group">
@@ -42,18 +42,20 @@
         </div>
 
         <div class="input-group">
-          <label for="actividad">Actividad</label>
-          <select
-            id="actividad"
-            v-model="form.id_actividad"
-            required
-            :disabled="loading || loadError"
-          >
-            <option :value="null" disabled>Seleccione una actividad</option>
-            <option v-for="actividad in actividades" :key="actividad.id" :value="actividad.id">
+          <label>Seleccionar la/s actividad/es que dictará el profesor</label>
+          <div class="activity-toggle-grid">
+            <button
+              v-for="actividad in actividades"
+              :key="actividad.id"
+              type="button"
+              class="activity-toggle-btn"
+              :class="{ active: form.actividad_ids.includes(actividad.id) }"
+              :disabled="loading || loadError"
+              @click="toggleActividad(actividad.id)"
+            >
               {{ actividad.name }}
-            </option>
-          </select>
+            </button>
+          </div>
         </div>
 
         <div v-if="errorMessage" class="msg error">{{ errorMessage }}</div>
@@ -73,7 +75,7 @@
 </template>
 
 <script setup>
-import { reactive, ref, onMounted } from 'vue';
+import { reactive, ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import { getActivities } from '@/services/api.js';
@@ -85,7 +87,7 @@ const profesorId = route.params.id;
 const form = reactive({
   nombre: '',
   apellido: '',
-  id_actividad: null,
+  actividad_ids: [],
 });
 
 const profesorActual = ref(null);
@@ -98,6 +100,20 @@ const successMessage = ref('');
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
+const actividadesActualesTexto = computed(() => {
+  const nombres = profesorActual.value?.actividades?.map(a => a.name) || [];
+  return nombres.length ? nombres.join(', ') : 'Sin asignar';
+});
+
+const toggleActividad = (actividadId) => {
+  const index = form.actividad_ids.indexOf(actividadId);
+  if (index === -1) {
+    form.actividad_ids.push(actividadId);
+  } else {
+    form.actividad_ids.splice(index, 1);
+  }
+};
+
 onMounted(async () => {
   try {
     const [profesorResponse, actividadesResponse] = await Promise.all([
@@ -106,7 +122,7 @@ onMounted(async () => {
     ]);
     const profesor = profesorResponse.data.profesor;
     profesorActual.value = profesor;
-    form.id_actividad = profesor.id_actividad;
+    form.actividad_ids = (profesor.actividades || []).map(a => a.id);
     actividades.value = actividadesResponse.data || [];
   } catch (err) {
     loadError.value = true;
@@ -120,9 +136,15 @@ onMounted(async () => {
 async function handleSubmit() {
   if (initialLoading.value || loadError.value) return;
 
-  loading.value = true;
   errorMessage.value = '';
   successMessage.value = '';
+
+  if (form.actividad_ids.length === 0) {
+    errorMessage.value = 'Debe seleccionar al menos una actividad para el profesor.';
+    return;
+  }
+
+  loading.value = true;
 
   try {
     const response = await axios.put(`${baseURL}/profesores/${profesorId}`, form, { withCredentials: true });
@@ -187,5 +209,34 @@ async function handleSubmit() {
   background: #572c57;
   border-radius: 10px;
   color: #f5f0f7;
+}
+
+.activity-toggle-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.activity-toggle-btn {
+  padding: 0.75rem 1.25rem;
+  border: 1px solid #d0c0d0;
+  border-radius: 8px;
+  background: #fff;
+  color: #4a3a4a;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.activity-toggle-btn.active {
+  border-color: #9f5f91;
+  background-color: #f5e6f5;
+  color: #572c57;
+  box-shadow: 0 2px 8px rgba(87, 44, 87, 0.2);
+}
+
+.activity-toggle-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>

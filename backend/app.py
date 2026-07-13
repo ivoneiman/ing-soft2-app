@@ -376,9 +376,21 @@ def upgrade_database_schema():
 
     if "profesores" in inspector.get_table_names():
         columns = [column["name"] for column in inspector.get_columns("profesores")]
+        # Columna legada de cuando un profesor sólo podía dictar una actividad.
+        # Se conserva la migración para bases viejas, pero los datos se vuelcan
+        # a la tabla profesor_actividades (relación muchos a muchos).
         if "id_actividad" not in columns:
             db.session.execute(text("ALTER TABLE profesores ADD COLUMN id_actividad INTEGER"))
-        db.session.commit()
+            db.session.commit()
+
+        if "id_actividad" in columns and "profesor_actividades" in inspector.get_table_names():
+            db.session.execute(text(
+                "INSERT INTO profesor_actividades (profesor_id, actividad_id) "
+                "SELECT id, id_actividad FROM profesores "
+                "WHERE id_actividad IS NOT NULL "
+                "AND id NOT IN (SELECT profesor_id FROM profesor_actividades)"
+            ))
+            db.session.commit()
 
 # ─── Crear tablas e insertar actividades base ───────────────────────────────────────────────────
 
@@ -2371,6 +2383,24 @@ def my_credits():
     return api_success({"credits": payload}, status_code=200)
 
 
+def _resolve_actividades_for_profesor(data):
+    """Valida y resuelve la lista de actividades que un profesor puede dictar.
+
+    Devuelve (actividades, error_response). Un profesor debe dictar al menos
+    una actividad, y puede dictar varias (ej: Yoga y Pilates a la vez).
+    """
+    actividad_ids = data.get("actividad_ids")
+    if not isinstance(actividad_ids, list) or not actividad_ids:
+        return None, (jsonify({"error": "Debe seleccionar al menos una actividad para el profesor."}), 400)
+
+    actividad_ids = list(dict.fromkeys(actividad_ids))  # sin duplicados, preserva orden
+    actividades = Actividades.query.filter(Actividades.id.in_(actividad_ids)).all()
+    if len(actividades) != len(actividad_ids):
+        return None, (jsonify({"error": "Una o más actividades seleccionadas no existen."}), 404)
+
+    return actividades, None
+
+
 @app.route("/api/profesores", methods=["POST"])
 def create_profesor():
     """Crea un nuevo profesor."""
@@ -2381,7 +2411,6 @@ def create_profesor():
     data = request.get_json() or {}
     nombre = data.get("nombre", "").strip()
     apellido = data.get("apellido", "").strip()
-    id_actividad = data.get("id_actividad")
 
     # Escenario 2: Campos incompletos
     if not nombre or not apellido:
@@ -2393,18 +2422,15 @@ def create_profesor():
     if not apellido.replace(" ", "").isalpha():
         return jsonify({"error": "El formato del apellido es inválido. Solo debe contener letras."}), 400
 
-    if not id_actividad:
-        return jsonify({"error": "Debe seleccionar la actividad del profesor."}), 400
-
-    actividad = db.session.get(Actividades, id_actividad)
-    if not actividad:
-        return jsonify({"error": "La actividad seleccionada no existe."}), 404
+    actividades, error_response = _resolve_actividades_for_profesor(data)
+    if error_response:
+        return error_response
 
     # Evitar duplicados
     if Profesor.query.filter_by(nombre=nombre, apellido=apellido).first():
         return jsonify({"error": "Este profesor ya existe."}), 409
 
-    new_profesor = Profesor(nombre=nombre, apellido=apellido, id_actividad=actividad.id)
+    new_profesor = Profesor(nombre=nombre, apellido=apellido, actividades=actividades)
     db.session.add(new_profesor)
     db.session.commit()
 
@@ -2421,7 +2447,7 @@ def get_profesores():
     query = Profesor.query
     id_actividad = request.args.get("id_actividad")
     if id_actividad:
-        query = query.filter_by(id_actividad=id_actividad)
+        query = query.filter(Profesor.actividades.any(Actividades.id == id_actividad))
     profesores_query = query.order_by(Profesor.nombre, Profesor.apellido).all()
     
     profesores_data = []
@@ -2520,7 +2546,6 @@ def update_profesor(profesor_id):
     data = request.get_json() or {}
     nombre = data.get("nombre", "").strip()
     apellido = data.get("apellido", "").strip()
-    id_actividad = data.get("id_actividad")
 
     # Escenario 2: Campos vacíos
     if not nombre or not apellido:
@@ -2532,12 +2557,9 @@ def update_profesor(profesor_id):
     if not apellido.replace(" ", "").isalpha():
         return jsonify({"error": "El formato del apellido no cumple con los requisitos. Solo debe contener letras."}), 400
 
-    if not id_actividad:
-        return jsonify({"error": "Debe seleccionar la actividad del profesor."}), 400
-
-    actividad = db.session.get(Actividades, id_actividad)
-    if not actividad:
-        return jsonify({"error": "La actividad seleccionada no existe."}), 404
+    actividades, error_response = _resolve_actividades_for_profesor(data)
+    if error_response:
+        return error_response
 
     # Validar si ya existe otro profesor con el mismo nombre y apellido
     existing_profesor = Profesor.query.filter(
@@ -2548,7 +2570,7 @@ def update_profesor(profesor_id):
 
     profesor.nombre = nombre
     profesor.apellido = apellido
-    profesor.id_actividad = actividad.id
+    profesor.actividades = actividades
     db.session.commit()
 
     return jsonify({"message": "Profesor actualizado exitosamente", "profesor": profesor.to_dict()}), 200

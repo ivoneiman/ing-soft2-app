@@ -679,7 +679,8 @@ function cerrarConfirmacionCancelacion() {
 
 const profesoresDeLaClaseAEditar = computed(() => {
   if (!claseParaEditar.value) return [];
-  return profesores.value.filter(p => p.id_actividad === claseParaEditar.value.id_actividad);
+  const activityId = claseParaEditar.value.id_actividad;
+  return profesores.value.filter(p => (p.actividades || []).some(a => a.id === activityId));
 });
 
 function abrirModalEdicion(clase) {

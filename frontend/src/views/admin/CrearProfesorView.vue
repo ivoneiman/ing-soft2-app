@@ -20,13 +20,19 @@
         </div>
 
         <div class="form-group">
-          <label for="actividad">Actividad</label>
-          <select id="actividad" v-model="form.id_actividad">
-            <option :value="null" disabled>Seleccione una actividad</option>
-            <option v-for="actividad in actividades" :key="actividad.id" :value="actividad.id">
+          <label>Seleccionar la/s actividad/es que dictará el profesor</label>
+          <div class="activity-toggle-grid">
+            <button
+              v-for="actividad in actividades"
+              :key="actividad.id"
+              type="button"
+              class="activity-toggle-btn"
+              :class="{ active: form.actividad_ids.includes(actividad.id) }"
+              @click="toggleActividad(actividad.id)"
+            >
               {{ actividad.name }}
-            </option>
-          </select>
+            </button>
+          </div>
         </div>
 
         <button type="submit" class="btn-primary" :disabled="loading">
@@ -49,7 +55,7 @@ import { getActivities } from '@/services/api.js';
 const form = reactive({
   nombre: '',
   apellido: '',
-  id_actividad: null,
+  actividad_ids: [],
 });
 
 const actividades = ref([]);
@@ -67,24 +73,39 @@ const loadActividades = async () => {
   }
 };
 
+const toggleActividad = (actividadId) => {
+  const index = form.actividad_ids.indexOf(actividadId);
+  if (index === -1) {
+    form.actividad_ids.push(actividadId);
+  } else {
+    form.actividad_ids.splice(index, 1);
+  }
+};
+
 const submitForm = async () => {
-  loading.value = true;
   errorMessage.value = '';
   successMessage.value = '';
+
+  if (form.actividad_ids.length === 0) {
+    errorMessage.value = 'Debe seleccionar al menos una actividad para el profesor.';
+    return;
+  }
+
+  loading.value = true;
 
   try {
     const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
     const response = await axios.post(`${baseURL}/profesores`, {
       nombre: form.nombre,
       apellido: form.apellido,
-      id_actividad: form.id_actividad,
+      actividad_ids: form.actividad_ids,
     }, { withCredentials: true });
 
     successMessage.value = response.data.message;
     // Limpiar formulario
     form.nombre = '';
     form.apellido = '';
-    form.id_actividad = null;
+    form.actividad_ids = [];
   } catch (error) {
     errorMessage.value = error.response?.data?.error || 'Ocurrió un error inesperado.';
   } finally {
@@ -106,6 +127,23 @@ onMounted(loadActividades);
 .form-group { display: flex; flex-direction: column; }
 .form-group label { margin-bottom: 0.5rem; font-weight: 600; color: #4a3a4a; }
 .form-group input, .form-group select { padding: 0.75rem 1rem; border: 1px solid #d0c0d0; border-radius: 8px; font-size: 1rem; color: #333; background: #fff; }
+.activity-toggle-grid { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+.activity-toggle-btn {
+  padding: 0.75rem 1.25rem;
+  border: 1px solid #d0c0d0;
+  border-radius: 8px;
+  background: #fff;
+  color: #4a3a4a;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+.activity-toggle-btn.active {
+  border-color: #9f5f91;
+  background-color: #f5e6f5;
+  color: #572c57;
+  box-shadow: 0 2px 8px rgba(87, 44, 87, 0.2);
+}
 .btn-primary { padding: 0.8rem 1.5rem; font-size: 1rem; align-self: flex-start; }
 .success-message, .error-message { margin-top: 1.5rem; padding: 1rem; border-radius: 8px; font-weight: 500; }
 </style>

@@ -184,7 +184,8 @@ const selectedProfesorName = computed(() => {
 
 const profesoresDeLaActividad = computed(() => {
   if (!form.activity_id) return [];
-  return profesores.value.filter(p => p.id_actividad === Number(form.activity_id));
+  const activityId = Number(form.activity_id);
+  return profesores.value.filter(p => (p.actividades || []).some(a => a.id === activityId));
 });
 
 const profesoresDisponiblesDeLaActividad = computed(() => {
