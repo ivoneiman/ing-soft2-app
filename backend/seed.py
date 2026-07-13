@@ -669,6 +669,15 @@ def main():
             legacy_names=["Yoga - Prueba Cupos (19/20)", "Yoga Prueba 19 Cupos"]
         )
 
+        print("   Creando clase del sabado 18/7 sin cupo, con client@test.com con confirmacion de lista de espera pendiente (demo arrepentimiento)...")
+        class_oferta_demo_sabado = create_test_class(
+            "Pilates - Oferta Lista de Espera Sabado 18/7 (Demo Arrepentimiento)",
+            datetime(2026, 7, 18, 19, 0),
+            actividad3,
+            profesor_diego.id,
+            cupo_maximo=1,
+        )
+
         print("   Creando clase llena en la que client@test.com ya está inscripto (demo: intentar anotarse en lista de espera mensual estando ya inscripto)...")
         class_cliente_inscripto_llena = create_test_class(
             "Pilates - Cliente Inscripto en Clase Llena (Demo Lista de Espera)",
@@ -815,6 +824,22 @@ def main():
         oferta_enrollment.paid_amount = 0
         oferta_enrollment.remaining_amount = 0
         oferta_enrollment.payment_status = Enrollment.PAYMENT_STATUS_PENDING
+
+        print("   Dejando a client@test.com con una segunda oferta de lista de espera pendiente (demo arrepentimiento)...")
+        oferta_enrollment_sabado = ensure_enrollment(
+            client, class_oferta_demo_sabado, estado=Enrollment.STATUS_PENDING_PAYMENT, tipo="Suelta"
+        )
+        oferta_enrollment_sabado.waitlist_promoted_at = today
+        oferta_enrollment_sabado.total_amount = 0
+        oferta_enrollment_sabado.paid_amount = 0
+        oferta_enrollment_sabado.remaining_amount = 0
+        oferta_enrollment_sabado.payment_status = Enrollment.PAYMENT_STATUS_PENDING
+        print(
+            "   [INFO] client@test.com queda con DOS confirmaciones de lista de espera pendientes: "
+            "'Pilates - Oferta Lista de Espera (Demo)' (para probar el pago/aceptacion) y "
+            "'Pilates - Oferta Lista de Espera Sabado 18/7 (Demo Arrepentimiento)' (para probar "
+            "el arrepentimiento/rechazo de la oferta)."
+        )
 
         print("   Anotando un segundo usuario en la misma lista de espera (para mostrar el caso 'aún no seleccionado')...")
         espera_demo_user = create_test_user(
