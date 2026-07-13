@@ -126,6 +126,13 @@ def at_app_time(base_datetime, hour, minute=0):
     return as_naive_datetime(datetime.combine(base_datetime.date(), time(hour, minute)))
 
 
+def avoid_sunday(base_datetime):
+    """El gimnasio abre de lunes a sábados: si la fecha calculada cae domingo, la corre a lunes."""
+    if base_datetime.weekday() == 6:  # 6 = domingo
+        return base_datetime + timedelta(days=1)
+    return base_datetime
+
+
 def next_available_datetime(actividad_id, fecha_hora, ignore_class_id=None):
     """Evita chocar con la restricción única actividad + horario."""
     candidate = fecha_hora
@@ -383,7 +390,7 @@ def create_client_credit_examples(client, actividad_pilates, profesor, today):
 
     cancellable_class = create_test_class(
         "Pilates - Credito Individual (Origen)",
-        at_app_time(today + timedelta(days=7), 15),
+        at_app_time(avoid_sunday(today + timedelta(days=7)), 15),
         actividad_pilates,
         profesor.id,
         legacy_names=["Pilates", "Credito Test - Pilates Cancelable"],
@@ -403,7 +410,7 @@ def create_client_credit_examples(client, actividad_pilates, profesor, today):
 
     target_class = create_test_class(
         "Pilates - Credito Individual (Destino)",
-        at_app_time(today + timedelta(days=8), 15),
+        at_app_time(avoid_sunday(today + timedelta(days=8)), 15),
         actividad_pilates,
         profesor.id,
         legacy_names=["Credito Test - Pilates Destino"],
@@ -595,7 +602,7 @@ def main():
         print("   Creando clase individual con cupo disponible...")
         class_con_cupo = create_test_class(
             "Pilates - Clase Individual (Cupo Disponible)",
-            at_app_time(today + timedelta(days=3), 20),
+            at_app_time(avoid_sunday(today + timedelta(days=3)), 20),
             actividad3,
             profesor_diego.id,
             cupo_maximo=20,
@@ -605,7 +612,7 @@ def main():
         print("   Creando clase con cupo limitado a 1 (disponible)...")
         class_limited_cupo = create_test_class(
             "Pilates - Clase Limitada (1 Cupo)",
-            at_app_time(today + timedelta(days=7), 11),
+            at_app_time(avoid_sunday(today + timedelta(days=7)), 11),
             actividad3,
             profesor_diego.id,
             cupo_maximo=1,
@@ -615,7 +622,7 @@ def main():
         print("   Creando clase individual sin cupo (llena)...")
         class_sin_cupo = create_test_class(
             "Pilates - Clase Sin Cupo (Llena)",
-            at_app_time(today + timedelta(days=9), 18),
+            at_app_time(avoid_sunday(today + timedelta(days=9)), 18),
             actividad3,
             profesor_diego.id,
             cupo_maximo=1,
@@ -625,7 +632,7 @@ def main():
         print("   Creando clase con oferta de lista de espera lista para demo (client@test.com)...")
         class_oferta_demo = create_test_class(
             "Pilates - Oferta Lista de Espera (Demo)",
-            at_app_time(today + timedelta(days=5), 12),
+            at_app_time(avoid_sunday(today + timedelta(days=5)), 12),
             actividad3,
             profesor_diego.id,
             cupo_maximo=1,
@@ -655,11 +662,20 @@ def main():
         print("   Creando Clase de prueba para cupos (19/20)...")
         class_19_cupos = create_test_class(
             "Pilates - Prueba Cupos (19/20)",
-            at_app_time(today + timedelta(days=8), 19),
+            at_app_time(avoid_sunday(today + timedelta(days=8)), 19),
             actividad3,
             profesor_diego.id,
             cupo_maximo=20,
             legacy_names=["Yoga - Prueba Cupos (19/20)", "Yoga Prueba 19 Cupos"]
+        )
+
+        print("   Creando clase llena en la que client@test.com ya está inscripto (demo: intentar anotarse en lista de espera mensual estando ya inscripto)...")
+        class_cliente_inscripto_llena = create_test_class(
+            "Pilates - Cliente Inscripto en Clase Llena (Demo Lista de Espera)",
+            at_app_time(avoid_sunday(today + timedelta(days=6)), 17),
+            actividad3,
+            profesor_diego.id,
+            cupo_maximo=2,
         )
 
         print("   Creando clases específicas para el 29 de Junio de 2026 (reporte de asistencia)...")
@@ -745,6 +761,27 @@ def main():
             # Distribuimos los pagos de los dummies en los últimos 90 días para verlos en el reporte
             payment_date = today - timedelta(days=(i * 4))
             ensure_payment(enr, Payment.STATUS_APPROVED, created_at=payment_date)
+
+        print("   Inscribiendo a client@test.com en una clase llena (demo: intentar anotarse en lista de espera mensual estando ya inscripto)...")
+        enrollment_cliente_inscripto_llena = ensure_enrollment(
+            client, class_cliente_inscripto_llena, estado=Enrollment.STATUS_PAID, tipo="Suelta"
+        )
+        ensure_payment(enrollment_cliente_inscripto_llena, Payment.STATUS_APPROVED, created_at=today - timedelta(days=1))
+
+        dummy_inscripto_llena = create_test_user(
+            username="AlumnoInscriptoLlena", apellido="Dummy", email="dummy_inscripto_llena@test.com",
+            password="password123", dni="77777703", telefono="11111111", role="client"
+        )
+        enr_inscripto_llena = ensure_enrollment(
+            dummy_inscripto_llena, class_cliente_inscripto_llena, estado=Enrollment.STATUS_PAID, tipo="Suelta"
+        )
+        ensure_payment(enr_inscripto_llena, Payment.STATUS_APPROVED, created_at=today - timedelta(days=1))
+        print(
+            "   [INFO] Para probar que un cliente ya inscripto no pueda anotarse en la lista de "
+            "espera mensual: con client@test.com (ya inscripto y pago) en 'Pilates - Cliente "
+            "Inscripto en Clase Llena (Demo Lista de Espera)' (llena, 2/2), intentar pedir lista "
+            "de espera mensual para esa clase."
+        )
 
         print("   Dejando a client@test.com con una oferta de lista de espera pendiente de decidir (demo en vivo)...")
         oferta_enrollment = ensure_enrollment(
