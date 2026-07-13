@@ -2,6 +2,10 @@ CLASS_STATUS_ACTIVE = "Activa"
 CLASS_STATUS_CANCELLED = "Cancelada"
 CLASS_STATUSES = (CLASS_STATUS_ACTIVE, CLASS_STATUS_CANCELLED)
 
+# Salones físicos disponibles en el gimnasio. Una clase puede repetirse en el mismo
+# horario únicamente si usa un salón distinto de los ya ocupados en ese horario.
+ROOMS = ("Sala 1", "Sala 2", "Sala 3")
+
 ENROLLMENT_TYPE_SINGLE = "Suelta"
 ENROLLMENT_TYPE_MONTHLY = "Mensual"
 ENROLLMENT_TYPES = (ENROLLMENT_TYPE_SINGLE, ENROLLMENT_TYPE_MONTHLY)
@@ -87,9 +91,6 @@ CREDIT_API_STATUS_USED = "used"
 CREDIT_API_STATUS_EXPIRED = "expired"
 CREDIT_EXPIRATION_DAYS = 30
 
-NOTIFICATION_STATUS_UNREAD = "unread"
-NOTIFICATION_STATUS_READ = "read"
-
 DISCOUNT_PERCENTAGES = (0, 40, 70)
 DISCOUNT_PERIODS = (
     {"percentage": 0, "start_day": 1, "end_day": 14},
@@ -101,12 +102,8 @@ PAYMENT_OPTION_FULL = "full"
 PAYMENT_OPTION_DEPOSIT = "deposit"
 PAYMENT_OPTION_BALANCE = "balance"
 
-WAITLIST_TYPE_INDIVIDUAL = "individual"
 WAITLIST_TYPE_MONTHLY = "monthly"
-WAITLIST_TYPES = (
-    WAITLIST_TYPE_INDIVIDUAL,
-    WAITLIST_TYPE_MONTHLY,
-)
+WAITLIST_TYPES = (WAITLIST_TYPE_MONTHLY,)
 
 WAITLIST_PROMOTION_EXPIRY_HOURS = 24  # Ventana para pagar tras ser promovido desde lista de espera
 

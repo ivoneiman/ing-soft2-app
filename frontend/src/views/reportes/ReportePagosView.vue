@@ -3,7 +3,7 @@
     <header class="report-header">
       <div>
         <h1>Historial de Pagos</h1>
-        <p>Registro global de transacciones, señas y estados de pago.</p>
+        <p>Registro de pagos de clases individuales y suscripciones mensuales.</p>
       </div>
       <router-link to="/reportes" class="back-button">
         Volver a Reportes
@@ -68,10 +68,7 @@
             <th>Fecha y Hora</th>
             <th>Cliente</th>
             <th>Actividad</th>
-            <th>Método</th>
-            <th>Tipo de Pago</th>
             <th>Monto</th>
-            <th>Estado</th>
           </tr>
         </thead>
         <tbody>
@@ -79,21 +76,9 @@
             <td>{{ formatDateTime(pay.created_at) }}</td>
             <td class="bold">{{ pay.user?.apellido }} {{ pay.user?.username }}</td>
             <td>{{ pay.actividad || '-' }}</td>
-            <td>{{ paymentMethodLabel(pay.payment_method) }}</td>
-            <td>{{ paymentTypeLabel(pay.payment_type) }}</td>
             <td class="bold money">
               <span v-if="isCancelled(pay)">-</span>
               <span v-else>{{ formatMoney(pay.final_amount) }}</span>
-            </td>
-            <td>
-              <template v-if="isCancelled(pay)">
-                <span v-if="pay.requiere_reembolso" class="status-pill expired">Cancelada (Reembolso pdte.)</span>
-                <span v-else-if="pay.payment_method !== '-'" class="status-pill expired">Cancelada (Créditos)</span>
-                <span v-else class="status-pill expired">Cancelada</span>
-              </template>
-              <template v-else>
-                <span :class="['status-pill', pay.status]">{{ paymentStatusLabel(pay.status) }}</span>
-              </template>
             </td>
           </tr>
         </tbody>
@@ -124,6 +109,9 @@ const availableActivities = computed(() => {
   payments.value.forEach(p => {
     if (p.actividad && p.actividad !== '-') acts.add(p.actividad);
   });
+  acts.add('Yoga'); // Asegurar que las actividades principales siempre estén en la lista
+  acts.add('Pilates');
+  acts.add('Funcional');
   return Array.from(acts).sort();
 });
 

@@ -10,7 +10,7 @@ from constants import (
     PAYMENT_TYPE_DEPOSIT,
     PAYMENT_TYPE_FULL,
 )
-from models import Actividades, Attendance, Class, Credit, Enrollment, Notification, Payment, User
+from models import Actividades, Attendance, Class, Credit, Enrollment, Payment, User
 from services import class_service, payment_service
 
 
@@ -208,7 +208,6 @@ def main():
             assert_equal("full credit count", Credit.query.filter_by(enrollment_id=full_id).count(), 1)
             assert_equal("deposit credit count", Credit.query.filter_by(enrollment_id=deposit_id).count(), 1)
             assert_equal("credit-paid credit count", Credit.query.filter_by(enrollment_id=credit_id).count(), 1)
-            assert_true("notifications created", Notification.query.filter(Notification.user_id == user_id).count() >= 3)
             assert_equal("full state cancelled", db.session.get(Enrollment, full_id).estado, ENROLLMENT_STATUS_CANCELLED)
             assert_equal("full payment status preserved", db.session.get(Enrollment, full_id).payment_status, ENROLLMENT_PAYMENT_STATUS_PAID)
             assert_equal("deposit state cancelled", db.session.get(Enrollment, deposit_id).estado, ENROLLMENT_STATUS_CANCELLED)
@@ -249,7 +248,6 @@ def main():
                 Credit.query.filter_by(enrollment_id=enrollment_id).delete()
                 enrollment = db.session.get(Enrollment, enrollment_id)
                 if enrollment:
-                    Notification.query.filter_by(user_id=enrollment.user_id).delete()
                     Attendance.query.filter_by(user_id=enrollment.user_id, class_id=enrollment.class_id).delete()
                     db.session.delete(enrollment)
             for _, class_id in [item for item in reversed(created) if item[0] == "class"]:

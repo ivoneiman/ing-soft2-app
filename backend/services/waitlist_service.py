@@ -7,34 +7,23 @@ try:
     from email_service import send_waitlist_promotion_email
     from constants import (
         ENROLLMENT_TYPE_MONTHLY,
-        ENROLLMENT_TYPE_SINGLE,
         ENROLLMENT_CAPACITY_STATUSES,
-        WAITLIST_TYPE_INDIVIDUAL,
         WAITLIST_TYPE_MONTHLY,
     )
     from services.class_service import enrollment_counts
     from services.enrollment_service import class_capacity
-    from services.notification_service import create_waitlist_promotion_notification
 except ModuleNotFoundError:
     from ..models import Class, Enrollment, WaitlistEntry, db
     from ..email_service import send_waitlist_promotion_email
     from ..constants import (
         ENROLLMENT_TYPE_MONTHLY,
-        ENROLLMENT_TYPE_SINGLE,
         ENROLLMENT_CAPACITY_STATUSES,
-        WAITLIST_TYPE_INDIVIDUAL,
         WAITLIST_TYPE_MONTHLY,
     )
     from .class_service import enrollment_counts
     from .enrollment_service import class_capacity
-    from .notification_service import create_waitlist_promotion_notification
 
 logger = logging.getLogger(__name__)
-
-WAITLIST_PROMOTION_PRIORITY = (
-    WAITLIST_TYPE_MONTHLY,
-    WAITLIST_TYPE_INDIVIDUAL,
-)
 
 
 def _series_classes_for_month(class_obj):
@@ -126,9 +115,9 @@ def add_waitlist_entry(user, class_obj, waitlist_type):
         .first()
     )
     if existing:
-        return None, "Ya estás en la lista de espera de esta clase"
+        return None, "Ya te encuentras inscripto en la lista de espera de esta clase"
 
-    if waitlist_type != WAITLIST_TYPE_INDIVIDUAL and waitlist_type != WAITLIST_TYPE_MONTHLY:
+    if waitlist_type != WAITLIST_TYPE_MONTHLY:
         return None, "Tipo de lista de espera inválido"
 
     entry = WaitlistEntry(user_id=user.id, class_id=class_obj.id, type=waitlist_type)
@@ -172,10 +161,6 @@ def get_pending_payments_for_user(user, exclude_class_id=None):
     return results
 
 
-def _entry_enrollment_type(entry_type):
-    return ENROLLMENT_TYPE_MONTHLY if entry_type == WAITLIST_TYPE_MONTHLY else ENROLLMENT_TYPE_SINGLE
-
-
 def _discard_waitlist_entry(entry, reason):
     logger.info(
         "[Waitlist] descarta_entry entry_id=%s user_id=%s class_id=%s type=%s reason=%s",
@@ -198,66 +183,62 @@ def promote_next_waitlisted_user(class_obj):
         logger.info("[Waitlist] sin_cupo class_id=%s", class_obj.id)
         return None
 
-    for entry_type in WAITLIST_PROMOTION_PRIORITY:
-        entries = (
-            WaitlistEntry.query
-            .filter_by(class_id=class_obj.id, type=entry_type)
-            .order_by(WaitlistEntry.created_at.asc(), WaitlistEntry.id.asc())
-            .all()
-        )
-        for entry in entries:
-            if _available_spots(class_obj) <= 0:
-                return None
+    entries = (
+        WaitlistEntry.query
+        .filter_by(class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
+        .order_by(WaitlistEntry.created_at.asc(), WaitlistEntry.id.asc())
+        .all()
+    )
+    for entry in entries:
+        if _available_spots(class_obj) <= 0:
+            return None
 
-            user = entry.user
-            if not user:
-                _discard_waitlist_entry(entry, "missing_user")
-                continue
-            if user_is_enrolled_in_class(user, class_obj):
-                _discard_waitlist_entry(entry, "already_enrolled")
-                continue
+        user = entry.user
+        if not user:
+            _discard_waitlist_entry(entry, "missing_user")
+            continue
+        if user_is_enrolled_in_class(user, class_obj):
+            _discard_waitlist_entry(entry, "already_enrolled")
+            continue
 
-            enrollment = Enrollment.query.filter_by(user_id=user.id, class_id=class_obj.id).first()
-            if enrollment and enrollment.estado in Enrollment.CAPACITY_STATUSES:
-                _discard_waitlist_entry(entry, "active_enrollment")
-                continue
+        enrollment = Enrollment.query.filter_by(user_id=user.id, class_id=class_obj.id).first()
+        if enrollment and enrollment.estado in Enrollment.CAPACITY_STATUSES:
+            _discard_waitlist_entry(entry, "active_enrollment")
+            continue
 
-            if enrollment:
-                enrollment.estado = Enrollment.STATUS_PENDING_PAYMENT
-                enrollment.tipo = _entry_enrollment_type(entry_type)
-                enrollment.requiere_reembolso = False
-            else:
-                enrollment = Enrollment(
-                    user_id=user.id,
-                    class_id=class_obj.id,
-                    tipo=_entry_enrollment_type(entry_type),
-                    estado=Enrollment.STATUS_PENDING_PAYMENT,
-                )
-                db.session.add(enrollment)
-
-            db.session.delete(entry)
-            db.session.flush()
-
-            notification = create_waitlist_promotion_notification(user, class_obj)
-            pending_payments = get_pending_payments_for_user(user, exclude_class_id=class_obj.id)
-            email_sent = send_waitlist_promotion_email(user, class_obj, pending_payments=pending_payments)
-
-            logger.info(
-                "[Waitlist] promovido user_id=%s class_id=%s type=%s enrollment_id=%s email_sent=%s",
-                user.id,
-                class_obj.id,
-                entry_type,
-                enrollment.id,
-                email_sent,
+        if enrollment:
+            enrollment.estado = Enrollment.STATUS_PENDING_PAYMENT
+            enrollment.tipo = ENROLLMENT_TYPE_MONTHLY
+            enrollment.requiere_reembolso = False
+        else:
+            enrollment = Enrollment(
+                user_id=user.id,
+                class_id=class_obj.id,
+                tipo=ENROLLMENT_TYPE_MONTHLY,
+                estado=Enrollment.STATUS_PENDING_PAYMENT,
             )
-            return {
-                "type": entry_type,
-                "user": user,
-                "class_obj": class_obj,
-                "enrollment": enrollment,
-                "notification": notification,
-                "email_sent": email_sent,
-            }
+            db.session.add(enrollment)
+
+        db.session.delete(entry)
+        db.session.flush()
+
+        pending_payments = get_pending_payments_for_user(user, exclude_class_id=class_obj.id)
+        email_sent = send_waitlist_promotion_email(user, class_obj, pending_payments=pending_payments)
+
+        logger.info(
+            "[Waitlist] promovido user_id=%s class_id=%s enrollment_id=%s email_sent=%s",
+            user.id,
+            class_obj.id,
+            enrollment.id,
+            email_sent,
+        )
+        return {
+            "type": WAITLIST_TYPE_MONTHLY,
+            "user": user,
+            "class_obj": class_obj,
+            "enrollment": enrollment,
+            "email_sent": email_sent,
+        }
 
     return None
 
@@ -277,27 +258,41 @@ def delete_waitlists_for_user_and_series(user, base_class_obj):
     return deleted
 
 
+def _full_classes_in_series(base_class_obj, enrollment_map):
+    full_classes = []
+    for class_obj in _series_classes_for_month(base_class_obj):
+        capacity = class_capacity(class_obj)
+        current = enrollment_map.get(class_obj.id, 0)
+        if current >= capacity:
+            full_classes.append(class_obj)
+    return full_classes
+
+
+def monthly_series_has_full_class(base_class_obj, enrollment_map):
+    """La inscripción mensual cubre todas las semanas del mes en ese horario, así que
+    alcanza con que UNA sola fecha de la serie esté llena para que la suscripción
+    completa deba pasar por la lista de espera en vez de cobrarse."""
+    return bool(_full_classes_in_series(base_class_obj, enrollment_map))
+
+
 def create_monthly_waitlist_for_full_series(user, base_class_obj, enrollment_map):
+    """Anota al usuario en la lista de espera de cada fecha de la serie mensual que ya
+    esté llena (incluida la clase elegida, si corresponde), para que se lo promueva
+    fecha por fecha a medida que se liberen lugares."""
     if not user or not base_class_obj:
         return []
 
     waitlist_entries = []
-    for class_obj in _series_classes_for_month(base_class_obj):
-        if class_obj.id == base_class_obj.id:
+    for class_obj in _full_classes_in_series(base_class_obj, enrollment_map):
+        existing = (
+            WaitlistEntry.query
+            .filter_by(user_id=user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
+            .first()
+        )
+        if existing:
             continue
-
-        capacity = class_obj.cupoMaximo if class_obj.cupoMaximo is not None else 20
-        current = enrollment_map.get(class_obj.id, 0)
-        if current >= capacity:
-            existing = (
-                WaitlistEntry.query
-                .filter_by(user_id=user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
-                .first()
-            )
-            if existing:
-                continue
-            entry = WaitlistEntry(user_id=user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
-            db.session.add(entry)
-            waitlist_entries.append(entry)
+        entry = WaitlistEntry(user_id=user.id, class_id=class_obj.id, type=WAITLIST_TYPE_MONTHLY)
+        db.session.add(entry)
+        waitlist_entries.append(entry)
 
     return waitlist_entries

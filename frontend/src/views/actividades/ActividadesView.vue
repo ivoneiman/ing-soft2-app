@@ -101,11 +101,11 @@
         </template>
         
         <div class="selection-summary" v-else-if="selectedClassFull" style="margin-top: 1rem; padding: 1rem; background-color: #fef2f2; border-radius: 8px; border-left: 4px solid #b91c1c;">
-          <span class="radio-text" style="font-size: 0.95rem; color: #7f1d1d;"><strong>Clase sin cupo:</strong> podés anotarte en la lista de espera. Te notificaremos vía mail si se libera un lugar.</span>
+          <span class="radio-text" style="font-size: 0.95rem; color: #7f1d1d;"><strong>Clase sin cupo para inscripción individual.</strong> Con la inscripción mensual podés anotarte en la lista de espera; te notificaremos vía mail si se libera un lugar.</span>
         </div>
 
         <div style="display: flex; gap: 1rem; margin-top: 1.5rem; align-items: flex-start;">
-          <div style="flex: 1; text-align: center;">
+          <div v-if="!selectedClassFull" style="flex: 1; text-align: center;">
             <button
               type="button"
               class="activity-btn"
@@ -113,7 +113,7 @@
               :class="{ active: enrollmentType === TIPO_SUELTA && hasSelectedType }"
               @click="selectType(TIPO_SUELTA)"
             >
-              {{ selectedClassFull ? 'A la espera (Individual)' : 'Inscripción Individual' }}
+              Inscripción Individual
             </button>
             <small style="color: #6b7280; display: block; margin-top: 0.5rem; line-height: 1.2; font-weight: 500;">
               (Solo {{ selectedDateLabel }})
@@ -157,13 +157,13 @@
 
       <div v-if="showEnrollmentModal" class="modal-backdrop" @click.self="closeEnrollmentModal">
         <div class="modal">
-          <h3>Confirmar inscripción</h3>
+          <h3>Atención</h3>
           <p>
             Al confirmar la inscripción serás redirigido al pago. Tu lugar solo quedará reservado cuando el pago sea aprobado. Si no completás el pago, la inscripción será cancelada automáticamente y el cupo permanecerá disponible.
           </p>
           <div class="modal-actions">
             <button type="button" class="secondary-button" @click="closeEnrollmentModal">Volver</button>
-            <button type="button" class="danger-button" :disabled="isSubmittingEnrollment" @click="confirmEnrollment">Confirmar inscripción</button>
+            <button type="button" class="danger-button" :disabled="isSubmittingEnrollment" @click="confirmEnrollment">Confirmar</button>
           </div>
         </div>
       </div>
@@ -420,14 +420,17 @@ async function onSlotSelected(slot) {
   isMensualAvailable.value = false;
   
   try {
+    // Una fecha del mes sin ninguna clase programada en ese horario no cuenta como "sin
+    // cupo": simplemente esa semana no hay clase. Solo bloquea la mensualidad una fecha
+    // que SÍ tiene clase creada pero ya está llena (mismo criterio que usa el backend).
     let allAvailable = true;
     for (const dStr of dates) {
       if (dStr === toDateKey(selectedDate.value)) continue;
-      
+
       const res = await getCatalogAvailability(selectedActivityId.value, dStr);
       const slots = res.data?.slots || res.data?.available || [];
-      const match = slots.find(s => s.time === slot.time && s.available_spots > 0);
-      if (!match) {
+      const matchingSlot = slots.find(s => s.time === slot.time);
+      if (matchingSlot && Number(matchingSlot.available_spots || 0) <= 0) {
         allAvailable = false;
         break;
       }
@@ -471,14 +474,11 @@ async function handleEnrollment() {
   successMessage.value = "";
   try {
     const isWaitlist = isWaitlistAction.value;
-    const waitlistType = isWaitlist
-      ? (enrollmentType.value === TIPO_MENSUAL ? 'monthly' : 'individual')
-      : undefined;
     const res = await createEnrollment({
       class_id: selectedClass.value.id,
       tipo: enrollmentType.value,
       waitlist: isWaitlist,
-      waitlist_type: waitlistType,
+      waitlist_type: isWaitlist ? 'monthly' : undefined,
     });
     
     if (res.data?.credit_used) {
@@ -516,10 +516,10 @@ async function handleEnrollment() {
       const mensajeError = err.response.data.error;
       
       // Si el error menciona la lista de espera (no hay cupo mensual) y no es un error de duplicado/conflicto
-      if (mensajeError.includes("lista de espera") && !mensajeError.includes("Ya estás anotado") && !mensajeError.includes("Usted esta inscripto")) {
+      if (mensajeError.includes("lista de espera") && !mensajeError.includes("Ya te encuentras inscripto en la lista de espera")) {
         const quiereListaEspera = confirm(`${mensajeError}\n\n¿Deseas unirte a la lista de espera mensual ahora?`);
         if (quiereListaEspera) {
-          await unirseListaEspera(selectedClass.value.id, enrollmentType.value === TIPO_MENSUAL ? 'monthly' : 'individual');
+          await unirseListaEspera(selectedClass.value.id);
           return; // Terminamos la ejecución para que `finally` no cierre estados antes de tiempo
         }
       }
@@ -532,13 +532,13 @@ async function handleEnrollment() {
   }
 }
 
-async function unirseListaEspera(claseId, waitlistType) {
+async function unirseListaEspera(claseId) {
   try {
     const res = await createEnrollment({
       class_id: claseId,
-      tipo: enrollmentType.value,
+      tipo: TIPO_MENSUAL,
       waitlist: true,
-      waitlist_type: waitlistType,
+      waitlist_type: 'monthly',
     });
     
     successMessage.value = res.data?.message || "Te agregamos a la lista de espera.";

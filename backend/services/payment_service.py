@@ -33,7 +33,7 @@ try:
         PAYMENT_TYPE_INDIVIDUAL_CLASS,
         PAYMENT_TYPE_MONTHLY_SUBSCRIPTION,
     )
-    from models import Payment, db
+    from models import Class, Payment, db
     from services.datetime_service import current_datetime, datetime_in_app_timezone
 except ModuleNotFoundError:
     from ..constants import (
@@ -63,7 +63,7 @@ except ModuleNotFoundError:
         PAYMENT_TYPE_INDIVIDUAL_CLASS,
         PAYMENT_TYPE_MONTHLY_SUBSCRIPTION,
     )
-    from ..models import Payment, db
+    from ..models import Class, Payment, db
     from .datetime_service import current_datetime, datetime_in_app_timezone
 
 logger = logging.getLogger(__name__)
@@ -190,38 +190,51 @@ def has_approved_payment(enrollment):
     return bool(approved_payments(enrollment))
 
 
+def remaining_classes_in_monthly_series(class_obj):
+    """Cuenta las clases de la serie mensual (misma actividad, día y horario) desde
+    la clase elegida (inclusive) hasta fin de mes.
+
+    Es la cantidad real de clases a las que el cliente puede asistir si se inscribe
+    en esa clase puntual: las que ya "ocurrieron" antes no se cuentan.
+    """
+    if not class_obj or not class_obj.fecha_hora or not class_obj.id_actividad:
+        return 0
+
+    year = class_obj.fecha_hora.year
+    month = class_obj.fecha_hora.month
+    month_start = datetime(year, month, 1)
+    month_end = datetime(year, month, monthrange(year, month)[1], 23, 59, 59)
+
+    series_classes = (
+        Class.query
+        .filter(Class.id_actividad == class_obj.id_actividad)
+        .filter(Class.estado == Class.STATUS_ACTIVE)
+        .filter(Class.fecha_hora >= month_start)
+        .filter(Class.fecha_hora <= month_end)
+        .all()
+    )
+    return sum(
+        1 for c in series_classes
+        if c.fecha_hora
+        and c.fecha_hora.weekday() == class_obj.fecha_hora.weekday()
+        and c.fecha_hora.strftime("%H:%M") == class_obj.fecha_hora.strftime("%H:%M")
+        and c.fecha_hora >= class_obj.fecha_hora
+    )
+
+
 def enrollment_payment_quote(enrollment, current_dt=None):
     product_type = product_type_for_enrollment(enrollment)
     quote_data = payment_quote(product_type, PAYMENT_OPTION_FULL, current_dt)
-    
-    # Calcular el precio base mensual correcto multiplicando $3000 por la cantidad de clases que hay en el mes
-    if product_type == PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION and enrollment and getattr(enrollment, "class_", None):
-        class_obj = enrollment.class_
-        if getattr(class_obj, "fecha_hora", None):
-            y = class_obj.fecha_hora.year
-            m = class_obj.fecha_hora.month
-            wd = class_obj.fecha_hora.weekday()
-            total_classes = 0
-            for day in range(1, monthrange(y, m)[1] + 1):
-                if datetime(y, m, day).weekday() == wd:
-                    total_classes += 1
-            quote_data["amount"] = 3000.0 * total_classes
-            quote_data["final_amount"] = quote_data["amount"]
 
-    # El descuento aplica SOLO a la suscripción mensual y depende del DÍA DE LA CLASE seleccionada
-    if product_type == PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION:
-        if enrollment and getattr(enrollment, "class_", None):
-            class_dt = datetime_in_app_timezone(getattr(enrollment.class_, "fecha_hora", None))
-            if class_dt:
-                class_day = class_dt.day
-                
-                if 15 <= class_day <= 21:
-                    quote_data["discount_percentage"] = 40
-                elif class_day >= 22:
-                    quote_data["discount_percentage"] = 70
-                    
-                if quote_data["discount_percentage"] > 0:
-                    quote_data["final_amount"] = calculate_final_amount(quote_data["amount"], quote_data["discount_percentage"])
+    # Suscripción mensual: se cobran únicamente las clases que le quedan por asistir
+    # desde la clase elegida (inclusive) hasta fin de mes. No es un descuento
+    # porcentual por tramo de fecha: es directamente la resta de las clases que
+    # ya "ocurrieron" sobre las que el cliente puede asistir al inscribirse.
+    if product_type == PAYMENT_PRODUCT_TYPE_MONTHLY_SUBSCRIPTION and enrollment and getattr(enrollment, "class_", None):
+        remaining = remaining_classes_in_monthly_series(enrollment.class_)
+        quote_data["amount"] = 3000.0 * remaining
+        quote_data["discount_percentage"] = 0
+        quote_data["final_amount"] = quote_data["amount"]
 
     return quote_data
 
@@ -536,10 +549,15 @@ def payment_error_message(status_detail):
     return "Error del servidor de pagos"
 
 
-def frontend_payments_url(status, message=None):
+def frontend_payments_url(status, message=None, enrollment_id=None, is_waitlist_offer=False):
     base_url = os.getenv('FRONTEND_PAYMENTS_URL', DEFAULT_FRONTEND_PAYMENTS_URL)
     parsed = urlparse(base_url)
-    target_path = "/mis-clases" if status == "success" else "/actividades"
+    if status == "success":
+        target_path = "/mis-clases"
+    elif is_waitlist_offer and enrollment_id:
+        target_path = f"/lista-espera/oferta/{enrollment_id}"
+    else:
+        target_path = "/actividades"
     if parsed.scheme and parsed.netloc:
         base_url = urlunparse((parsed.scheme, parsed.netloc, target_path, "", "", ""))
     else:

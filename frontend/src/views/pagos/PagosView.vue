@@ -3,7 +3,7 @@
     <header class="payments-header">
       <div>
         <h1>Pagos</h1>
-        <p>Historial de pagos, créditos y notificaciones.</p>
+        <p>Historial de pagos y créditos.</p>
       </div>
 
       <RouterLink v-if="isAdmin" to="/admin/descuentos" class="admin-link">
@@ -14,18 +14,6 @@
     <p v-if="returnMessage" :class="['return-message', returnMessage.type]">
       {{ returnMessage.text }}
     </p>
-
-    <nav class="payments-tabs" aria-label="Secciones de pagos">
-      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.HISTORY }" @click="activeTab = PAYMENT_TAB.HISTORY">
-        Historial de pagos
-      </button>
-      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.CREDITS }" @click="activeTab = PAYMENT_TAB.CREDITS">
-        Créditos
-      </button>
-      <button type="button" :class="{ active: activeTab === PAYMENT_TAB.NOTIFICATIONS }" @click="activeTab = PAYMENT_TAB.NOTIFICATIONS">
-        Notificaciones
-      </button>
-    </nav>
 
     <section v-if="activeTab === PAYMENT_TAB.HISTORY" class="history-section">
       <h2>Historial de pagos</h2>
@@ -100,23 +88,6 @@
       </table>
     </section>
 
-    <section v-else-if="activeTab === PAYMENT_TAB.NOTIFICATIONS" class="history-section">
-      <h2>Notificaciones</h2>
-
-      <div v-if="isLoadingNotifications" class="empty-state">Cargando notificaciones...</div>
-      <div v-else-if="notifications.length === 0" class="empty-state">No tenés notificaciones.</div>
-
-      <div v-else class="notifications-list">
-        <article v-for="notification in notifications" :key="notification.id" class="notification-item">
-          <div>
-            <h3>{{ notification.title }}</h3>
-            <p>{{ notification.message }}</p>
-          </div>
-          <time>{{ formatDateTime(notification.created_at) }}</time>
-        </article>
-      </div>
-    </section>
-
     <div v-if="cancelEnrollmentTarget" class="modal-backdrop" role="dialog" aria-modal="true">
       <section class="manual-payment-modal">
         <h2>Cancelar inscripción</h2>
@@ -155,7 +126,6 @@ import { PAYMENT_RETURN_MESSAGES, PAYMENT_RETURN_STATUS, PAYMENT_TAB, PAYMENT_TA
 import {
   cancelEnrollment,
   getMyCredits,
-  getMyNotifications,
   getPaymentHistory,
 } from '../../services/api';
 import { formatDateTime, formatMoney } from '../../utils/formatters';
@@ -171,12 +141,10 @@ const activeTab = ref(normalizedTab(route.query.tab));
 const isCancellingId = ref(null);
 const isLoadingHistory = ref(false);
 const isLoadingCredits = ref(false);
-const isLoadingNotifications = ref(false);
 const errorMessage = ref('');
 const successMessage = ref('');
 const payments = ref([]);
 const credits = ref([]);
-const notifications = ref([]);
 const cancelEnrollmentTarget = ref(null);
 
 const cancelEnrollmentId = computed(() => cancelEnrollmentTarget.value?.enrollment_id || cancelEnrollmentTarget.value?.id || null);
@@ -237,18 +205,6 @@ async function loadCredits() {
   }
 }
 
-async function loadNotifications() {
-  isLoadingNotifications.value = true;
-  try {
-    const response = await getMyNotifications();
-    notifications.value = response.data.notifications || [];
-  } catch (err) {
-    console.error("Error cargando notificaciones:", err);
-  } finally {
-    isLoadingNotifications.value = false;
-  }
-}
-
 function openCancelEnrollment(item) {
   cancelEnrollmentTarget.value = item;
   errorMessage.value = '';
@@ -271,7 +227,6 @@ async function submitCancelEnrollment() {
     await Promise.all([
       loadPaymentHistory(),
       loadCredits(),
-      loadNotifications(),
     ]);
   } catch (err) {
     errorMessage.value = err.response?.data?.error || 'No se pudo cancelar la inscripción.';
@@ -283,7 +238,6 @@ async function submitCancelEnrollment() {
 onMounted(() => {
   loadPaymentHistory();
   loadCredits();
-  loadNotifications();
 });
 
 watch(
@@ -330,18 +284,6 @@ watch(
 
 .payments-header p {
   margin: 0;
-}
-
-.payments-tabs {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.payments-tabs button.active {
-  border-color: #f6ea98;
-  background: #f6ea98;
-  color: #9f5f91;
 }
 
 .return-message,
@@ -465,42 +407,6 @@ watch(
   color: #572c57;
 }
 
-.notifications-list {
-  display: grid;
-  gap: 1rem;
-}
-
-.notification-item {
-  align-items: flex-start;
-  border: 1px solid #e8dce8;
-  border-radius: 8px;
-  display: flex;
-  gap: 1rem;
-  justify-content: space-between;
-  padding: 1rem;
-}
-
-.notification-item h3,
-.notification-item p {
-  margin: 0;
-}
-
-.notification-item h3 {
-  color: #572c57;
-  font-size: 1rem;
-}
-
-.notification-item p {
-  margin-top: 0.35rem;
-}
-
-.notification-item time {
-  color: #8a6a8a;
-  flex-shrink: 0;
-  font-size: 0.9rem;
-  font-weight: 700;
-}
-
 .empty-state {
   background: #fff;
   border: 2px solid #d0c0d0;
@@ -511,9 +417,7 @@ watch(
 }
 
 @media (max-width: 760px) {
-  .payments-header,
-  .payments-tabs,
-  .notification-item {
+  .payments-header {
     display: block;
   }
 
@@ -521,7 +425,6 @@ watch(
     padding: 16px;
   }
 
-  .payments-tabs button,
   .admin-link {
     display: inline-block;
     margin-top: 0.75rem;

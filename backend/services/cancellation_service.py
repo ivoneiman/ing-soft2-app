@@ -2,6 +2,7 @@ import logging
 
 try:
     from models import Enrollment, db
+    from constants import ENROLLMENT_TYPE_MONTHLY
     from services.payment_service import (
         class_has_finished,
         expire_pending_payments_for_enrollment,
@@ -10,12 +11,9 @@ try:
     )
     from services.credit_service import generate_credit_for_paid_enrollment
     from services.enrollment_service import enrollment_is_cancelable
-    from services.notification_service import (
-        create_cancellation_notification,
-        create_enrollment_cancellation_credit_notification,
-    )
 except ModuleNotFoundError:
     from ..models import Enrollment, db
+    from ..constants import ENROLLMENT_TYPE_MONTHLY
     from .payment_service import (
         class_has_finished,
         expire_pending_payments_for_enrollment,
@@ -24,10 +22,6 @@ except ModuleNotFoundError:
     )
     from .credit_service import generate_credit_for_paid_enrollment
     from .enrollment_service import enrollment_is_cancelable
-    from .notification_service import (
-        create_cancellation_notification,
-        create_enrollment_cancellation_credit_notification,
-    )
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +31,6 @@ def cancel_class(class_obj, current_dt):
     enrollments = Enrollment.query.filter_by(class_id=class_obj.id).all()
 
     credits_created = 0
-    notifications_created = 0
     email_jobs = []
     for enrollment in enrollments:
         credit = generate_credit_for_paid_enrollment(enrollment, class_obj, current_dt)
@@ -45,24 +38,19 @@ def cancel_class(class_obj, current_dt):
         if credited:
             credits_created += 1
 
-        create_cancellation_notification(enrollment, class_obj, credited)
-        notifications_created += 1
-
         if enrollment.estado != Enrollment.STATUS_CANCELLED:
             enrollment.estado = Enrollment.STATUS_CANCELLED
 
         email_jobs.append((enrollment.user, class_obj, credit))
 
     logger.info(
-        "[Cancelaciones] class_id=%s enrollments=%s credits=%s notifications=%s",
+        "[Cancelaciones] class_id=%s enrollments=%s credits=%s",
         class_obj.id,
         len(enrollments),
         credits_created,
-        notifications_created,
     )
     return {
         "credits_created": credits_created,
-        "notifications_created": notifications_created,
         "email_jobs": email_jobs,
     }
 
@@ -84,16 +72,19 @@ def cancel_enrollment(enrollment, current_user, current_dt, skip_credit_generati
         return None, "La inscripción solo puede cancelarse hasta 24 horas antes del inicio de la clase", 400
 
     recompute_enrollment_payment_state(enrollment, current_dt)
-    should_generate_credit = not skip_credit_generation and has_approved_payment(enrollment)
+    # Los créditos reutilizables sólo existen para bajas dentro de una suscripción mensual;
+    # las clases individuales no generan crédito (ver mensaje de baja simulando un reembolso).
+    should_generate_credit = (
+        not skip_credit_generation
+        and enrollment.tipo == ENROLLMENT_TYPE_MONTHLY
+        and has_approved_payment(enrollment)
+    )
 
     credit = None
-    notification = None
     if should_generate_credit:
         # Regla de negocio: el modelo actual de créditos representa reservas reutilizables,
         # no dinero. Por eso una seña aprobada genera un crédito completo, sin prorrateo.
         credit = generate_credit_for_paid_enrollment(enrollment, class_obj, current_dt)
-        if credit:
-            notification = create_enrollment_cancellation_credit_notification(enrollment, class_obj)
 
     expired_payments = expire_pending_payments_for_enrollment(enrollment)
     enrollment.estado = Enrollment.STATUS_CANCELLED
@@ -110,6 +101,5 @@ def cancel_enrollment(enrollment, current_user, current_dt, skip_credit_generati
         "class": class_obj,
         "credit": credit,
         "credit_generated": credit is not None,
-        "notification": notification,
         "pending_payments_expired": expired_payments,
     }, None, None

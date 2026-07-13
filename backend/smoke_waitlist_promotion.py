@@ -7,10 +7,9 @@ from constants import (
     ENROLLMENT_STATUS_PENDING_PAYMENT,
     ENROLLMENT_TYPE_MONTHLY,
     ENROLLMENT_TYPE_SINGLE,
-    WAITLIST_TYPE_INDIVIDUAL,
     WAITLIST_TYPE_MONTHLY,
 )
-from models import Actividades, Attendance, Class, Enrollment, Notification, Payment, User, WaitlistEntry
+from models import Actividades, Attendance, Class, Enrollment, Payment, User, WaitlistEntry
 from services import waitlist_service
 
 
@@ -100,11 +99,10 @@ def main():
 
             owner = create_user("owner", suffix)
             monthly = create_user("monthly", suffix)
-            individual = create_user("individual", suffix)
             fifo_first = create_user("fifoA", suffix)
             fifo_second = create_user("fifoB", suffix)
             already_user = create_user("already", suffix)
-            users = [owner, monthly, individual, fifo_first, fifo_second, already_user]
+            users = [owner, monthly, fifo_first, fifo_second, already_user]
             created.extend([("user", user.id) for user in users])
             owner_id = owner.id
             fifo_first_id = fifo_first.id
@@ -113,14 +111,12 @@ def main():
 
             priority_class = create_class(activity, "priority", capacity=1)
             owner_enrollment = create_enrollment(owner, priority_class)
-            waitlist(individual, priority_class, WAITLIST_TYPE_INDIVIDUAL, datetime.now() - timedelta(minutes=10))
             waitlist(monthly, priority_class, WAITLIST_TYPE_MONTHLY, datetime.now() - timedelta(minutes=1))
             created.extend([("class", priority_class.id), ("enrollment", owner_enrollment.id)])
             db.session.commit()
             priority_class_id = priority_class.id
             owner_enrollment_id = owner_enrollment.id
             monthly_id = monthly.id
-            individual_id = individual.id
 
         http = app.test_client()
         set_session_user(http, owner_id)
@@ -128,11 +124,9 @@ def main():
         assert_equal("cancel triggers promotion", cancel_res.status_code, 200)
         with app.app_context():
             promoted = Enrollment.query.filter_by(user_id=monthly_id, class_id=priority_class_id).first()
-            assert_true("monthly promoted first", promoted)
+            assert_true("monthly promoted", promoted)
             assert_equal("monthly promoted pending", promoted.estado, ENROLLMENT_STATUS_PENDING_PAYMENT)
             assert_equal("monthly promoted type", promoted.tipo, ENROLLMENT_TYPE_MONTHLY)
-            assert_equal("individual remains waitlisted", WaitlistEntry.query.filter_by(user_id=individual_id, class_id=priority_class_id).count(), 1)
-            assert_true("promotion notification", Notification.query.filter_by(user_id=monthly_id, title="Cupo disponible").first())
             assert_equal("promotion email sent", len(sent_emails), 1)
             set_session_user(http, monthly_id)
             pending_res = http.get("/api/enrollments/pending")
@@ -149,8 +143,8 @@ def main():
             full = create_enrollment(owner2, fifo_class)
             fifo_first = db.session.get(User, fifo_first_id)
             fifo_second = db.session.get(User, fifo_second_id)
-            waitlist(fifo_first, fifo_class, WAITLIST_TYPE_INDIVIDUAL, datetime.now() - timedelta(minutes=5))
-            waitlist(fifo_second, fifo_class, WAITLIST_TYPE_INDIVIDUAL, datetime.now() - timedelta(minutes=1))
+            waitlist(fifo_first, fifo_class, WAITLIST_TYPE_MONTHLY, datetime.now() - timedelta(minutes=5))
+            waitlist(fifo_second, fifo_class, WAITLIST_TYPE_MONTHLY, datetime.now() - timedelta(minutes=1))
             created.extend([("class", fifo_class.id), ("enrollment", full.id)])
             db.session.commit()
             fifo_class_id = fifo_class.id
@@ -177,8 +171,8 @@ def main():
             already_user = db.session.get(User, already_user_id)
             already_enrollment = create_enrollment(already_user, skip_class, status=ENROLLMENT_STATUS_CANCELLED)
             already_enrollment.estado = ENROLLMENT_STATUS_PENDING_PAYMENT
-            waitlist(already_user, skip_class, WAITLIST_TYPE_INDIVIDUAL, datetime.now() - timedelta(minutes=5))
-            waitlist(fallback, skip_class, WAITLIST_TYPE_INDIVIDUAL, datetime.now() - timedelta(minutes=1))
+            waitlist(already_user, skip_class, WAITLIST_TYPE_MONTHLY, datetime.now() - timedelta(minutes=5))
+            waitlist(fallback, skip_class, WAITLIST_TYPE_MONTHLY, datetime.now() - timedelta(minutes=1))
             created.extend([("class", skip_class.id), ("enrollment", full_skip.id), ("enrollment", already_enrollment.id)])
             db.session.commit()
             skip_class_id = skip_class.id
@@ -201,7 +195,7 @@ def main():
             no_space_wait = create_user("wait4", suffix)
             created.extend([("user", no_space_owner.id), ("user", no_space_wait.id)])
             no_space_enrollment = create_enrollment(no_space_owner, no_space_class)
-            waitlist(no_space_wait, no_space_class, WAITLIST_TYPE_INDIVIDUAL)
+            waitlist(no_space_wait, no_space_class, WAITLIST_TYPE_MONTHLY)
             created.extend([("class", no_space_class.id), ("enrollment", no_space_enrollment.id)])
             db.session.commit()
             no_space_result = waitlist_service.promote_next_waitlisted_user(no_space_class)
@@ -222,7 +216,6 @@ def main():
                 Payment.query.filter_by(enrollment_id=enrollment_id).delete()
                 enrollment = db.session.get(Enrollment, enrollment_id)
                 if enrollment:
-                    Notification.query.filter_by(user_id=enrollment.user_id).delete()
                     Attendance.query.filter_by(user_id=enrollment.user_id, class_id=enrollment.class_id).delete()
                     db.session.delete(enrollment)
             for _, class_id in [item for item in reversed(created) if item[0] == "class"]:
@@ -231,7 +224,6 @@ def main():
                 if class_obj:
                     db.session.delete(class_obj)
             for _, user_id in [item for item in reversed(created) if item[0] == "user"]:
-                Notification.query.filter_by(user_id=user_id).delete()
                 user = db.session.get(User, user_id)
                 if user:
                     db.session.delete(user)

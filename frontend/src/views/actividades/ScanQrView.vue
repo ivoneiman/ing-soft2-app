@@ -68,7 +68,7 @@
               <span>{{ person.email }}</span>
             </div>
             <span :class="['attendance-status', person.present ? 'present' : 'pending']">
-              {{ person.present ? `Presente ${formatAttendanceTime(person.attendance_created_at)}` : 'Pendiente' }}
+              {{ person.present ? 'Presente' : 'Pendiente' }}
             </span>
           </li>
         </ul>
@@ -180,7 +180,9 @@ const onScanSuccess = async (decodedText) => {
 
     scheduleFeedbackClear({ unlockScanner: true });
   } catch (error) {
-    errorMessage.value = error.response?.data?.error || 'Error al registrar asistencia';
+    errorMessage.value = error.response?.status === 404
+      ? 'QR no válido. El usuario no pertenece al sistema.'
+      : error.response?.data?.error || 'Error al registrar asistencia';
     isScanning.value = false;
     scheduleFeedbackClear();
   }
@@ -277,15 +279,6 @@ function formatClassDate(value) {
 
 function formatClassTime(value) {
   if (!value) return '-';
-
-  return new Intl.DateTimeFormat('es-AR', {
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
-function formatAttendanceTime(value) {
-  if (!value) return '';
 
   return new Intl.DateTimeFormat('es-AR', {
     hour: '2-digit',

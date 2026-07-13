@@ -228,16 +228,9 @@ export function cancelarClaseCompleta(clase_id) {
 // CONFIGURACIONES
 // =========================
 
-export function getNotificationConfig() {
-  return axios.get(
-    `${API_URL}/settings/notification-message`,
-    REQUEST_CONFIG
-  );
-}
-
-export function saveNotificationConfig(message) {
-  return axios.put(
-    `${API_URL}/settings/notification-message`,
+export function sendBroadcastMessage(message) {
+  return axios.post(
+    `${API_URL}/settings/broadcast-message`,
     { message },
     REQUEST_CONFIG
   );
@@ -269,14 +262,6 @@ export function getMyWaitlists() {
 export function cancelEnrollment({ enrollment_id }) {
   return axios.post(
     `${API_URL}/enrollments/${enrollment_id}/cancel`,
-    {},
-    REQUEST_CONFIG
-  );
-}
-
-export function cancelMonthlySubscription(enrollmentId) {
-  return axios.post(
-    `${API_URL}/enrollments/${enrollmentId}/cancel-monthly-subscription`,
     {},
     REQUEST_CONFIG
   );
@@ -364,13 +349,6 @@ export function getPaymentDiscountRules(testDay) {
 export function getMyCredits() {
   return axios.get(
     `${API_URL}/credits/my`,
-    REQUEST_CONFIG
-  );
-}
-
-export function getMyNotifications() {
-  return axios.get(
-    `${API_URL}/notifications/my`,
     REQUEST_CONFIG
   );
 }

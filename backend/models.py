@@ -147,9 +147,11 @@ class Class(db.Model):
     profesor = db.relationship("Profesor", backref="classes")
     payments = db.relationship("Payment", back_populates="class_")
 
-    # Identificador único unificado para el try/except de app.py de tu compañero
+    # El gimnasio tiene salones físicos limitados: dos clases no pueden compartir
+    # salón en el mismo horario, pero sí pueden coincidir en horario si están en
+    # salones distintos (incluida la misma actividad repetida en paralelo).
     __table_args__ = (
-        db.UniqueConstraint("id_actividad", "fecha_hora", name="actividad_horario_unico"),
+        db.UniqueConstraint("fecha_hora", "room", name="horario_salon_unico"),
     )
 
     def to_dict(self):
@@ -292,43 +294,30 @@ class Credit(db.Model):
 
 Credito = Credit
 
+profesor_actividades = db.Table(
+    "profesor_actividades",
+    db.Column("profesor_id", db.Integer, db.ForeignKey("profesores.id"), primary_key=True),
+    db.Column("actividad_id", db.Integer, db.ForeignKey("actividades.id"), primary_key=True),
+)
+
+
 class Profesor(db.Model):
-    """Representa a un profesor que puede ser asignado a clases."""
+    """Representa a un profesor que puede ser asignado a clases. Un profesor puede
+    dictar una o varias actividades (por ejemplo, Yoga y Pilates a la vez)."""
     __tablename__ = "profesores"
     id = db.Column(db.Integer, primary_key=True)
     nombre = db.Column(db.String(80), nullable=False)
     apellido = db.Column(db.String(80), nullable=False)
+
+    actividades = db.relationship("Actividades", secondary=profesor_actividades, backref="profesores")
 
     def to_dict(self):
         return {
             "id": self.id,
             "nombre": self.nombre,
             "apellido": self.apellido,
+            "actividades": [{"id": a.id, "name": a.name} for a in self.actividades],
         }
-
-class Notification(db.Model):
-    """Notificación simple para avisos visibles en la cuenta del usuario."""
-    __tablename__ = "notifications"
-
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
-    title = db.Column(db.String(160), nullable=False)
-    message = db.Column(db.Text, nullable=False)
-    read = db.Column(db.Boolean, default=False, nullable=False)
-    created_at = db.Column(db.DateTime, server_default=db.func.now(), nullable=False)
-
-    user = db.relationship("User", backref=db.backref("notifications", cascade="all, delete-orphan"))
-
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "user_id": self.user_id,
-            "title": self.title,
-            "message": self.message,
-            "read": self.read,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
-
 
 class Payment(db.Model):
     """Registro base de pagos iniciados desde el sistema."""

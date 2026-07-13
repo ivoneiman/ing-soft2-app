@@ -15,9 +15,9 @@ from app import (
     app,
 )
 from models import db, User, Class, Enrollment, Attendance, Actividades, Payment, Profesor, WaitlistEntry
-from constants import WAITLIST_TYPE_INDIVIDUAL
+from constants import WAITLIST_TYPE_MONTHLY, ROOMS
 
-ROOM_OPTIONS = ["Salón 1", "Salón 2", "Salón 3"]
+ROOM_OPTIONS = list(ROOMS)
 ROOM_BY_SCHEDULE = {}
 
 
@@ -93,13 +93,19 @@ def create_test_user(username, apellido, email, password, dni, telefono, role="c
     print(f"   [OK] Usuario creado: {email} ({role})")
     return user
 
-def create_test_profesor(nombre, apellido):
-    """Crea un profesor de prueba si no existe."""
+def create_test_profesor(nombre, apellido, actividades):
+    """Crea un profesor de prueba si no existe. `actividades` puede ser una
+    única Actividad o una lista de ellas (un profesor puede dictar varias)."""
+    actividades = actividades if isinstance(actividades, list) else [actividades]
+
     if profesor_exists(nombre, apellido):
         print(f"   [SKIP] Profesor {nombre} {apellido} ya existe, omitiendo...")
-        return Profesor.query.filter_by(nombre=nombre, apellido=apellido).first()
-    
-    profesor = Profesor(nombre=nombre, apellido=apellido)
+        profesor = Profesor.query.filter_by(nombre=nombre, apellido=apellido).first()
+        if {a.id for a in profesor.actividades} != {a.id for a in actividades}:
+            profesor.actividades = actividades
+        return profesor
+
+    profesor = Profesor(nombre=nombre, apellido=apellido, actividades=actividades)
     db.session.add(profesor)
     db.session.flush()
     print(f"   [OK] Profesor creado: {nombre} {apellido}")
@@ -371,67 +377,6 @@ def purge_all_classes_for_activity(actividad):
         print(f"   [OK] {len(classes)} clase(s) eliminada(s) de {actividad.name} (queda en blanco)")
 
 
-def create_client_payment_examples(client, actividad_yoga, actividad_funcional, actividad_pilates, profesor, today):
-    """Crea casos de ejemplo para historial de pagos de client@test.com."""
-    print("Creando casos de pagos para client@test.com...")
-
-    expired_class = create_test_class(
-        "Yoga",
-        at_app_time(today - timedelta(days=1), 12),
-        actividad_yoga,
-        profesor.id,
-        legacy_names=["Yoga Mediodia", "Seed Pago Vencido - Yoga"],
-        search_direction="backward",
-    )
-    expired_enrollment = ensure_enrollment(
-        client,
-        expired_class,
-        estado=Enrollment.STATUS_EXPIRED,
-    )
-    ensure_payment(
-        expired_enrollment,
-        Payment.STATUS_EXPIRED,
-        created_at=expired_class.fecha_hora - timedelta(minutes=1),
-    )
-
-
-    paid_class = create_test_class(
-        "Pilates",
-        at_app_time(today + timedelta(days=2), 16),
-        actividad_pilates,
-        profesor.id,
-        legacy_names=["Pilates Suave", "Seed Pago Aprobado - Pilates"],
-    )
-    paid_enrollment = ensure_enrollment(
-        client,
-        paid_class,
-        estado=Enrollment.STATUS_PAID,
-    )
-    ensure_payment(
-        paid_enrollment,
-        Payment.STATUS_APPROVED,
-        created_at=today - timedelta(hours=2),
-    )
-
-    rejected_class = create_test_class(
-        "Yoga",
-        at_app_time(today + timedelta(days=3), 11),
-        actividad_yoga,
-        profesor.id,
-        legacy_names=["Yoga Restaurativo", "Seed Pago Rechazado - Yoga"],
-    )
-    rejected_enrollment = ensure_enrollment(
-        client,
-        rejected_class,
-        estado=Enrollment.STATUS_ACTIVE,
-    )
-    ensure_payment(
-        rejected_enrollment,
-        Payment.STATUS_REJECTED,
-        created_at=today - timedelta(hours=1),
-    )
-
-
 def create_client_credit_examples(client, actividad_pilates, profesor, today):
     """Crea un flujo claro para probar créditos (individual) por cancelación con client@test.com."""
     print("Creando casos de créditos (individual) para client@test.com...")
@@ -474,8 +419,8 @@ def create_client_credit_examples(client, actividad_pilates, profesor, today):
 
 def create_client_monthly_subscription(client, actividad_pilates, profesor, today):
     """Crea una suscripcion mensual paga de Pilates para client@test.com, con varias
-    clases en el mismo mes/horario, para poder probar la baja de un solo dia (credito
-    individual) vs. la baja de toda la suscripcion (credito mensual)."""
+    clases en el mismo mes/horario, para poder probar la baja dia por dia (cada baja
+    otorga un credito individual para anotarse a otra clase de la misma actividad)."""
     print("Creando suscripcion mensual de Pilates para client@test.com...")
 
     # Primer miercoles a partir de pasado mañana, a las 09:00hs.
@@ -516,8 +461,8 @@ def create_client_monthly_subscription(client, actividad_pilates, profesor, toda
     print(
         f"   [INFO] Suscripcion mensual creada: {len(monthly_classes)} clase(s) los "
         f"miercoles a las 09:00 en {actividad_pilates.name}. Para probar creditos desde "
-        "Mis Clases: dar de baja UN dia del grupo mensual -> credito tipo 'individual'; "
-        "dar de baja 'Cancelar suscripcion completa' -> credito tipo 'mensual'."
+        "Mis Clases: dar de baja cualquiera de esos dias (uno o todos, de a uno por vez) "
+        "-> cada baja otorga un credito individual para anotarse otro dia a la misma actividad."
     )
 
 
@@ -551,6 +496,10 @@ def main():
             username="Ivo", apellido="Neiman", email="ivoneiman@gmail.com",
             password="Admin_123", dni="66666666", telefono="221 6666666", role="admin"
         )
+        create_test_user(
+            username="Siempre", apellido="Gym", email="siempregym1@gmail.com",
+            password="siempregym123", dni="12345678", telefono="2211234567", role="admin"
+        )
 
         
         employee = create_test_user(
@@ -566,18 +515,34 @@ def main():
         db.session.commit()
         print()
 
-        # ─── Crear profesor de prueba ───────────────────────────────────────
-        print("Creando profesor de prueba...")
-        profesor_test = create_test_profesor("Gustavo", "Martinez")
-        db.session.commit()
-        print()
-
         # ─── Crear actividades de prueba ───────────────────────────────────
 
         print("Creando actividades de prueba...")
         actividad1 = create_test_actividad("Yoga")
         actividad2 = create_test_actividad("Funcional")
         actividad3 = create_test_actividad("Pilates")
+
+        db.session.commit()
+        print()
+
+        # ─── Crear profesores de prueba ─────────────────────────────────────
+        # Diego dicta Funcional y Pilates, y es quien tiene asignadas todas las
+        # clases de prueba. Martina puede dictar Pilates pero a propósito no
+        # tiene ninguna clase asignada (para demostrar el caso de una profesora
+        # sin clases). Yoga queda sin profesor a propósito, para crearlo en vivo
+        # durante la demo.
+        print("Creando profesores de prueba...")
+        profesora_martina = create_test_profesor("Martina", "Sosa", actividad3)
+        profesor_diego = create_test_profesor("Diego", "Fernandez", [actividad2, actividad3])
+
+        # El seed usaba antes un único profesor genérico para todas las clases;
+        # se elimina y se reasignan sus clases a Diego para no dejar referencias
+        # colgantes.
+        profesor_generico = Profesor.query.filter_by(nombre="Gustavo", apellido="Martinez").first()
+        if profesor_generico:
+            Class.query.filter_by(profesor_id=profesor_generico.id).update({"profesor_id": profesor_diego.id})
+            db.session.delete(profesor_generico)
+            print("   [OK] Profesor genérico 'Gustavo Martinez' eliminado (reemplazado por profesores por actividad)")
 
         db.session.commit()
         print()
@@ -632,7 +597,7 @@ def main():
             "Pilates - Clase Individual (Cupo Disponible)",
             at_app_time(today + timedelta(days=3), 20),
             actividad3,
-            profesor_test.id,
+            profesor_diego.id,
             cupo_maximo=20,
             legacy_names=["Pilates", "Pilates Noche"],
         )
@@ -642,7 +607,7 @@ def main():
             "Pilates - Clase Limitada (1 Cupo)",
             at_app_time(today + timedelta(days=7), 11),
             actividad3,
-            profesor_test.id,
+            profesor_diego.id,
             cupo_maximo=1,
             legacy_names=["Pilates Limitado"]
         )
@@ -652,7 +617,7 @@ def main():
             "Pilates - Clase Sin Cupo (Llena)",
             at_app_time(today + timedelta(days=9), 18),
             actividad3,
-            profesor_test.id,
+            profesor_diego.id,
             cupo_maximo=1,
             legacy_names=["Pilates Sin Cupo"],
         )
@@ -662,7 +627,28 @@ def main():
             "Pilates - Oferta Lista de Espera (Demo)",
             at_app_time(today + timedelta(days=5), 12),
             actividad3,
-            profesor_test.id,
+            profesor_diego.id,
+            cupo_maximo=1,
+        )
+
+        print("   Creando serie mensual con una fecha ya llena (prueba de lista de espera mensual)...")
+        # Primer sabado a partir de mañana, dos semanas seguidas al mismo horario.
+        serie_mensual_semana1_fecha = today + timedelta(days=1)
+        while serie_mensual_semana1_fecha.weekday() != 5:  # 5 = sabado
+            serie_mensual_semana1_fecha += timedelta(days=1)
+
+        class_serie_mensual_semana1 = create_test_class(
+            "Pilates - Serie Mensual Semana 1 (Cupo Disponible)",
+            at_app_time(serie_mensual_semana1_fecha, 16),
+            actividad3,
+            profesor_diego.id,
+            cupo_maximo=5,
+        )
+        class_serie_mensual_semana2 = create_test_class(
+            "Pilates - Serie Mensual Semana 2 (Llena)",
+            at_app_time(serie_mensual_semana1_fecha + timedelta(days=7), 16),
+            actividad3,
+            profesor_diego.id,
             cupo_maximo=1,
         )
 
@@ -671,95 +657,9 @@ def main():
             "Pilates - Prueba Cupos (19/20)",
             at_app_time(today + timedelta(days=8), 19),
             actividad3,
-            profesor_test.id,
+            profesor_diego.id,
             cupo_maximo=20,
             legacy_names=["Yoga - Prueba Cupos (19/20)", "Yoga Prueba 19 Cupos"]
-        )
-
-        print("   Creando clases de Pilates para Junio (1 x semana, 20 cupos, prueba mensual)...")
-        year = today.year
-        create_test_class(
-            "Pilates - 2 Junio (Martes)",
-            datetime(year, 6, 2, 10, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 2 Junio (Martes)", "Yoga Junio 2"]
-        )
-        create_test_class(
-            "Pilates - 9 Junio (Martes)",
-            datetime(year, 6, 9, 10, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 9 Junio (Martes)", "Yoga Junio 9"]
-        )
-        create_test_class(
-            "Pilates - 16 Junio (Martes)",
-            datetime(year, 6, 16, 10, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 16 Junio (Martes)", "Yoga Junio 16"]
-        )
-        create_test_class(
-            "Pilates - 23 Junio (Martes)",
-            datetime(year, 6, 23, 10, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 23 Junio (Martes)", "Yoga Junio 23"]
-        )
-        create_test_class(
-            "Pilates - 30 Junio (Martes)",
-            datetime(year, 6, 30, 10, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 30 Junio (Martes)", "Yoga Junio 30"]
-        )
-
-        print("   Creando clases de Pilates para Julio (pruebas de lista de espera mensual)...")
-        year = today.year
-        class_jul2 = create_test_class(
-            "Pilates - 2 Julio (Jueves)",
-            datetime(year, 7, 2, 7, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 2 Julio (Jueves)", "Yoga Julio 2"]
-        )
-        class_jul9 = create_test_class(
-            "Pilates - 9 Julio (Jueves)",
-            datetime(year, 7, 9, 7, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 9 Julio (Jueves)", "Yoga Julio 9"]
-        )
-        class_jul16 = create_test_class(
-            "Pilates - 16 Julio (Jueves) - 1 Espacio ",
-            datetime(year, 7, 16, 7, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=2,
-            legacy_names=["Yoga - 16 Julio (Jueves) - 1 Espacio ", "Yoga Julio 16"]
-        )
-        class_jul23 = create_test_class(
-            "Pilates - 23 Julio (Jueves)",
-            datetime(year, 7, 23, 7, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 23 Julio (Jueves)", "Yoga Julio 23"]
-        )
-        class_jul30 = create_test_class(
-            "Pilates - 30 Julio (Jueves)",
-            datetime(year, 7, 30, 7, 0),
-            actividad3,
-            profesor_test.id,
-            cupo_maximo=20,
-            legacy_names=["Yoga - 30 Julio (Jueves)", "Yoga Julio 30"]
         )
 
         print("   Creando clases específicas para el 29 de Junio de 2026 (reporte de asistencia)...")
@@ -768,7 +668,7 @@ def main():
             "Pilates - 29 Junio 2026 (Asistencia)",
             datetime(2026, 6, 29, 10, 0),
             actividad3,
-            profesor_test.id,
+            profesor_diego.id,
             cupo_maximo=20,
             legacy_names=["Yoga - 29 Junio 2026", "Yoga 29/06/2026"]
         )
@@ -778,7 +678,7 @@ def main():
             "Pilates - 29 Junio 2026 (Sin Inscriptos)",
             datetime(2026, 6, 29, 18, 0),
             actividad3,
-            profesor_test.id,
+            profesor_diego.id,
             cupo_maximo=20,
             legacy_names=["Pilates - 29 Junio 2026", "Pilates 29/06/2026"]
         )
@@ -819,6 +719,22 @@ def main():
         enr_sin_cupo = ensure_enrollment(dummy_sin_cupo, class_sin_cupo, estado=Enrollment.STATUS_PAID, tipo="Suelta")
         ensure_payment(enr_sin_cupo, Payment.STATUS_APPROVED, created_at=today - timedelta(days=1))
 
+        print("   Ocupando 'Pilates - Serie Mensual Semana 2 (Llena)' para dejarla en 0 disponibles...")
+        dummy_serie_semana2 = create_test_user(
+            username="AlumnoSerieSemana2", apellido="Dummy", email="dummy_serie_semana2@test.com",
+            password="password123", dni="77777702", telefono="11111111", role="client"
+        )
+        enr_serie_semana2 = ensure_enrollment(
+            dummy_serie_semana2, class_serie_mensual_semana2, estado=Enrollment.STATUS_PAID, tipo="Suelta"
+        )
+        ensure_payment(enr_serie_semana2, Payment.STATUS_APPROVED, created_at=today - timedelta(days=1))
+        print(
+            "   [INFO] Para probar la lista de espera MENSUAL cuando una fecha de la serie ya "
+            "esta llena: inscribite mensual (o pedi lista de espera) en 'Pilates - Serie Mensual "
+            "Semana 1 (Cupo Disponible)' -> como 'Pilates - Serie Mensual Semana 2 (Llena)' no "
+            "tiene cupo, no se cobra nada: se te anota en la lista de espera de esa fecha puntual."
+        )
+
         print("   Inscribiendo 19 usuarios ficticios a 'Pilates - Prueba Cupos (19/20)'...")
         for i in range(1, 20):
             dummy = create_test_user(
@@ -829,13 +745,6 @@ def main():
             # Distribuimos los pagos de los dummies en los últimos 90 días para verlos en el reporte
             payment_date = today - timedelta(days=(i * 4))
             ensure_payment(enr, Payment.STATUS_APPROVED, created_at=payment_date)
-
-        print("   Ocupando 1 lugar en la clase de Pilates del 16 de Julio para dejar un solo espacio libre...")
-        dummy_julio = create_test_user(
-            username="AlumnoJulio", apellido="Dummy", email="dummy_julio@test.com",
-            password="password123", dni="99999999", telefono="11111111", role="client"
-        )
-        ensure_enrollment(dummy_julio, class_jul16, estado=Enrollment.STATUS_PAID, tipo="Suelta")
 
         print("   Dejando a client@test.com con una oferta de lista de espera pendiente de decidir (demo en vivo)...")
         oferta_enrollment = ensure_enrollment(
@@ -853,11 +762,11 @@ def main():
             password="client123", dni="55555510", telefono="221 5555510", role="client"
         )
         existing_waitlist_demo = WaitlistEntry.query.filter_by(
-            user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_INDIVIDUAL
+            user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_MONTHLY
         ).first()
         if not existing_waitlist_demo:
             db.session.add(WaitlistEntry(
-                user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_INDIVIDUAL
+                user_id=espera_demo_user.id, class_id=class_oferta_demo.id, type=WAITLIST_TYPE_MONTHLY
             ))
             print(f"   [OK] {espera_demo_user.email} anotado en lista de espera de {class_oferta_demo.name}")
         else:
@@ -866,22 +775,15 @@ def main():
         db.session.commit()
         print()
 
-        # ─── Casos de historial de pagos para client@test.com ───────────────
-
-        # COMENTADO: No hay clases para crear ejemplos de pagos
-        # create_client_payment_examples(client, actividad1, actividad2, actividad3, profesor_test, today)
-        db.session.commit()
-        print()
-
         # ─── Casos para probar créditos por cancelación (individual) ────────
 
-        create_client_credit_examples(client, actividad3, profesor_test, today)
+        create_client_credit_examples(client, actividad3, profesor_diego, today)
         db.session.commit()
         print()
 
         # ─── Suscripción mensual paga para probar créditos (mensual) ────────
 
-        create_client_monthly_subscription(client, actividad3, profesor_test, today)
+        create_client_monthly_subscription(client, actividad3, profesor_diego, today)
         db.session.commit()
         print()
 

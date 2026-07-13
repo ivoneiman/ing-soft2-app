@@ -300,7 +300,7 @@ const cancelDelete = () => {
 
 const confirmDelete = async () => {
   if (!deletePassword.value) {
-    deleteErrorMessage.value = 'Por favor, ingrese su contraseña para confirmar.'
+    deleteErrorMessage.value = 'Ingrese su contraseña para confirmar'
     return
   }
   isDeleting.value = true
