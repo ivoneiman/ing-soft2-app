@@ -110,6 +110,23 @@ def send_temporary_password_email(user, temporary_password):
     )
 
 
+def send_broadcast_message_email(user, message):
+    if not _has_valid_email(user):
+        return False
+
+    html = f"""
+    <h1>Mensaje de SiempreGym</h1>
+    <p>Hola {escape(getattr(user, 'username', '') or '')},</p>
+    <p>{escape(message).replace(chr(10), '<br>')}</p>
+    """
+
+    return _send_email(
+        user.email,
+        "Mensaje de SiempreGym",
+        html,
+    )
+
+
 def _format_class_datetime(class_obj):
     if not getattr(class_obj, "fecha_hora", None):
         return "fecha a confirmar"

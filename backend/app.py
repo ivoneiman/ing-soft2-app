@@ -22,6 +22,7 @@ from sqlalchemy.engine import Engine
 try:
     from email_service import (
         send_admin_login_code,
+        send_broadcast_message_email,
         send_class_cancelled_email,
         send_credit_generated_email,
         send_refund_email,
@@ -62,6 +63,7 @@ try:
 except ModuleNotFoundError:
     from .email_service import (
         send_admin_login_code,
+        send_broadcast_message_email,
         send_class_cancelled_email,
         send_credit_generated_email,
         send_refund_email,
@@ -3046,46 +3048,37 @@ def cancelar_clase_staff(clase_id):
     }), 200
 
 
-@app.route("/api/settings/notification-message", methods=["GET"])
-def get_notification_message():
+@app.route("/api/settings/broadcast-message", methods=["POST"])
+def send_broadcast_message():
     current_user = _get_authenticated_user()
     if not current_user:
         return jsonify({"error": "No autenticado"}), 401
     if current_user.role != "admin":
-        return jsonify({"error": "No tienes permisos para acceder a esta configuración"}), 403
-
-    setting = SystemSetting.query.filter_by(key="cancellation_notification_message").first()
-    return jsonify({"message": setting.value if setting else ""}), 200
-
-
-@app.route("/api/settings/notification-message", methods=["PUT"])
-def update_notification_message():
-    current_user = _get_authenticated_user()
-    if not current_user:
-        return jsonify({"error": "No autenticado"}), 401
-    if current_user.role != "admin":
-        return jsonify({"error": "No tienes permisos para modificar esta configuración"}), 403
+        return jsonify({"error": "No tienes permisos para enviar este mensaje"}), 403
 
     data = request.get_json() or {}
     message = data.get("message", "")
     if not isinstance(message, str) or not message.strip():
-        return jsonify({"error": "El mensaje es obligatorio"}), 400
+        return jsonify({"error": "El campo del mensaje es obligatorio"}), 400
 
     trimmed_message = message.strip()
-    setting = SystemSetting.query.filter_by(key="cancellation_notification_message").first()
-    if not setting:
-        setting = SystemSetting(key="cancellation_notification_message", value=trimmed_message)
-        db.session.add(setting)
-    else:
-        setting.value = trimmed_message
+    users = User.query.all()
 
-    try:
-        db.session.commit()
-    except Exception as err:
-        db.session.rollback()
-        return jsonify({"error": "Error interno al guardar la configuración", "details": str(err)}), 500
+    def send_emails_async(app_obj, message_text, user_ids):
+        with app_obj.app_context():
+            for uid in user_ids:
+                u = User.query.get(uid)
+                if u:
+                    send_broadcast_message_email(u, message_text)
 
-    return jsonify({"message": "Mensaje de notificación actualizado correctamente", "notification_message": setting.value}), 200
+    from flask import current_app
+    app_obj = current_app._get_current_object()
+    threading.Thread(
+        target=send_emails_async,
+        args=(app_obj, trimmed_message, [u.id for u in users]),
+    ).start()
+
+    return jsonify({"message": "Mensaje de notificación enviado a todos los usuarios"}), 200
 
 
 # ─── Rutas API: Pasarela de Pagos (Mercado Pago) ──────────────────────────────
