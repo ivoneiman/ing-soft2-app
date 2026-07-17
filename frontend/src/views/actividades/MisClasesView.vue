@@ -46,15 +46,8 @@
           </article>
         </template>
 
-        <div v-else-if="activeWaitlistEntries.length > 0" class="empty-state" style="grid-column: 1 / -1;">
-          <p v-for="entry in activeWaitlistEntries" :key="entry.id">
-            Aún no has sido seleccionado/a para la clase a la cual te has inscripto a la lista de espera de la clase
-            <strong>{{ entry.actividad }} - {{ entry.class_name }}</strong> ({{ formatDateTime(entry.fecha_hora) }}).
-          </p>
-        </div>
-
         <div v-else class="empty-state" style="grid-column: 1 / -1;">
-          No estás anotado/a en ninguna lista de espera actualmente.
+          No tenés confirmaciones pendientes.
         </div>
       </div>
 
@@ -170,7 +163,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
-import { getPendingEnrollments, getMyWaitlists } from '../../services/api';
+import { getPendingEnrollments } from '../../services/api';
 import { formatDateTime } from '../../utils/formatters';
 import { CLASS_STATUS, ENROLLMENT_STATUS } from '../../constants/statuses';
 
@@ -187,7 +180,6 @@ const openGroups = ref({});
 
 const isLoadingWaitlistInfo = ref(false);
 const pendingWaitlistOffers = ref([]);
-const activeWaitlistEntries = ref([]);
 
 const returnMessage = computed(() => {
   const status = route.query.status;
@@ -268,12 +260,8 @@ async function loadClasses() {
 async function loadWaitlistInfo() {
   isLoadingWaitlistInfo.value = true;
   try {
-    const [pendingResponse, waitlistResponse] = await Promise.all([
-      getPendingEnrollments(),
-      getMyWaitlists(),
-    ]);
+    const pendingResponse = await getPendingEnrollments();
     pendingWaitlistOffers.value = (pendingResponse.data.enrollments || []).filter((e) => e.waitlist_offer);
-    activeWaitlistEntries.value = waitlistResponse.data.waitlists || [];
   } catch (err) {
     console.error("Error cargando la lista de espera:", err);
   } finally {

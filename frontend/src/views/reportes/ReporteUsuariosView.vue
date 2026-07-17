@@ -95,10 +95,8 @@
                 <tr>
                   <th>Actividad</th>
                   <th>Fecha y Hora</th>
-                  <th>Tipo</th>
-                  <th>Estado</th>
-                  <th>Total</th>
-                  <th>Saldo</th>
+                  <th>Tipo de Inscripción</th>
+                  <th>Monto Pagado</th>
                 </tr>
               </thead>
               <tbody>
@@ -106,23 +104,9 @@
                   <td class="bold">{{ enr.actividad }}</td>
                   <td>{{ formatDateTime(enr.fecha_hora) }}</td>
                   <td>{{ enr.tipo }}</td>
-                  <td>
-                    <template v-if="isCancelled(enr)">
-                      <span v-if="enr.requiere_reembolso" class="status-pill expired">Cancelada (Reembolso pendiente)</span>
-                      <span v-else-if="enr.estado_pago === 'PAID'" class="status-pill expired">Cancelada (Créditos devueltos)</span>
-                      <span v-else class="status-pill expired">Cancelada</span>
-                    </template>
-                    <template v-else>
-                      <span :class="['status-pill', (enr.estado_pago || '').toLowerCase()]">{{ paymentStatusLabel(enr.estado_pago) }}</span>
-                    </template>
-                  </td>
-                  <td>
-                    <span v-if="isCancelled(enr)">-</span>
-                    <span v-else>{{ formatMoney(enr.monto_total) }}</span>
-                  </td>
-                  <td :class="{'debt': Number(enr.saldo) > 0 && !isCancelled(enr)}">
-                    <span v-if="isCancelled(enr)">-</span>
-                    <span v-else>{{ formatMoney(enr.saldo) }}</span>
+                  <td :class="{'paid': Number(enr.monto_total - enr.saldo) > 0 && !isCancelled(enr)}">
+                    <span v-if="isCancelled(enr) || Number(enr.monto_total - enr.saldo) <= 0">-</span>
+                    <span v-else>{{ formatMoney(enr.monto_total - enr.saldo) }}</span>
                   </td>
                 </tr>
               </tbody>
@@ -500,4 +484,5 @@ onMounted(() => {
 .status-pill.paid { background: #eef8f1; color: #027a48; }
 .status-pill.expired { background: #fee2e2; color: #b42318; }
 .debt { color: #b42318; font-weight: 700; }
+.paid { color: #027a48; font-weight: 700; }
 </style>

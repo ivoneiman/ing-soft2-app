@@ -7,6 +7,22 @@ export function formatDateTime(value) {
   }).format(new Date(value));
 }
 
+export function formatDateOnly(value) {
+  if (!value) return '-';
+
+  return new Intl.DateTimeFormat('es-AR', {
+    dateStyle: 'short',
+  }).format(new Date(value));
+}
+
+export function formatTime(value) {
+  if (!value) return '-';
+
+  return new Intl.DateTimeFormat('es-AR', {
+    timeStyle: 'short',
+  }).format(new Date(value));
+}
+
 export function formatShortDate(value) {
   if (!value) return '-';
 
