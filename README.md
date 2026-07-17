@@ -4,6 +4,9 @@ Trabajo integrador realizado para la materia **Ingeniería de Software 2**.
 
 SiempreGym es un sistema web para la administración básica de un gimnasio. Permite gestionar usuarios, actividades, clases, inscripciones, pagos, señas, asistencia por QR, cancelaciones, créditos y notificaciones.
 
+El proyecto consistió en realizar varias entrevistas con el cliente para documentar sus requerimientos en archivos (Épicas, SRS+PGP), los cuales fueron evaluados, junto a las Historias de Usuario planteadas sobre el sistema.
+El código del proyecto, no fue evaluado, ni apoyado por los profesores. La idea era que elijamos un stack a gusto, y desarrollemos en él sin preocuparnos por nuestra poca experiencia en estos lenguajes.
+
 ## Grupo e integrantes
 
 **Grupo 9**
